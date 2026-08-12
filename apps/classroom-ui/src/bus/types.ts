@@ -8,6 +8,12 @@
  */
 import type {
   ActPayload,
+  CapabilityReportPayload,
+  CaptureReadyPayload,
+  CaptureRequest,
+  CaptureStartedPayload,
+  ClassSessionState,
+  ClassroomStatusPayload,
   ClientHelloPayload,
   ControlCommandPayload,
   ErrorPayload,
@@ -30,14 +36,23 @@ import type {
   SpeechTextDeltaPayload,
   SpeechTurnEndedPayload,
   SpeechTurnStartedPayload,
+  StageLeaseGrantedPayload,
   StudentSpeechFinalPayload,
   StudentResponseAcceptedPayload,
+  TurnAssignment,
+  TurnClosedPayload,
 } from '@contracts'
 
 /** server → client. Keys are exactly the `↓` rows of the event catalog. */
 export interface ServerEventMap {
   'scene.update': Scene
   'scene.snapshot': SceneSnapshotPayload
+  'class.session.updated': ClassSessionState
+  'class.turn.assigned': TurnAssignment
+  'class.turn.closed': TurnClosedPayload
+  'response.capture.requested': CaptureRequest
+  'classroom.status': ClassroomStatusPayload
+  'stage.lease.granted': StageLeaseGrantedPayload
   'speech.say': SpeechSayPayload
   'speech.turn.started': SpeechTurnStartedPayload
   'speech.text.delta': SpeechTextDeltaPayload
@@ -64,6 +79,9 @@ export interface ClientEventMap {
   'speech.playback.started': SpeechPlaybackStartedPayload
   'speech.playback.finished': SpeechPlaybackFinishedPayload
   'speech.barge_in': SpeechBargeInPayload
+  'capability.report': CapabilityReportPayload
+  'response.capture.ready': CaptureReadyPayload
+  'response.capture.started': CaptureStartedPayload
 }
 
 export type ServerEventType = keyof ServerEventMap
@@ -112,6 +130,8 @@ export type ServerHandler<K extends ServerEventType> = (
 
 export interface Bus {
   readonly role: 'stage' | 'control'
+  readonly clientInstanceId: string
+  connectionEpoch(): number
   connect(): void
   close(): void
   /** Wraps `payload` in a full `Event<T>` envelope and sends it. */

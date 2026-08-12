@@ -98,6 +98,51 @@ MIGRATIONS: list[tuple[str, tuple[str, ...]]] = [
             "CREATE INDEX IF NOT EXISTS idx_sessions_student ON sessions(student_id, started_at)",
         ),
     ),
+    (
+        "0002_class_session_controller",
+        (
+            "ALTER TABLE observations ADD COLUMN response_turn_id TEXT",
+            "ALTER TABLE observations ADD COLUMN activity_id TEXT",
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_obs_response_skill
+            ON observations(session_id, response_turn_id, skill)
+            WHERE response_turn_id IS NOT NULL
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS session_checkpoints (
+                session_id          TEXT PRIMARY KEY,
+                decision_revision   INTEGER NOT NULL,
+                activity_id         TEXT,
+                activity_generation INTEGER NOT NULL,
+                session_state       TEXT NOT NULL,
+                snapshot_json       TEXT NOT NULL,
+                updated_at          TEXT NOT NULL
+            )
+            """,
+        ),
+    ),
+    (
+        "0003_class_participation",
+        (
+            """
+            CREATE TABLE IF NOT EXISTS session_participants (
+                session_id   TEXT NOT NULL,
+                learner_id   TEXT NOT NULL,
+                display_name TEXT NOT NULL,
+                seat         TEXT,
+                present      INTEGER NOT NULL,
+                scheduled    INTEGER NOT NULL DEFAULT 0,
+                attempted    INTEGER NOT NULL DEFAULT 0,
+                responded    INTEGER NOT NULL DEFAULT 0,
+                evidenced    INTEGER NOT NULL DEFAULT 0,
+                skipped      INTEGER NOT NULL DEFAULT 0,
+                last_event   TEXT,
+                updated_at   TEXT NOT NULL,
+                PRIMARY KEY (session_id, learner_id)
+            )
+            """,
+        ),
+    ),
 ]
 
 
@@ -150,17 +195,23 @@ class Database:
             done = {
                 row["id"] for row in self._conn.execute("SELECT id FROM schema_migrations")
             }
+            self._conn.commit()
             for migration_id, statements in MIGRATIONS:
                 if migration_id in done:
                     continue
-                for statement in statements:
-                    self._conn.execute(statement)
-                self._conn.execute(
-                    "INSERT INTO schema_migrations (id, applied_at) VALUES (?, ?)",
-                    (migration_id, iso()),
-                )
-                applied.append(migration_id)
-            self._conn.commit()
+                try:
+                    self._conn.execute("BEGIN IMMEDIATE")
+                    for statement in statements:
+                        self._conn.execute(statement)
+                    self._conn.execute(
+                        "INSERT INTO schema_migrations (id, applied_at) VALUES (?, ?)",
+                        (migration_id, iso()),
+                    )
+                    self._conn.commit()
+                    applied.append(migration_id)
+                except Exception:
+                    self._conn.rollback()
+                    raise
         return applied
 
     def close(self) -> None:
@@ -291,24 +342,177 @@ class Database:
         evidence: str,
         session_id: str | None = None,
         ts: datetime | None = None,
+        *,
+        response_turn_id: str | None = None,
+        activity_id: str | None = None,
     ) -> int:
         when = ts or utc_now()
         with self._lock:
             cur = self._conn.execute(
-                "INSERT INTO observations (session_id, student_id, skill, result, evidence, ts)"
-                " VALUES (?, ?, ?, ?, ?, ?)",
-                (session_id, student_id, skill, result, evidence, iso(when)),
+                "INSERT OR IGNORE INTO observations "
+                "(session_id, student_id, skill, result, evidence, ts, response_turn_id, activity_id)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    session_id,
+                    student_id,
+                    skill,
+                    result,
+                    evidence,
+                    iso(when),
+                    response_turn_id,
+                    activity_id,
+                ),
             )
-            obs_id = int(cur.lastrowid or 0)
-            self._index_memory(
-                text=f"{skill} {result}: {evidence}",
-                kind="observation",
-                ref_id=str(obs_id),
-                student_id=student_id,
-                when=when,
-            )
+            inserted = cur.rowcount != 0
+            if inserted:
+                obs_id = int(cur.lastrowid or 0)
+            elif response_turn_id is not None:
+                row = self._conn.execute(
+                    "SELECT id FROM observations WHERE session_id IS ? "
+                    "AND response_turn_id = ? AND skill = ?",
+                    (session_id, response_turn_id, skill),
+                ).fetchone()
+                obs_id = int(row["id"]) if row else 0
+            else:
+                obs_id = 0
+            if inserted:
+                self._index_memory(
+                    text=f"{skill} {result}: {evidence}",
+                    kind="observation",
+                    ref_id=str(obs_id),
+                    student_id=student_id,
+                    when=when,
+                )
             self._conn.commit()
         return obs_id
+
+    def save_session_checkpoint(
+        self,
+        *,
+        session_id: str,
+        decision_revision: int,
+        activity_id: str | None,
+        activity_generation: int,
+        session_state: str,
+        snapshot: dict[str, Any],
+    ) -> None:
+        """Durably replace the one resumable controller checkpoint."""
+        with self._lock:
+            self._conn.execute("BEGIN IMMEDIATE")
+            try:
+                self._conn.execute(
+                    """
+                    INSERT INTO session_checkpoints (
+                        session_id, decision_revision, activity_id,
+                        activity_generation, session_state, snapshot_json, updated_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(session_id) DO UPDATE SET
+                        decision_revision = excluded.decision_revision,
+                        activity_id = excluded.activity_id,
+                        activity_generation = excluded.activity_generation,
+                        session_state = excluded.session_state,
+                        snapshot_json = excluded.snapshot_json,
+                        updated_at = excluded.updated_at
+                    """,
+                    (
+                        session_id,
+                        decision_revision,
+                        activity_id,
+                        activity_generation,
+                        session_state,
+                        json.dumps(snapshot, separators=(",", ":"), sort_keys=True),
+                        iso(),
+                    ),
+                )
+                self._conn.commit()
+            except Exception:
+                self._conn.rollback()
+                raise
+
+    def get_session_checkpoint(self, session_id: str) -> dict[str, Any] | None:
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT * FROM session_checkpoints WHERE session_id = ?", (session_id,)
+            ).fetchone()
+        if row is None:
+            return None
+        result = dict(row)
+        result["snapshot"] = json.loads(result.pop("snapshot_json") or "{}")
+        return result
+
+    def replace_session_participants(
+        self, session_id: str, participants: list[dict[str, Any]]
+    ) -> None:
+        with self._lock:
+            self._conn.execute("BEGIN IMMEDIATE")
+            try:
+                for item in participants:
+                    self._conn.execute(
+                        """
+                        INSERT INTO session_participants (
+                            session_id, learner_id, display_name, seat, present, updated_at
+                        ) VALUES (?, ?, ?, ?, ?, ?)
+                        ON CONFLICT(session_id, learner_id) DO UPDATE SET
+                            display_name = excluded.display_name,
+                            seat = excluded.seat,
+                            present = excluded.present,
+                            updated_at = excluded.updated_at
+                        """,
+                        (
+                            session_id,
+                            item["learner_id"],
+                            item["display_name"],
+                            item.get("seat"),
+                            int(bool(item.get("present"))),
+                            iso(),
+                        ),
+                    )
+                self._conn.commit()
+            except Exception:
+                self._conn.rollback()
+                raise
+
+    def update_session_participation(
+        self,
+        *,
+        session_id: str,
+        learner_id: str,
+        scheduled: int,
+        attempted: int,
+        responded: int,
+        evidenced: int,
+        skipped: int,
+        event: str,
+    ) -> None:
+        with self._lock:
+            self._conn.execute(
+                """
+                UPDATE session_participants SET
+                    scheduled = ?, attempted = ?, responded = ?, evidenced = ?,
+                    skipped = ?, last_event = ?, updated_at = ?
+                WHERE session_id = ? AND learner_id = ?
+                """,
+                (
+                    scheduled,
+                    attempted,
+                    responded,
+                    evidenced,
+                    skipped,
+                    event,
+                    iso(),
+                    session_id,
+                    learner_id,
+                ),
+            )
+            self._conn.commit()
+
+    def list_session_participants(self, session_id: str) -> list[dict[str, Any]]:
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT * FROM session_participants WHERE session_id = ? ORDER BY learner_id",
+                (session_id,),
+            ).fetchall()
+        return [dict(row) for row in rows]
 
     def list_observations(
         self, session_id: str | None = None, student_id: str | None = None, limit: int = 500

@@ -107,7 +107,14 @@ def _payload(activity: Any, want: str) -> tuple[str, dict[str, Any]] | None:
         return None
 
     key = {"choice": "optionId", "point": "targetId", "drag": "toId", "speech": "text"}[expect.kind]
-    return expect.kind, {key: str(value), "studentId": "s04"}
+    return expect.kind, {
+        key: str(value),
+        "confidence": 1.0,
+        # The headless player exercises authored flow without a class controller.
+        # Product runtime replaces these with Core-issued opaque capabilities.
+        "assignmentId": "headless-assignment",
+        "responseTurnId": "headless-response",
+    }
 
 
 async def play(lesson: LessonRun, mode: str, *, max_steps: int = 400) -> Playthrough:

@@ -8,13 +8,14 @@ model:
   base_url: "${HERMES_MODEL_BASE_URL}"
   api_key: "${HERMES_MODEL_API_KEY}"
   default: "${HERMES_MODEL_NAME}"
-  max_tokens: 400
+  # One short teacher line plus the terminal proposal arguments.
+  max_tokens: 220
 
 agent:
-  # The class owns the wall clock.  This bounds normal say/act/final rounds;
-  # Core's outer timeout remains the authoritative stop condition.
-  max_turns: 3
-  api_max_retries: 1
+  # Declare zero provider retries. Upstream internally clamps this to one
+  # total attempt; the pinned Bright patch also enforces that internal value.
+  max_turns: 1
+  api_max_retries: 0
   disabled_toolsets:
     - terminal
     - file
@@ -44,10 +45,7 @@ mcp_servers:
     trust: full
     tools:
       include:
-        - classroom_get_state
-        - classroom_choose_next
-        - classroom_record_observation
-        - classroom_recall
+        - classroom_propose_move
       resources: false
       prompts: false
 
@@ -59,3 +57,16 @@ gateway:
     key: "${HERMES_API_KEY}"
     model_name: bright-classroom
     max_concurrent_runs: 1
+    bright_live:
+      enabled: true
+      terminal_tool: classroom_propose_move
+      # This is the only live system prompt. Client instructions, SOUL,
+      # context files and stored sessions are disabled by the Bright patch.
+      system_prompt: |-
+        You are Bright's live English teacher decision engine for one current classroom turn.
+        The input is fresh authoritative state from Classroom Core. Do not invent hidden state.
+        Make one bounded teaching decision, then call classroom_propose_move exactly once.
+        Its arguments are turn_id, move_id, and teacher_line.
+        Copy the exact BRIGHT TURN ID from the input. Choose only an allowed move from the input.
+        teacher_line is the complete child-facing speech: one or two short, warm, concrete sentences for Grade 4 pre-A1 learners.
+        Never write free assistant text. Never call another tool. Never retry, summarize, plan a future turn, or claim a move was applied.

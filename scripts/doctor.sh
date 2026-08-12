@@ -334,7 +334,20 @@ external="$(ss -lptn 2>/dev/null | awk 'NR>1 {print $4}' \
   | grep -Ev '^(127\.|\[::1\]|\[::ffff:127)' \
   | grep -E ":($SPEECH_PORT|$CORE_PORT|$HERMES_PORT|$UI_PORT)$")"
 if [[ -z "$external" ]]; then
-  ok "No. Nothing about the children leaves this machine."
+  ok "Classroom services are not reachable from outside this machine."
+  case "${BRIGHT_DATA_POLICY:-hosted_semantic}" in
+    local_trusted|local-trusted)
+      ok "The teacher model is configured for local-trusted data handling."
+      ;;
+    synthetic_dev|synthetic-dev)
+      warn "Synthetic development data may be sent to the configured teacher provider." \
+"$(say 'What this means: use only labelled synthetic fixtures in this mode.')"
+      ;;
+    *)
+      warn "Semantic classroom events may be sent to the configured hosted teacher provider." \
+"$(say 'What this means: network access is outbound-only, but this is not a fully local inference setup.')"
+      ;;
+  esac
 else
   bad "Part of the system is reachable from the network." \
 "$(say 'What this means: children'"'"'s records could be read by another'

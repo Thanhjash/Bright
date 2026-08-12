@@ -13,6 +13,9 @@
 import { create } from 'zustand'
 import type {
   ActPayload,
+  CaptureRequest,
+  ClassSessionState,
+  ClassroomStatusPayload,
   Emotion,
   Event,
   LessonPosition,
@@ -21,6 +24,10 @@ import type {
   Scene,
   SceneSnapshotPayload,
   SpeechSayPayload,
+  StageLeaseGrantedPayload,
+  TurnAssignment,
+  TurnClosedPayload,
+  ResponseCorrelation,
 } from '@contracts'
 import type { ConnectionStatus } from '../bus/types'
 import { emotionIntensity, emotionName, scrubActTokens } from '../lib/act'
@@ -52,6 +59,13 @@ export interface ClassroomState {
   stateVersion: number
   scene: Scene | null
   lesson: LessonPosition | null
+  session: ClassSessionState | null
+  status: ClassroomStatusPayload | null
+  assignment: TurnAssignment | null
+  capture: CaptureRequest | null
+  stageLease: StageLeaseGrantedPayload | null
+  recovery: { reason: string; requiredAction?: string } | null
+  speechLifecycle: { speechTurnId: string; status: 'queued' | 'playing' | 'terminal' } | null
   mode: Mode
   modeReason: string
   /** authoritative subtitle, from `scene.overlay.subtitle` */
@@ -71,6 +85,12 @@ export interface ClassroomState {
   applySnapshot: (payload: SceneSnapshotPayload) => void
   applyScene: (scene: Scene) => void
   applyLesson: (lesson: LessonPosition) => void
+  applySession: (session: ClassSessionState) => void
+  applyStatus: (status: ClassroomStatusPayload) => void
+  applyAssignment: (assignment: TurnAssignment) => void
+  applyCapture: (capture: CaptureRequest) => void
+  applyStageLease: (lease: StageLeaseGrantedPayload) => void
+  closeTurn: (closed: TurnClosedPayload) => void
   applyMode: (payload: ModeChangedPayload) => void
   applySpeech: (payload: SpeechSayPayload) => void
   startSpeech: (turnId: string) => void
@@ -116,6 +136,13 @@ export const useClassroom = create<ClassroomState>()((set) => ({
   stateVersion: 0,
   scene: null,
   lesson: null,
+  session: null,
+  status: null,
+  assignment: null,
+  capture: null,
+  stageLease: null,
+  recovery: null,
+  speechLifecycle: null,
   mode: 'FULL',
   modeReason: '',
   overlaySubtitle: '',
@@ -134,6 +161,13 @@ export const useClassroom = create<ClassroomState>()((set) => ({
     set((s) => ({
       scene: null,
       lesson: null,
+      session: null,
+      status: null,
+      assignment: null,
+      capture: null,
+      stageLease: null,
+      recovery: null,
+      speechLifecycle: null,
       overlaySubtitle: '',
       speechSubtitle: '',
       currentTurnId: null,
@@ -142,10 +176,16 @@ export const useClassroom = create<ClassroomState>()((set) => ({
       transcript: appendTranscript(s.transcript, 'system', `state discarded — ${reason}`),
     })),
 
-  applySnapshot: ({ scene, lesson }) =>
+  applySnapshot: ({ scene, lesson, session, status, assignment, capture, speech, recovery }) =>
     set({
       scene,
       lesson,
+      session: session ?? null,
+      status: status ?? null,
+      assignment: assignment ?? null,
+      capture: capture ?? null,
+      recovery: recovery ?? status?.recovery ?? null,
+      speechLifecycle: speech ?? null,
       stateVersion: scene.stateVersion,
       overlaySubtitle: scene.overlay?.subtitle ?? '',
       speechSubtitle: '',
@@ -166,6 +206,21 @@ export const useClassroom = create<ClassroomState>()((set) => ({
 
   applyLesson: (lesson) => set({ lesson }),
 
+  applySession: (session) => set({ session }),
+
+  applyStatus: (status) => set({ status, recovery: status.recovery ?? null }),
+
+  applyAssignment: (assignment) => set({ assignment }),
+
+  applyCapture: (capture) => set({ capture }),
+
+  applyStageLease: (stageLease) => set({ stageLease }),
+
+  closeTurn: (closed) => set((state) => state.assignment?.assignmentId === closed.assignmentId
+    && state.assignment.responseTurnId === closed.responseTurnId
+    ? { assignment: null, capture: null }
+    : state),
+
   applyMode: ({ mode, reason }) =>
     set((s) => ({
       mode,
@@ -185,7 +240,11 @@ export const useClassroom = create<ClassroomState>()((set) => ({
     }))
   },
 
-  startSpeech: (turnId) => set({ currentTurnId: turnId, speechSubtitle: '' }),
+  startSpeech: (turnId) => set({
+    currentTurnId: turnId,
+    speechSubtitle: '',
+    speechLifecycle: { speechTurnId: turnId, status: 'queued' },
+  }),
 
   updateSpeechText: (turnId, text) =>
     set((s) => s.currentTurnId === turnId ? { speechSubtitle: scrubActTokens(text).text } : s),
@@ -203,6 +262,7 @@ export const useClassroom = create<ClassroomState>()((set) => ({
         : {
             speechSubtitle: '',
             currentTurnId: null,
+            speechLifecycle: { speechTurnId: turnId, status: 'terminal' },
             avatar: { ...s.avatar, speaking: false, mouthOpen: 0 },
           },
     ),
@@ -249,3 +309,13 @@ export const selectModeBadge = (s: ClassroomState): Exclude<Mode, 'FULL'> | unde
 
 export const useSubtitle = () => useClassroom(selectSubtitle)
 export const useModeBadge = () => useClassroom(selectModeBadge)
+
+/** Correlation is server-issued authority; a board without it is display-only. */
+export function currentResponseCorrelation(): ResponseCorrelation | null {
+  const assignment = useClassroom.getState().assignment
+  if (!assignment || assignment.expiresAt <= Date.now()) return null
+  return {
+    assignmentId: assignment.assignmentId,
+    responseTurnId: assignment.responseTurnId,
+  }
+}

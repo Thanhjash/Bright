@@ -24,6 +24,10 @@ export type MicFailure =
   | 'unavailable'
   /** this browser cannot record — no `MediaRecorder`, or an insecure origin */
   | 'unsupported'
+  /** the selected answer-station device disappeared after setup */
+  | 'device_lost'
+  /** a permission that had already been granted was revoked */
+  | 'permission_lost'
 
 export class MicError extends Error {
   readonly failure: MicFailure
@@ -53,8 +57,10 @@ export interface Clip {
 }
 
 export interface MicRecorder {
+  /** Opens and meters the answer-station mic without beginning a take. */
+  prepare(): Promise<void>
   /** Opens the stream if needed and begins recording. */
-  start(onAutoStop: (reason: 'cap') => void): Promise<void>
+  start(onAutoStop: (reason: 'cap') => void, maxDurationMs?: number): Promise<void>
   /** Stops and resolves with the clip. Resolves with `null` if not recording. */
   stop(): Promise<Clip | null>
   /** 0…1, RMS of the live input. 0 when not recording. */
@@ -64,7 +70,7 @@ export interface MicRecorder {
   release(): void
 }
 
-export function createMicRecorder(): MicRecorder {
+export function createMicRecorder(onDeviceFailure?: (failure: MicFailure) => void): MicRecorder {
   let stream: MediaStream | null = null
   let recorder: MediaRecorder | null = null
   let chunks: Blob[] = []
@@ -74,6 +80,67 @@ export function createMicRecorder(): MicRecorder {
   let audioCtx: AudioContext | null = null
   let analyser: AnalyserNode | null = null
   let samples: Float32Array<ArrayBuffer> | null = null
+  let watchedTrack: MediaStreamTrack | null = null
+  let permission: PermissionStatus | null = null
+  let deviceWatchInstalled = false
+  let failureReported: MicFailure | null = null
+
+  const reportDeviceFailure = (failure: MicFailure) => {
+    if (failureReported === failure) return
+    failureReported = failure
+    onDeviceFailure?.(failure)
+  }
+
+  const trackEnded = () => reportDeviceFailure('device_lost')
+  const permissionChanged = () => {
+    if (permission?.state === 'denied') reportDeviceFailure('permission_lost')
+  }
+  const devicesChanged = () => {
+    const track = watchedTrack
+    const selected = track?.getSettings().deviceId
+    if (!track || track.readyState !== 'live') {
+      reportDeviceFailure('device_lost')
+      return
+    }
+    if (!selected) return
+    void navigator.mediaDevices.enumerateDevices().then((devices) => {
+      const stillPresent = devices.some((device) => device.kind === 'audioinput' && device.deviceId === selected)
+      if (!stillPresent) reportDeviceFailure('device_lost')
+    }).catch(() => {
+      // Enumeration may be policy-blocked even while an already-open track is
+      // healthy. The track's `ended` event remains the authoritative signal.
+    })
+  }
+
+  function removeDeviceWatches(): void {
+    watchedTrack?.removeEventListener('ended', trackEnded)
+    watchedTrack = null
+    permission?.removeEventListener('change', permissionChanged)
+    permission = null
+    if (deviceWatchInstalled) {
+      navigator.mediaDevices?.removeEventListener?.('devicechange', devicesChanged)
+      deviceWatchInstalled = false
+    }
+  }
+
+  function installDeviceWatches(source: MediaStream): void {
+    removeDeviceWatches()
+    watchedTrack = source.getAudioTracks()[0] ?? null
+    watchedTrack?.addEventListener('ended', trackEnded)
+    if (navigator.mediaDevices?.addEventListener) {
+      navigator.mediaDevices.addEventListener('devicechange', devicesChanged)
+      deviceWatchInstalled = true
+    }
+    if (navigator.permissions?.query) {
+      void navigator.permissions.query({ name: 'microphone' as PermissionName }).then((status) => {
+        permission = status
+        permission.addEventListener('change', permissionChanged)
+      }).catch(() => {
+        // Firefox and some Chromium policies do not expose microphone through
+        // Permissions API. getUserMedia and track events still cover the path.
+      })
+    }
+  }
 
   async function ensureStream(): Promise<MediaStream> {
     if (stream && stream.getAudioTracks().some((t) => t.readyState === 'live')) return stream
@@ -110,6 +177,8 @@ export function createMicRecorder(): MicRecorder {
       )
     }
 
+    failureReported = null
+    installDeviceWatches(stream)
     attachMeter(stream)
     return stream
   }
@@ -138,7 +207,12 @@ export function createMicRecorder(): MicRecorder {
   }
 
   return {
-    async start(onAutoStop) {
+    async prepare() {
+      await ensureStream()
+      void audioCtx?.resume()
+    },
+
+    async start(onAutoStop, maxDurationMs = MAX_UTTERANCE_MS) {
       if (recorder) return
       const live = await ensureStream()
       void audioCtx?.resume()
@@ -154,7 +228,7 @@ export function createMicRecorder(): MicRecorder {
 
       capTimer = setTimeout(() => {
         if (recorder?.state === 'recording') onAutoStop('cap')
-      }, MAX_UTTERANCE_MS)
+      }, Math.max(500, Math.min(MAX_UTTERANCE_MS, maxDurationMs)))
     },
 
     stop() {
@@ -178,7 +252,7 @@ export function createMicRecorder(): MicRecorder {
     },
 
     level() {
-      if (!analyser || !samples || !recorder) return 0
+      if (!analyser || !samples) return 0
       analyser.getFloatTimeDomainData(samples)
       let sum = 0
       for (let i = 0; i < samples.length; i++) sum += samples[i] * samples[i]
@@ -201,6 +275,7 @@ export function createMicRecorder(): MicRecorder {
       }
       recorder = null
       chunks = []
+      removeDeviceWatches()
       stream?.getTracks().forEach((t) => t.stop())
       stream = null
       analyser = null

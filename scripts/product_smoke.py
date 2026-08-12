@@ -37,7 +37,7 @@ UI_DIR = ROOT / "apps" / "classroom-ui"
 FIXTURE = ROOT / "tests" / "fixtures" / "product_smoke_lesson.json"
 FAKE_SPEECH = ROOT / "tests" / "harness" / "servers" / "fake_tts.py"
 CORE_PY = CORE_DIR / ".venv" / "bin" / "python"
-PROTOCOL_VERSION = 2
+PROTOCOL_VERSION = 3
 
 
 class SmokeFailure(RuntimeError):

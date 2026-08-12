@@ -90,7 +90,7 @@ SCENE_KINDS = (
     "matching", "sentence_builder", "pronunciation", "roleplay", "explore",
 )
 
-OUTCOMES = ("correct", "near", "wrong", "silence", "timeout", "always")
+OUTCOMES = ("correct", "near", "wrong", "uncertain", "unhandled", "silence", "timeout", "always")
 
 _FRONTMATTER_RE = re.compile(r"\A---\r?\n(.*?)\r?\n---\r?\n?", re.DOTALL)
 _HEADING_RE = re.compile(r"^##[ \t]+(?P<rest>\S.*?)[ \t]*$")
@@ -141,6 +141,7 @@ class ActivitySrc:
     duration_s: int | None
     expect: dict[str, Any] | None
     branches: list[BranchSrc]
+    teaching: dict[str, Any] | None
     heading_line: int
     yaml_line: int
     raw: str
@@ -341,6 +342,7 @@ def parse_lesson(path: str | Path) -> LessonSrc:
                 ActivitySrc(
                     id=activity_id, label=label, scene=None, props={}, say=[],
                     duration_s=None, expect=None, branches=[],
+                    teaching=None,
                     heading_line=heading_line, yaml_line=heading_line, raw=raw,
                 )
             )
@@ -405,6 +407,7 @@ def parse_lesson(path: str | Path) -> LessonSrc:
                 duration_s=int(duration) if duration is not None else None,
                 expect=expect,
                 branches=branches,
+                teaching=spec.get("teaching"),
                 heading_line=heading_line,
                 yaml_line=yaml_line,
                 raw=raw,

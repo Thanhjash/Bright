@@ -23,6 +23,11 @@ import type {
   VocabularyProps,
 } from '@contracts'
 import { BusEmitter } from './emitter'
+import {
+  beginConnectionEpoch,
+  CLIENT_INSTANCE_ID,
+  currentConnectionEpoch,
+} from './clientCapabilities'
 import { MOCK_LESSON, MOCK_STEPS, sceneFrom } from './fixtures'
 import type {
   Bus,
@@ -55,6 +60,7 @@ function startIndex(): number {
 
 export class MockBus implements Bus {
   readonly role: 'stage' | 'control'
+  readonly clientInstanceId = CLIENT_INSTANCE_ID
 
   #emitter = new BusEmitter()
   #timers = new Set<ReturnType<typeof setTimeout>>()
@@ -65,7 +71,11 @@ export class MockBus implements Bus {
   #paused = false
   #mode: Mode = 'FULL'
   #started = false
+  #lessonRunning = false
   #answered = false
+  #activeAssignment: ServerEventMap['class.turn.assigned'] | null = null
+  #activeCapture: ServerEventMap['response.capture.requested'] | null = null
+  #acceptedUtterances = new Set<string>()
   /**
    * A working copy of the current step's props.
    *
@@ -95,6 +105,7 @@ export class MockBus implements Bus {
   connect(): void {
     if (this.#started) return
     this.#started = true
+    beginConnectionEpoch()
     this.#setStatus({
       state: 'mock',
       attempts: 0,
@@ -123,6 +134,10 @@ export class MockBus implements Bus {
     this.#setStatus({ state: 'closed', attempts: 0, retryInMs: 0, latencyMs: null })
   }
 
+  connectionEpoch(): number {
+    return currentConnectionEpoch()
+  }
+
   // ── inbound from the UI ────────────────────────────────────────────────
 
   send<K extends ClientEventType>(type: K, payload: ClientEventMap[K]): void {
@@ -136,6 +151,7 @@ export class MockBus implements Bus {
       case 'lesson.start': {
         const request = payload as ClientEventMap['lesson.start']
         const index = request.index ?? 0
+        this.#lessonRunning = true
         this.#goto(index)
         this.#later(() => this.#emit('lesson.started', {
           requestId: request.requestId,
@@ -160,11 +176,34 @@ export class MockBus implements Bus {
         break
       }
       case 'student.speech.final': {
-        const utteranceId = (payload as ClientEventMap['student.speech.final']).utteranceId
+        const response = payload as ClientEventMap['student.speech.final']
+        const utteranceId = response.utteranceId
+        if (this.#acceptedUtterances.has(utteranceId)) break
+        this.#acceptedUtterances.add(utteranceId)
         this.#later(() => this.#emit('student.response.accepted', {
           utteranceId,
           outcome: 'rejected',
         }), 40)
+        this.#later(() => {
+          this.#emit('class.turn.closed', {
+            assignmentId: response.assignmentId,
+            responseTurnId: response.responseTurnId,
+            outcome: 'rejected',
+          })
+          this.#activeAssignment = null
+          this.#activeCapture = null
+        }, 60)
+        break
+      }
+      case 'capability.report': {
+        const report = payload as ClientEventMap['capability.report']
+        if (report.role === 'stage') {
+          this.#emit('stage.lease.granted', {
+            leaseId: `mock-lease-${report.connectionEpoch}`,
+            clientInstanceId: report.clientInstanceId,
+            expiresAt: Date.now() + 10_000,
+          })
+        }
         break
       }
       case 'speech.barge_in': {
@@ -201,6 +240,11 @@ export class MockBus implements Bus {
       stage: this.#step.stage,
       activityId: this.#step.id,
       activityGeneration: this.#stateVersion,
+      decisionRevision: this.#stateVersion,
+      ...(this.#activeAssignment ? {
+        assignmentId: this.#activeAssignment.assignmentId,
+        responseTurnId: this.#activeAssignment.responseTurnId,
+      } : {}),
     }
   }
 
@@ -216,13 +260,26 @@ export class MockBus implements Bus {
     this.#clearTimers()
     this.#index = Math.max(0, Math.min(MOCK_STEPS.length - 1, index))
     this.#answered = false
+    this.#activeAssignment = null
+    this.#activeCapture = null
     this.#props = structuredClone(MOCK_STEPS[this.#index].props)
     this.#stateVersion += 1
 
     this.#emit('scene.update', this.#scene())
     this.#emit('lesson.position', this.#lessonPosition())
-    this.#speak()
-    this.#armAdvance()
+    this.#emitSession()
+    this.#emit('classroom.status', {
+      liveness: 'live',
+      readiness: 'ready',
+      teachable: true,
+      lessonId: MOCK_LESSON.lessonId,
+    })
+    if (this.#lessonRunning) {
+      this.#speak()
+      this.#armAdvance()
+      if (this.#captureScope() !== 'none')
+        this.#later(() => this.#assignTurn(), SAY_DELAY_MS + 250)
+    }
   }
 
   #speak(): void {
@@ -234,6 +291,9 @@ export class MockBus implements Bus {
   }
 
   #armAdvance(): void {
+    // A response-bearing activity is terminal only when its assigned move is
+    // closed. A wall-clock auto-advance would invalidate a child mid-answer.
+    if (this.#captureScope() !== 'none') return
     const hold = this.#step.holdMs
     if (!hold || this.#paused) return
     if (this.#index >= MOCK_STEPS.length - 1) return
@@ -268,6 +328,69 @@ export class MockBus implements Bus {
         this.#setMode('DEGRADED', 'facilitator took over')
         break
     }
+    this.#emitSession()
+  }
+
+  #emitSession(): void {
+    this.#emit('class.session.updated', {
+      sessionId: 'mock-session',
+      status: this.#paused ? 'PAUSED' : this.#lessonRunning ? 'RUNNING' : 'PREPARING',
+      decisionRevision: this.#stateVersion,
+      elapsedS: 0,
+      stage: this.#step.stage,
+      currentTargetId: this.#activeAssignment?.targetId,
+      responseTurnId: this.#activeAssignment?.responseTurnId,
+      resumeAllowed: this.#paused,
+    })
+  }
+
+  #captureScope(): 'answer_station' | 'board' | 'none' {
+    switch (this.#step.kind) {
+      case 'pronunciation':
+      case 'roleplay':
+        return 'answer_station'
+      case 'choice':
+      case 'matching':
+      case 'sentence_builder':
+      case 'explore':
+        return 'board'
+      case 'vocabulary':
+        return (this.#props as VocabularyProps).interaction === 'none' ? 'none' : 'board'
+      default:
+        return 'none'
+    }
+  }
+
+  #assignTurn(): void {
+    const captureScope = this.#captureScope()
+    if (!this.#lessonRunning || this.#paused || captureScope === 'none') return
+    const suffix = `${this.#step.id}-${this.#stateVersion}`
+    this.#activeAssignment = {
+      assignmentId: `mock-assignment-${suffix}`,
+      responseTurnId: `mock-response-${suffix}`,
+      sessionId: 'mock-session',
+      decisionRevision: this.#stateVersion,
+      activityId: this.#step.id,
+      activityGeneration: this.#stateVersion,
+      targetId: MOCK_LESSON.currentStudentId,
+      responseScope: 'selected_individual',
+      captureScope,
+      expiresAt: Date.now() + 30_000,
+    }
+    this.#emit('class.turn.assigned', this.#activeAssignment)
+    if (captureScope === 'answer_station') {
+      this.#activeCapture = {
+        captureId: crypto.randomUUID(),
+        assignmentId: this.#activeAssignment.assignmentId,
+        responseTurnId: this.#activeAssignment.responseTurnId,
+        readyDeadlineAt: Date.now() + 10_000,
+        speechOnsetDeadlineMs: 6_000,
+        maxDurationMs: 8_000,
+        endSilenceMs: 800,
+      }
+      this.#emit('response.capture.requested', this.#activeCapture)
+    }
+    this.#emitSession()
   }
 
   #setMode(mode: Mode, reason: string): void {
@@ -427,7 +550,25 @@ export class MockBus implements Bus {
   }
 
   #snapshot(): void {
-    this.#emit('scene.snapshot', { scene: this.#scene(), lesson: this.#lessonPosition() })
+    this.#emit('scene.snapshot', {
+      scene: this.#scene(),
+      lesson: this.#lessonPosition(),
+      session: {
+        sessionId: 'mock-session',
+        status: this.#paused ? 'PAUSED' : this.#lessonRunning ? 'RUNNING' : 'PREPARING',
+        decisionRevision: this.#stateVersion,
+        elapsedS: 0,
+        stage: this.#step.stage,
+      },
+      status: {
+        liveness: 'live',
+        readiness: 'ready',
+        teachable: true,
+        lessonId: MOCK_LESSON.lessonId,
+      },
+      assignment: this.#activeAssignment ?? undefined,
+      capture: this.#activeCapture ?? undefined,
+    })
   }
 
   // ── plumbing ───────────────────────────────────────────────────────────

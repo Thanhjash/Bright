@@ -6,7 +6,6 @@
  * the board owns every interaction.
  */
 import { ListeningIndicator } from './ListeningIndicator'
-import { ModeBadge } from './ModeBadge'
 import { StudentName } from './StudentName'
 import { SubtitleBar } from './SubtitleBar'
 
@@ -20,7 +19,8 @@ export function OverlayLayer() {
           <StudentName />
           <ListeningIndicator />
         </div>
-        <ModeBadge />
+        {/* Provider/model mode is facilitator information, not a child-facing
+            failure. Classroom capability recovery is shown separately. */}
       </div>
 
       {/* Bottom lane: subtitles only, and only over the BOARD. `--avatar-col`

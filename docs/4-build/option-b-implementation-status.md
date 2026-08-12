@@ -1,80 +1,79 @@
 # Option B implementation status
 
 **Updated:** 2026-08-12
-**Status:** implemented, integration verification in progress
+**Status:** autonomous-classroom v3 vertical slice mechanically green; not release-ready
 
-The locked architecture is in
-[Option B classroom runtime](../2-decisions/option-b-classroom-runtime.md). This
-file is the current handoff, not a forecast.
+The locked boundary remains [Option B classroom runtime](../2-decisions/option-b-classroom-runtime.md):
+Core is the only authority, Hermes is a replaceable reasoning sidecar, Stage owns
+physical output, and Control owns answer-station input. This page separates code and
+mechanical evidence from classroom, provider and governance proof.
 
 ## Implemented
 
-- Protocol v2 in the Markdown, TypeScript, and Python contracts: production
-  lesson start, activity epoch, utterance correlation, streamed speech turns,
-  playback ACKs, and correlated student-response terminal events.
-- Core-owned lesson start and conversation correlation with role-gated control
-  and Stage playback events.
-- Audio-aware activity arming: listening and silence/duration timers begin after
-  matching playback completion; a bounded watchdog preserves offline liveness.
-- Conservative speech grading: normalized exact answer plus confidence threshold;
-  low-confidence exact speech is uncertain/near, and extra clauses do not become
-  correct by containment.
-- Learner-memory isolation and hosted-minimal context: no cross-student widening,
-  no model-selected learner writes, no raw transcript in scene/durable evidence,
-  and no recalled learner notes sent to the hosted classroom model.
-- Hermes Responses adapter with strict SSE parsing, `store:false`, Core-issued
-  turn capability, cancellation, failure mapping, and a local-Gemma provider seam.
-- Bearer-authenticated four-tool Bright MCP with TTL, learner/state/activity scope,
-  stale-call rejection, and mutation deduplication. The live profile excludes
-  `classroom_say` and all broad Hermes tools.
-- Stage-only keyed speech output through AIRI, exact cancellation, AbortSignal,
-  ACT timing, audio assets, playback ACKs, and reconnect-safe terminal handling.
-- Control-only mic with activity snapshot, correlated response completion,
-  queued-output suppression, 800 ms echo tail, stale-capture discard, and an
-  authorized exact-turn PTT barge-in handshake.
-- WebSocket roles are immutable after handshake and browser origins are checked
-  against the configured allowlist.
-- Production Start/Restart Lesson control; Hermes/systemd/profile/install/doctor
-  integration remains optional so Core can teach authored lessons without it.
-- Room harness now fails on any false accept rather than tolerating one-offs.
+- Protocol v3 across Markdown, TypeScript and Python: class/session state, roster and
+  attendance, decision revision, exact turn assignment, capture lifecycle, capability
+  leases, playback correlation and lesson-schema versioning independent of wire version.
+- Core-owned `ClassSessionController` with explicit session/activity/response/agent
+  states, atomic transitions, roster, attendance, deterministic fair selection,
+  cooldown, participation ledger, exactly-once response claims and checkpoint writes.
+- One narrow live Hermes terminal tool:
+  `classroom_propose_move(turn_id, move_id, teacher_line)`. Core binds opaque legal
+  moves, rejects stale/duplicate proposals, validates the teacher line, speaks it, and
+  commits the semantic move only after matching physical playback completes.
+- Pinned patched Hermes runtime `0.20.0+bright.1`, upstream
+  `03fa32c92dd445eb64c7f67434dd91b32c40701d`, with live session persistence,
+  chaining, background work, broad tools and post-terminal second inference disabled.
+- Hosted-model data boundary: `hosted_semantic` sends only the graded outcome, never
+  raw transcript. Synthetic raw transcript may reach Hermes only with `synthetic_dev`,
+  explicit acknowledgement and a fixture ID, and is excluded from durable evidence.
+- Stage output and Control answer-station input are separate expiring leases. Core
+  issues exact assignments/capture requests; group/choral input cannot become named
+  evidence. Loss of required capability enters recovery rather than silent advance.
+- A 17-activity Market Food candidate compiles to Protocol v3 and covers a 37-minute
+  correct path and 39-minute recovery path. Every autonomous activity declares stage,
+  budget, response/participation scope, skill IDs, evidence policy and recovery targets.
+- Control has roster/attendance setup, room-readiness gating, teaching/recovery status
+  and prominent emergency controls. Stage has learner turn and recovery cues.
 
-## Verification evidence
+## Mechanical evidence
 
-- Core Option-B + Hermes focused tests: 18 passed.
-- Core runner tests: 41 passed after protocol-version and playback-watchdog hardening.
-- Core learner-memory suite: 41 passed.
-- Hermes full non-live suite reported by its implementation owner: 77 passed,
-  4 live-provider tests deselected.
-- AIRI bridge: typecheck passed; 13 files / 165 tests passed; build passed.
-- Classroom UI: typecheck and production build passed.
-- Python compilation, Hermes YAML parse, and modified shell syntax passed.
+| Surface | Result | What it proves |
+|---|---:|---|
+| Classroom Core | **224 passed** | deterministic state, runner, app, MCP, session and policy behavior |
+| Bright agent | **82 passed, 4 live-provider deselected** | non-live adapter/eval behavior only |
+| AIRI bridge | **165 passed** | bridge unit behavior; typecheck/build also green |
+| Chromium v3 flow | **2 passed** | mocked Stage/Control v3 browser contract at tested viewports |
+| Content contract | **7 passed + lesson self-test green** | compiler/linter/simulated paths and draft release rejection |
+| Pinned Hermes artifact | manifest + patch/wheel hashes verified | reproducible Bright patch identity, not hosted-provider behavior |
 
-## Open release blockers
+These counts are a snapshot of the implementation handoff. The Chromium test uses
+mocked speech and does not establish real audio timing, echo behavior or Hermes
+transport. The four agent deselections require live provider credentials/runtime.
 
-- Core suites that enter Starlette `TestClient` (including `test_app.py` and
-  heartbeat WebSocket tests) still hang in this environment. The separate
-  learner-memory suite is now 41/41 green; the remaining lifecycle blocker
-  occurs inside AnyIO's blocking portal before the first HTTP assertion. A
-  one-route FastAPI application with no Bright imports reproduces the same
-  `TestClient.__enter__` timeout here, so this is an environment/toolchain gate;
-  it still must pass on CI or the appliance image before release.
-- A real pinned Hermes + hosted-provider + MCP smoke has not run in this workspace;
-  it requires credentials and the pinned Hermes wheel/runtime.
-- Real child/classroom recordings have not passed the zero-false-accept release
-  corpus. Synthetic/Piper evidence is not ecological validation.
-- The local process/socket smoke currently proves the production Core wire path,
-  role authorization, production lesson start, and playback correlation. It does
-  not execute browser audio, AIRI, Piper, ASR, or Hermes and is not release proof.
-- Authorized PTT barge-in is implemented, but real-room echo/AEC and child-speech
-  behavior remain unvalidated on target hardware.
-- Local Gemma/OVMS tool-call, latency, memory, thermal, cancellation, and audio
-  provider conformance remains a future measured migration gate.
-- Git metadata is unavailable in this workspace (`.git` is an empty read-only
-  directory), so this implementation cannot yet be committed or pushed.
+## Honest capability boundary
 
-## Next gate
+The slice demonstrates one sampled individual speech turn through assignment and
+capture contracts. It does **not** yet demonstrate a complete oral classroom loop.
 
-Run the TestClient suite on CI/appliance, then conduct a real-browser composed
-Stage + Control + Core + AIRI + speech + pinned-Hermes smoke. Only after that
-should the three-run demo rehearsal and consented real-room safety corpus be
-treated as release evidence.
+- Curriculum status is `draft`; approver is explicitly unassigned. Release lint and
+  compile correctly fail until an educator approves the lesson and rubric.
+- Roster/fairness/participation exist, but longitudinal class-aware learner memory is
+  incomplete.
+- Checkpoints are written, but Core startup does not restore and resume one.
+- Stage budgets, checkpoints and recovery targets exist in content; the controller does
+  not yet execute the complete pacing/recovery policy across a 35–45 minute session.
+- No real Stage + Control + Core + AIRI + Piper + ASR + hosted Hermes composed run has
+  passed. There is no target-hardware, child/noisy-room, echo/AEC or provider proof.
+- Local Gemma/OpenVINO remains a later provider migration behind the same Hermes seam;
+  it is not a blocker for hosted-product implementation, but it is a competition gate.
+- Consent, deletion/export, licences, SBOM, signed updates and cleared avatar remain
+  release work.
+
+## Next release-critical slice
+
+Execute the authored pacing/recovery metadata, restore checkpoints on Core restart,
+complete class-aware memory attribution, and run the same one-turn flow through real
+browser audio, ASR and pinned hosted Hermes. Then run repeated full 37–39 minute
+sessions and the consented room corpus. Until those gates pass, describe Bright as an
+implemented autonomous-classroom vertical slice—not a competition-ready autonomous
+teacher.

@@ -102,6 +102,10 @@ class Settings:
     #: correct. Missing/low confidence is deliberately uncertain (``near``).
     speech_correct_confidence: float = 0.75
     playback_ack_timeout_s: float = 10.0
+    #: Maximum time for the answer station to become ready *and start* the
+    #: exact capture requested by Core. It is deliberately separate from the
+    #: speech-onset/VAD budget, which begins only after capture.started.
+    capture_ready_timeout_s: float = 20.0
 
     # modes
     mode_override: str | None = None          # pin FULL/DEGRADED/OFFLINE for dev
@@ -127,6 +131,10 @@ class Settings:
     #: default for an internet provider: no real learner identity or recalled
     #: notes. ``local-trusted`` is reserved for a loopback model deployment.
     agent_context_policy: str = "hosted-minimal"
+    #: Provider-bound data policy. Synthetic transcripts require an explicit
+    #: two-part development guard; hosted production is semantic-only.
+    data_policy: str = "hosted_semantic"
+    synthetic_dev_confirmed: bool = False
     #: Shared loopback bearer capability for the Hermes -> Core MCP hop.  An
     #: empty value disables MCP rather than exposing an unauthenticated tool
     #: surface.
@@ -185,6 +193,9 @@ class Settings:
             playback_ack_timeout_s=max(
                 0.1, _env_float("CORE_PLAYBACK_ACK_TIMEOUT_S", 10.0)
             ),
+            capture_ready_timeout_s=max(
+                1.0, _env_float("CORE_CAPTURE_READY_TIMEOUT_S", 20.0)
+            ),
             mode_override=mode_override,
             full_max_latency_s=_env_float("CORE_FULL_MAX_LATENCY_S", 3.0),
             degraded_max_latency_s=_env_float("CORE_DEGRADED_MAX_LATENCY_S", 10.0),
@@ -201,6 +212,8 @@ class Settings:
                 == "local-trusted"
                 else "hosted-minimal"
             ),
+            data_policy=_env("BRIGHT_DATA_POLICY", "hosted_semantic").strip().lower(),
+            synthetic_dev_confirmed=_env_bool("BRIGHT_SYNTHETIC_DEV_ACK", False),
             mcp_token=os.environ.get("BRIGHT_MCP_TOKEN", ""),
             probe_interval_s=_env_int("CORE_PROBE_INTERVAL_S", 60),
             summary_delay_s=_env_int("CORE_SUMMARY_DELAY_S", 30),

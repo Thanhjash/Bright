@@ -20,6 +20,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { MatchingProps, MediaItem } from '@contracts'
 import { useBus } from '../../bus'
+import { currentResponseCorrelation } from '../../store/classroom'
 import { BoardShell, MediaTile, cx } from './parts'
 import { useDragPair } from './useDragPair'
 
@@ -89,8 +90,10 @@ export function MatchingBoard({ props }: { props: MatchingProps }) {
       // Normalise to left>right regardless of which way the child dragged.
       const [l, r] = leftIds.has(fromId) ? [fromId, toId] : [toId, fromId]
       if (matched.has(l) || matched.has(r)) return
+      const correlation = currentResponseCorrelation()
+      if (!correlation) return
       setLocal((prev) => [...prev, [l, r]]) // optimistic, same tick as the drop
-      bus.send('interaction.drag', { fromId: l, toId: r })
+      bus.send('interaction.drag', { fromId: l, toId: r, ...correlation })
     },
   })
 

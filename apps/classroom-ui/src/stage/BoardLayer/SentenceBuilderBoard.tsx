@@ -19,6 +19,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { SentenceBuilderProps } from '@contracts'
 import { useBus } from '../../bus'
+import { currentResponseCorrelation } from '../../store/classroom'
 import { BoardShell, cx } from './parts'
 import { useDragPair } from './useDragPair'
 
@@ -51,8 +52,10 @@ export function SentenceBuilderBoard({ props }: { props: SentenceBuilderProps })
   const drag = useDragPair({
     onDrop: (fromId, toId) => {
       if (!toId.startsWith('slot') || placed.includes(fromId)) return
+      const correlation = currentResponseCorrelation()
+      if (!correlation) return
       setLocal((prev) => [...prev, fromId]) // optimistic, same tick as the drop
-      bus.send('interaction.drag', { fromId, toId })
+      bus.send('interaction.drag', { fromId, toId, ...correlation })
     },
   })
 

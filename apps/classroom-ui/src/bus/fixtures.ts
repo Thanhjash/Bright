@@ -32,6 +32,7 @@ export const MOCK_LESSON: Omit<
 > = {
   lessonId: 'demo-market-01',
   classId: '7A',
+  decisionRevision: 0,
   currentStudentId: 'minh',
 }
 

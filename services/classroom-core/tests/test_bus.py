@@ -58,7 +58,7 @@ def test_envelope_shape_and_camel_case(bus: EventBus, store: StateStore):
     frame = drain(a)[0]
 
     assert set(frame) == {"v", "type", "seq", "stateVersion", "ts", "payload"}
-    assert frame["v"] == 2
+    assert frame["v"] == 3
     assert frame["stateVersion"] == store.state_version
     assert isinstance(frame["ts"], int)
     # nested pydantic models are serialised with by_alias too

@@ -16,3 +16,9 @@ export const CORE_HTTP = import.meta.env.VITE_CORE_HTTP ?? 'http://127.0.0.1:800
  *  `127.0.0.1:3000` / `localhost:3000`, so a UI served from any other port gets
  *  a "Failed to fetch" it cannot distinguish from the service being down. */
 export const SPEECH_URL = import.meta.env.VITE_SPEECH_URL ?? 'http://127.0.0.1:8001'
+
+/**
+ * Explicit synthetic-dev seam. There is deliberately no runtime/UI toggle:
+ * a normal build cannot accidentally label real learner evidence synthetic.
+ */
+export const SYNTHETIC_FIXTURE_ID = import.meta.env.VITE_SYNTHETIC_FIXTURE_ID?.trim() || undefined

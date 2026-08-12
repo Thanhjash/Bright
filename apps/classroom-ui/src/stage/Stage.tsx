@@ -24,6 +24,7 @@ import { AvatarLayer } from './AvatarLayer/AvatarLayer'
 import { OverlayLayer } from './OverlayLayer/OverlayLayer'
 import { DisconnectedNotice } from './DisconnectedNotice'
 import { useClassroom } from '../store/classroom'
+import { ClassroomNotice } from './ClassroomNotice'
 
 export function Stage() {
   const scene = useClassroom((s) => s.scene)
@@ -57,6 +58,7 @@ export function Stage() {
       </div>
 
       <OverlayLayer />
+      <ClassroomNotice />
       <DisconnectedNotice />
     </main>
   )

@@ -11,7 +11,10 @@ Option B is now an implemented classroom-runtime boundary, not merely an archite
 
 ## What Happened
 
-- Protocol v2 added activity-generation, utterance, speech-turn, and playback correlation across Core, Stage, and Control. Listening and timers now arm from the matching terminal playback event, stale input is rejected, and exact-turn cancellation supports bounded PTT barge-in.
+- Protocol v2 was the baseline at that checkpoint; the current runtime is Protocol v3,
+  adding class/session, assignments, capture lifecycle and capability leases. Listening
+  and timers arm from matching terminal playback, stale input is rejected, and exact-turn
+  cancellation supports bounded PTT barge-in.
 - Voice ownership was narrowed to one adaptive source and one physical renderer. Stage emits keyed playback acknowledgements; Control suppresses capture during output and through an echo tail.
 - Privacy moved into runtime constraints: hosted requests use minimum pseudonymous context with `store: false`; raw audio/transcripts remain ephemeral and are excluded from durable evidence, recalled context, and hosted summaries; learner memory cannot widen across students.
 - Focused evidence is green: Option B/Hermes tests reported 18 passes, Core runner and learner-memory suites 41 each, Hermes non-live 77, and AIRI 165 plus typecheck/build. The production smoke harness and zero-false-accept room gate now exist.

@@ -1,53 +1,57 @@
-/**
- * `/control` — the facilitator console.
- *
- * Codex ranked "loss of teacher control" as risk #2 for this product
- * (docs/3-design/runtime-topology.md §1). So this screen has exactly one job: let a teacher see what is
- * happening and stop or steer it in one tap, without understanding anything
- * about the system. Every command button is a touch target, always enabled,
- * and always visible without scrolling.
- */
+/** `/control` — setup, quiet supervision and classroom safety. */
+import { useCallback, useState } from 'react'
 import { BusProvider } from '../../bus'
 import { CommandBar } from './CommandBar'
 import { ConnectionPill } from './ConnectionPill'
 import { LinkHealth } from './LinkHealth'
 import { StatusPanel } from './StatusPanel'
-import { TranscriptPanel } from './TranscriptPanel'
 import { VoicePanel } from './VoicePanel'
+import { SetupPanel } from './SetupPanel'
+import { IS_MOCK } from '../../lib/env'
+import { mockRoster } from './lessonSetup'
+import type { LessonSetup } from './lessonSetup'
+import { useClassroom } from '../../store/classroom'
 
 export function ControlRoute() {
+  const seeded = IS_MOCK ? mockRoster() : []
+  const [setup, setSetupState] = useState<LessonSetup>(() => ({
+    lessonId: '',
+    classId: '',
+    roster: seeded,
+    attendanceIds: seeded.map(({ id }) => id),
+  }))
+  const setSetup = useCallback((next: LessonSetup) => setSetupState(next), [])
+
   return (
     <BusProvider role="control">
-      <div className="flex h-full w-full flex-col bg-ink-900 text-cream">
-        <header className="flex flex-wrap items-center justify-between gap-4 border-b-3 border-ink-700 px-6 py-4">
+      <div className="flex h-full w-full flex-col overflow-hidden bg-ink-900 text-cream">
+        <a href="#control-main" className="sr-only focus:not-sr-only focus:absolute focus:z-50 focus:bg-amber focus:p-3 focus:text-ink-950">
+          Skip to classroom controls
+        </a>
+        <header className="flex shrink-0 items-center justify-between gap-3 border-b-3 border-ink-700 px-5 py-3">
           <div className="flex items-baseline gap-3">
             <span className="font-display text-2xl font-extrabold tracking-tight">Bright</span>
-            <span className="rounded-full bg-ink-700 px-3 py-1 text-xs font-bold tracking-[0.16em] text-muted uppercase">
-              Facilitator
-            </span>
+            <span className="rounded-full bg-ink-700 px-3 py-1 text-xs font-bold tracking-[0.16em] text-muted uppercase">Facilitator</span>
           </div>
-          <div className="flex flex-wrap items-center gap-3">
-            <LinkHealth />
-            <ConnectionPill />
-          </div>
+          <div className="flex items-center gap-3"><LinkHealth /><ConnectionPill /></div>
         </header>
 
-        <div className="grid min-h-0 flex-1 grid-cols-1 gap-5 p-5 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
-          {/* Left: where the lesson is, and the six ways to steer it. */}
-          <div className="flex min-h-0 flex-col gap-5 overflow-y-auto">
+        <main id="control-main" className="grid min-h-0 flex-1 grid-cols-1 gap-4 overflow-y-auto p-4 lg:grid-cols-[minmax(0,1.15fr)_minmax(22rem,0.85fr)] lg:overflow-hidden">
+          <div className="flex min-h-0 flex-col gap-4 lg:overflow-y-auto">
             <StatusPanel />
-            <CommandBar />
+            {!useRunningSession() ? <SetupPanel value={setup} onChange={setSetup} /> : null}
+            <CommandBar setup={setup} />
           </div>
-          {/* Right: the child's voice going in, and everything said coming back.
-              Hold-to-talk is held for seconds at a time while a teacher watches
-              a child, so it sits ABOVE the fold beside the transcript it feeds —
-              not at the bottom of a column that scrolls on a small laptop. */}
-          <div className="flex min-h-0 flex-col gap-5">
-            <VoicePanel />
-            <TranscriptPanel />
-          </div>
-        </div>
+          <div className="min-h-0 lg:overflow-y-auto"><VoicePanel /></div>
+        </main>
       </div>
     </BusProvider>
   )
+}
+
+function useRunningSession(): boolean {
+  // Kept as a tiny selector component helper so setup disappears during class
+  // without duplicating server-derived session rules in local form state.
+  const session = useClassroom((state) => state.session)
+  return session?.status === 'RUNNING' || session?.status === 'PAUSED' || session?.status === 'RECOVERING'
 }

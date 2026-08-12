@@ -55,7 +55,7 @@ def test_snapshot_is_a_copy(store: StateStore):
     snap["lesson"].stage = "MUTATED"
     assert store.scene.props["text"] == "hi"
     assert store.lesson.stage != "MUTATED"
-    assert set(snap) == {"scene", "lesson"}
+    assert set(snap) == {"scene", "lesson", "decisionRevision", "activityGeneration"}
 
 
 def test_set_lesson_replaces_position(store: StateStore):

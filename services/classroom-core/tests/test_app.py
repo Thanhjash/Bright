@@ -20,7 +20,7 @@ from config import Settings
 
 ROOT = Path(__file__).resolve().parents[1]
 
-HELLO = {"v": 2, "type": "client.hello", "payload": {"role": "stage"}}
+HELLO = {"v": 3, "type": "client.hello", "payload": {"role": "stage"}}
 
 
 @pytest.fixture
@@ -198,7 +198,7 @@ def test_hello_gets_a_snapshot_then_a_stream(client: TestClient):
         ws.send_text(json.dumps(HELLO))
         snapshot, mode = handshake(ws)
         assert snapshot["seq"] == 1
-        assert snapshot["v"] == 2
+        assert snapshot["v"] == 3
         assert "scene" in snapshot["payload"] and "lesson" in snapshot["payload"]
         assert snapshot["payload"]["scene"]["stateVersion"] == snapshot["stateVersion"]
         assert snapshot["payload"]["lesson"]["activityCount"] == 0
@@ -232,7 +232,7 @@ def test_two_clients_each_get_their_own_seq(client: TestClient):
         a.send_text(json.dumps(HELLO))
         assert a.receive_json()["seq"] == 1
         with client.websocket_connect("/ws") as b:
-            b.send_text(json.dumps({"v": 2, "type": "client.hello", "payload": {"role": "control"}}))
+            b.send_text(json.dumps({"v": 3, "type": "client.hello", "payload": {"role": "control"}}))
             assert b.receive_json()["seq"] == 1
             client.post("/dev/say", json={"text": "both", "turnId": "t"})
             assert a.receive_json()["seq"] == 2
@@ -241,13 +241,31 @@ def test_two_clients_each_get_their_own_seq(client: TestClient):
 
 def test_interaction_over_the_socket_drives_the_runner(client: TestClient):
     client.post("/dev/lesson/start", json={"index": 2})   # q_meow
+    core = client.app.state.core
+    assert core.runner.on_response_window is not None
+    while core.runner._pending_playback_turns:
+        turn_id = core.runner._pending_playback_turns[0]
+        assert client.portal.call(core.runner.on_playback_started, turn_id)
+        assert client.portal.call(core.runner.on_playback_finished, turn_id)
+    current_assignment = core.session_controller.assignments.current_for_activity(
+        core.session_id, core.runner.current.id, core.runner._generation
+    )
+    assert current_assignment is not None, [
+        (a.session_id, a.activity_id, a.activity_generation, a.state)
+        for a in core.session_controller.assignments._assignments.values()
+    ]
     with client.websocket_connect("/ws") as ws:
         ws.send_text(json.dumps(HELLO))
         snapshot = ws.receive_json()
         assert snapshot["payload"]["scene"]["kind"] == "choice"
+        assignment = snapshot["payload"]["assignment"]
 
         ws.send_text(
-            json.dumps({"v": 2, "type": "interaction.choice", "payload": {"optionId": "cat"}})
+            json.dumps({"v": 3, "type": "interaction.choice", "payload": {
+                "optionId": "cat",
+                "assignmentId": assignment["assignmentId"],
+                "responseTurnId": assignment["responseTurnId"],
+            }})
         )
         kinds = []
         for _ in range(4):
@@ -281,7 +299,7 @@ def test_unknown_client_event_returns_an_error_frame(client: TestClient):
     with client.websocket_connect("/ws") as ws:
         ws.send_text(json.dumps(HELLO))
         handshake(ws)
-        ws.send_text(json.dumps({"v": 2, "type": "nonsense.event", "payload": {}}))
+        ws.send_text(json.dumps({"v": 3, "type": "nonsense.event", "payload": {}}))
         event = ws.receive_json()
         assert event["type"] == "error"
         assert event["payload"]["code"] == "unknown_event"
@@ -302,7 +320,7 @@ def test_first_message_must_be_hello(client: TestClient):
 
     with pytest.raises(WebSocketDisconnect):
         with client.websocket_connect("/ws") as ws:
-            ws.send_text(json.dumps({"v": 2, "type": "interaction.choice", "payload": {}}))
+            ws.send_text(json.dumps({"v": 3, "type": "interaction.choice", "payload": {}}))
             ws.receive_json()
 
 
@@ -346,12 +364,12 @@ def test_control_can_start_a_lesson_with_dev_endpoints_off(settings: Settings):
     settings.dev_endpoints = False
     with TestClient(create_app(settings)) as bare:
         with bare.websocket_connect("/ws") as ws:
-            ws.send_text(json.dumps({"v": 2, "type": "client.hello", "payload": {"role": "control"}}))
+            ws.send_text(json.dumps({"v": 3, "type": "client.hello", "payload": {"role": "control"}}))
             handshake(ws)
             ws.send_text(
                 json.dumps(
                     {
-                        "v": 2,
+                        "v": 3,
                         "type": "lesson.start",
                         "payload": {
                             "requestId": "start-1",
@@ -362,7 +380,11 @@ def test_control_can_start_a_lesson_with_dev_endpoints_off(settings: Settings):
                     }
                 )
             )
-            frames = [ws.receive_json() for _ in range(9)]
+            frames = []
+            for _ in range(20):
+                frames.append(ws.receive_json())
+                if frames[-1]["type"] == "lesson.started":
+                    break
             started = next(frame for frame in frames if frame["type"] == "lesson.started")
             assert started["payload"]["requestId"] == "start-1"
             assert started["payload"]["studentId"] == "s01"
@@ -374,20 +396,42 @@ def test_control_can_start_a_lesson_with_dev_endpoints_off(settings: Settings):
 
 def test_speech_response_ack_is_correlated_and_stale_input_is_rejected(client: TestClient):
     client.post("/dev/lesson/start", json={"index": 9, "studentId": "s01"})
+    core = client.app.state.core
+    while core.runner._pending_playback_turns:
+        turn_id = core.runner._pending_playback_turns[0]
+        client.portal.call(core.runner.on_playback_started, turn_id)
+        client.portal.call(core.runner.on_playback_finished, turn_id)
     with client.websocket_connect("/ws") as ws:
-        ws.send_text(json.dumps(HELLO))
+        ws.send_text(json.dumps({"v": 3, "type": "client.hello", "payload": {"role": "control"}}))
         snapshot, _ = handshake(ws)
+        ws.send_text(json.dumps({
+            "v": 3,
+            "type": "capability.report",
+            "payload": {
+                "clientInstanceId": "control-test",
+                "connectionEpoch": 1,
+                "role": "control",
+                "capabilities": {"audioCapture": True},
+                "reportedAt": 1,
+            },
+        }))
         position = snapshot["payload"]["lesson"]
+        assignment = snapshot["payload"]["assignment"]
+        capture = snapshot["payload"]["capture"]
 
         ws.send_text(json.dumps({
-            "v": 2,
+            "v": 3,
             "type": "student.speech.final",
             "payload": {
                 "text": "I like cats",
                 "confidence": 0.99,
                 "utteranceId": "utt-stale",
+                "assignmentId": assignment["assignmentId"],
+                "responseTurnId": assignment["responseTurnId"],
+                "captureId": capture["captureId"],
+                "captureOutcome": "speech",
                 "activityId": position["activityId"],
-                "activityGeneration": position["activityGeneration"] - 1,
+                "activityGeneration": position["activityGeneration"],
             },
         }))
         rejected_frames = [ws.receive_json() for _ in range(2)]
@@ -401,17 +445,74 @@ def test_speech_response_ack_is_correlated_and_stale_input_is_rejected(client: T
             "utteranceId": "utt-stale", "outcome": "rejected"
         }
 
+        correlation = {
+            "captureId": capture["captureId"],
+            "assignmentId": assignment["assignmentId"],
+            "responseTurnId": assignment["responseTurnId"],
+        }
         ws.send_text(json.dumps({
-            "v": 2,
+            "v": 3,
+            "type": "response.capture.ready",
+            "payload": {**correlation, "status": "ready"},
+        }))
+        ws.send_text(json.dumps({
+            "v": 3,
+            "type": "response.capture.started",
+            "payload": correlation,
+        }))
+
+        ws.send_text(json.dumps({
+            "v": 3,
             "type": "student.speech.final",
             "payload": {
                 "text": "I like cats",
                 "confidence": 0.95,
                 "utteranceId": "utt-good",
+                "assignmentId": assignment["assignmentId"],
+                "responseTurnId": assignment["responseTurnId"],
+                "captureId": capture["captureId"],
+                "captureOutcome": "speech",
                 "activityId": position["activityId"],
                 "activityGeneration": position["activityGeneration"],
             },
         }))
-        frames = [ws.receive_json() for _ in range(3)]
+        frames = []
+        for _ in range(12):
+            frames.append(ws.receive_json())
+            if frames[-1]["type"] == "student.response.accepted":
+                break
         accepted = next(f for f in frames if f["type"] == "student.response.accepted")
         assert accepted["payload"] == {"utteranceId": "utt-good", "outcome": "correct"}
+
+
+def test_stage_cannot_submit_broadcast_speech_capability(client: TestClient):
+    client.post("/dev/lesson/start", json={"index": 9, "studentId": "s01"})
+    core = client.app.state.core
+    while core.runner._pending_playback_turns:
+        turn_id = core.runner._pending_playback_turns[0]
+        client.portal.call(core.runner.on_playback_started, turn_id)
+        client.portal.call(core.runner.on_playback_finished, turn_id)
+    with client.websocket_connect("/ws") as ws:
+        ws.send_text(json.dumps(HELLO))
+        snapshot, _ = handshake(ws)
+        assignment = snapshot["payload"]["assignment"]
+        capture = snapshot["payload"]["capture"]
+        position = snapshot["payload"]["lesson"]
+        ws.send_text(json.dumps({
+            "v": 3,
+            "type": "student.speech.final",
+            "payload": {
+                "text": "I like cats",
+                "confidence": 0.99,
+                "utteranceId": "utt-stage",
+                "assignmentId": assignment["assignmentId"],
+                "responseTurnId": assignment["responseTurnId"],
+                "captureId": capture["captureId"],
+                "captureOutcome": "speech",
+                "activityId": position["activityId"],
+                "activityGeneration": position["activityGeneration"],
+            },
+        }))
+        denied = ws.receive_json()
+        assert denied["type"] == "error"
+        assert denied["payload"]["code"] == "control_input_lease_required"

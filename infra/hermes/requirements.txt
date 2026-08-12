@@ -1,3 +1,3 @@
 # Pin deliberately. Upgrade only after replaying the Hermes adapter contract
 # tests and the real MCP/SSE smoke test against the candidate release.
-hermes-agent[mcp]==0.20.0
+hermes-agent[mcp]==0.20.0+bright.1

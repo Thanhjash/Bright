@@ -25,17 +25,13 @@ from typing import Any
 import httpx
 from bright_contracts import TurnContext
 
-from .act import ActEmitter
 from .base import AgentEvent, Done, TextDelta, ToolCall, ToolResult, TurnUsage
-from .prompt import SYSTEM_PROMPT, render_turn
+from .prompt import render_turn
 from .tools import TOOL_NAMES, ToolExecutor
 
 log = logging.getLogger("bright.agent.hermes")
 
-HERMES_SYSTEM_PROMPT = SYSTEM_PROMPT.replace(
-    "- classroom_say is your voice: 1-2 short sentences a beginner can follow. Say something before you act.",
-    "- Your plain assistant text is your voice: use 1-2 short sentences a beginner can follow. Never call classroom_say.",
-)
+PROPOSE_MOVE_TOOL = "classroom_propose_move"
 
 
 class HermesProtocolError(RuntimeError):
@@ -57,7 +53,6 @@ class HermesConfig:
     model: str = "bright-classroom"
     request_timeout_s: float = 20.0
     connect_timeout_s: float = 1.0
-    session_key: str = ""
 
     @classmethod
     def from_env(cls, env: dict[str, str] | None = None) -> "HermesConfig":
@@ -73,7 +68,6 @@ class HermesConfig:
             connect_timeout_s=float(
                 source.get("HERMES_CONNECT_TIMEOUT_S", defaults.connect_timeout_s)
             ),
-            session_key=source.get("HERMES_SESSION_KEY", ""),
         )
 
     @property
@@ -86,8 +80,6 @@ class HermesConfig:
             "content-type": "application/json",
             "authorization": f"Bearer {self.api_key}",
         }
-        if self.session_key:
-            headers["X-Hermes-Session-Key"] = self.session_key
         return headers
 
 
@@ -166,7 +158,6 @@ def build_hermes_request(
 
     return {
         "model": config.model,
-        "instructions": HERMES_SYSTEM_PROMPT,
         "input": build_hermes_input(ctx, turn_id),
         "stream": stream,
         "store": False,
@@ -176,7 +167,7 @@ def build_hermes_request(
 def _raw_tool_name(name: str) -> str:
     """Map Hermes' MCP-prefixed wire name back to Bright's stable tool name."""
 
-    for candidate in TOOL_NAMES:
+    for candidate in (*TOOL_NAMES, PROPOSE_MOVE_TOOL):
         if name == candidate or name.endswith(f"__{candidate}"):
             return candidate
     return name
@@ -211,6 +202,35 @@ def _tool_output(item: dict[str, Any]) -> Any:
     return output
 
 
+def _validated_mcp_result(item: dict[str, Any]) -> tuple[bool, dict[str, Any], str | None]:
+    """Read the MCP result envelope, never the Responses item's status.
+
+    Hermes reports a successfully *executed* tool event as ``completed`` even
+    when the Bright MCP application rejected the proposal.  Only the inner
+    MCP ``structuredContent.ok`` flag is authoritative.
+    """
+
+    envelope = _tool_output(item)
+    if isinstance(envelope, str):
+        try:
+            envelope = json.loads(envelope)
+        except json.JSONDecodeError as exc:
+            raise HermesProtocolError("MCP tool output is not a JSON object") from exc
+    if not isinstance(envelope, dict):
+        raise HermesProtocolError("MCP tool output is not an object")
+    structured = envelope.get("structuredContent")
+    if isinstance(structured, str):
+        try:
+            structured = json.loads(structured)
+        except json.JSONDecodeError as exc:
+            raise HermesProtocolError("MCP structuredContent is invalid JSON") from exc
+    if not isinstance(structured, dict) or not isinstance(structured.get("ok"), bool):
+        raise HermesProtocolError("MCP tool output has no boolean structuredContent.ok")
+    ok = structured["ok"] is True
+    detail = structured.get("reason") or structured.get("error")
+    return ok, structured, None if ok else str(detail or "proposal rejected")
+
+
 def _usage(response: dict[str, Any]) -> TurnUsage:
     usage = response.get("usage") or {}
     return TurnUsage(
@@ -232,6 +252,7 @@ class HermesAgent:
     # Unlike DirectAgent, its text deltas are the sole adaptive voice source.
     # Core uses this marker to avoid duplicating legacy tool-driven speech.
     streams_text_as_voice = True
+    supports_background_complete = False
 
     def __init__(
         self,
@@ -270,6 +291,26 @@ class HermesAgent:
         if self._own_client:
             await self._client.aclose()
 
+    async def health(self) -> bool:
+        """Probe only the local sidecar, never consume its single model slot.
+
+        The live classroom profile deliberately rejects ``complete()`` so
+        background summaries and token-generating pings cannot compete with a
+        child turn.  Readiness is therefore the gateway's cheap loopback
+        health endpoint; real-turn telemetry still owns fast degradation.
+        """
+
+        response = await self._client.get(
+            f"{self.config.base_url}/health",
+            headers={"authorization": f"Bearer {self.config.api_key}"},
+            timeout=httpx.Timeout(
+                self.config.connect_timeout_s + 1.0,
+                connect=self.config.connect_timeout_s,
+            ),
+        )
+        response.raise_for_status()
+        return True
+
     async def __aenter__(self) -> "HermesAgent":
         return self
 
@@ -285,9 +326,8 @@ class HermesAgent:
         usage = TurnUsage()
         response_id: str | None = None
         terminal = False
-        produced = False
         calls: dict[str, tuple[str, dict[str, Any]]] = {}
-        emitter = ActEmitter()
+        results: dict[str, tuple[bool, dict[str, Any], str | None]] = {}
 
         try:
             async with self._client.stream(
@@ -313,9 +353,10 @@ class HermesAgent:
                         delta = event.data.get("delta")
                         if not isinstance(delta, str):
                             raise HermesProtocolError("response.output_text.delta has no string delta")
-                        if delta:
-                            produced = True
-                            yield TextDelta(text=delta)
+                        # Live child-facing speech is the committed proposal's
+                        # teacher_line only.  Free assistant text is an
+                        # untrusted pre-commit draft and is deliberately
+                        # discarded.
                     elif kind == "response.output_item.added":
                         item = event.data.get("item") or {}
                         if item.get("type") == "function_call":
@@ -324,38 +365,64 @@ class HermesAgent:
                                 raise HermesProtocolError("function_call has no call_id")
                             name = _raw_tool_name(str(item.get("name") or ""))
                             args = _arguments(item)
+                            if name != PROPOSE_MOVE_TOOL:
+                                raise HermesProtocolError(
+                                    f"live Hermes called forbidden tool {name!r}"
+                                )
+                            if calls:
+                                raise HermesProtocolError(
+                                    "live Hermes must call exactly one proposal tool"
+                                )
+                            if args.get("turn_id") != turn_id:
+                                raise HermesProtocolError("proposal turn_id does not match Core turn")
+                            for required in ("move_id", "teacher_line"):
+                                if not isinstance(args.get(required), str) or not args[required].strip():
+                                    raise HermesProtocolError(
+                                        f"proposal has no non-empty {required}"
+                                    )
                             calls[call_id] = (name, args)
-                            produced = True
                             yield ToolCall(call_id=call_id, name=name, arguments=args)
-                            act = emitter.on_tool_call(name)
-                            if act:
-                                yield act
                         elif item.get("type") == "function_call_output":
                             call_id = str(item.get("call_id") or "")
-                            name, _ = calls.get(call_id, ("unknown", {}))
-                            result = _tool_output(item)
-                            ok = item.get("status") == "completed"
+                            if call_id not in calls:
+                                raise HermesProtocolError(
+                                    f"tool result has unknown call_id {call_id!r}"
+                                )
+                            if call_id in results:
+                                raise HermesProtocolError("proposal emitted more than one tool result")
+                            name, _ = calls[call_id]
+                            ok, result, error = _validated_mcp_result(item)
+                            results[call_id] = (ok, result, error)
                             yield ToolResult(
                                 call_id=call_id,
                                 name=name,
                                 ok=ok,
                                 result=result if ok else None,
-                                error=None if ok else str(result),
+                                error=error,
                             )
-                            if ok:
-                                act = emitter.on_tool_result(name, result)
-                                if act:
-                                    yield act
                     elif kind == "response.completed":
                         terminal = True
                         envelope = event.data.get("response") or {}
                         usage = _usage(envelope)
                         response_id = str(envelope.get("id") or response_id or "") or None
-                        act = emitter.on_done()
-                        if act:
-                            yield act
-                        yield self._done("complete" if produced else "no_action", None, usage, started)
                         self.last_response_id = response_id
+                        if len(calls) != 1 or len(results) != 1:
+                            yield self._done(
+                                "error",
+                                "live Hermes must produce exactly one committed proposal",
+                                usage,
+                                started,
+                            )
+                            return
+                        call_id, (_, args) = next(iter(calls.items()))
+                        ok, _, error = results[call_id]
+                        if not ok:
+                            yield self._done("error", error or "proposal rejected", usage, started)
+                            return
+                        # Buffer until the terminal envelope proves this was
+                        # the only tool call/result in the response.
+                        yield TextDelta(text=args["teacher_line"])
+                        yield self._done("complete", None, usage, started)
                         return
                     elif kind == "response.failed":
                         terminal = True
@@ -398,60 +465,15 @@ class HermesAgent:
         tools: list[dict[str, Any]] | None = None,
         max_tokens: int | None = None,
     ) -> dict[str, Any]:
-        """Compatibility helper for Core health probes and summaries.
+        """Reject planner/probe work on the single-slot live profile.
 
-        Tools are intentionally ignored: Hermes' API-server toolset is fixed by
-        the classroom profile, not installed from client request fields.
+        Planning, health and background jobs require a separately configured
+        client/profile.  Keeping this method for compatibility while doing no
+        I/O prevents an old Core caller from stealing the live teacher slot.
         """
 
-        del tools, max_tokens
-        instructions = "\n\n".join(
-            str(message.get("content") or "")
-            for message in messages
-            if message.get("role") == "system"
-        )
-        input_messages = [message for message in messages if message.get("role") != "system"]
-        body: dict[str, Any] = {
-            "model": self.config.model,
-            "input": input_messages or "ping",
-            "stream": False,
-            "store": False,
-        }
-        if instructions:
-            body["instructions"] = instructions
-        response = await self._client.post(
-            self.config.responses_url,
-            json=body,
-            headers={**self.config.headers(), "accept": "application/json"},
-        )
-        response.raise_for_status()
-        payload = response.json()
-        text_parts: list[str] = []
-        for item in payload.get("output") or []:
-            if not isinstance(item, dict) or item.get("type") != "message":
-                continue
-            for block in item.get("content") or []:
-                if isinstance(block, dict) and block.get("type") == "output_text":
-                    text_parts.append(str(block.get("text") or ""))
-        text = "".join(text_parts)
-        usage = payload.get("usage") or {}
-        return {
-            "id": payload.get("id"),
-            "object": "chat.completion",
-            "model": payload.get("model", self.config.model),
-            "choices": [
-                {
-                    "index": 0,
-                    "message": {"role": "assistant", "content": text},
-                    "finish_reason": "stop" if payload.get("status") == "completed" else "error",
-                }
-            ],
-            "usage": {
-                "prompt_tokens": int(usage.get("input_tokens") or 0),
-                "completion_tokens": int(usage.get("output_tokens") or 0),
-                "total_tokens": int(usage.get("total_tokens") or 0),
-            },
-        }
+        del messages, tools, max_tokens
+        raise RuntimeError("live Hermes profile does not support background completion")
 
 
 __all__ = [

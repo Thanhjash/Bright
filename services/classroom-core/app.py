@@ -30,6 +30,9 @@ from pydantic import BaseModel, Field
 import config  # noqa: F401  -- installs the bright_contracts import path
 from bright_contracts import (
     ControlCommandPayload,
+    CapabilityReportPayload,
+    CaptureReadyPayload,
+    CaptureStartedPayload,
     PROTOCOL_VERSION,
     LessonRun,
     LessonStartedPayload,
@@ -44,6 +47,11 @@ from bright_contracts import (
 from bus import EventBus, Subscriber, to_wire
 from bus import now_ms as bus_now_ms
 from config import Settings
+from class_session import (
+    AssignmentRejected,
+    CapabilityLeaseRegistry,
+    ClassSessionController,
+)
 from db import Database, open_database
 from modes import ModeController
 from mcp_server import TurnRegistry, build_mcp_router
@@ -65,6 +73,9 @@ CLIENT_EVENTS = {
     "speech.playback.started",
     "speech.playback.finished",
     "speech.barge_in",
+    "capability.report",
+    "response.capture.ready",
+    "response.capture.started",
 }
 
 
@@ -231,6 +242,8 @@ class Core:
     auto_turn: Any = None
     conversations: ConversationCoordinator = field(default_factory=ConversationCoordinator)
     turn_registry: Any = None
+    session_controller: ClassSessionController | None = None
+    capability_leases: CapabilityLeaseRegistry | None = None
 
     def set_agent_seam(self, seam: AgentSeam) -> None:
         """The one place services/agent plugs in. Never imported from here."""
@@ -256,9 +269,16 @@ class Core:
         index: int = 0,
         student_id: str | None = None,
         student_name: str | None = None,
+        roster: list[Any] | None = None,
+        attendance_ids: list[str] | None = None,
     ) -> dict[str, Any]:
         if self.runner is None:
             raise HTTPException(status_code=409, detail="no lesson_run loaded")
+        # Validate the complete classroom request before creating any durable
+        # session/conversation state. A malformed roster must be a clean
+        # rejection, not a ghost session which blocks the next start.
+        if self.session_controller is not None and roster is not None:
+            self.session_controller.configure_roster(roster, attendance_ids)
         if student_id:
             self.student_id = student_id
             self._upsert_student(student_id, student_name)
@@ -272,11 +292,15 @@ class Core:
             self.conversations.begin(self.session_id)
         self.runner.student_id = self.student_id
 
-        # Before the board lights up, not after: a greeting that arrives on top
-        # of the first activity's narration is not a greeting.
-        greeting = await self._greet(index)
+        # Public learner-history greetings are intentionally absent. The
+        # authored hook starts the shared class without exposing one child's
+        # prior weakness to their peers.
+        greeting = None
 
-        await self.runner.start(index)
+        if self.session_controller is not None:
+            await self.session_controller.start(index)
+        else:
+            await self.runner.start(index)
         return {
             "ok": True,
             "sessionId": self.session_id,
@@ -306,83 +330,9 @@ class Core:
             log.exception("could not upsert student %s", student_id)
 
     async def _greet(self, index: int) -> dict[str, Any] | None:
-        """One restricted turn: say hello, by name, about last time.
-
-        Restricted to ``say_only`` so a greeting can never skip the hook the
-        author wrote. This is also the one turn that gets memory injected
-        rather than having to ask for it -- the whole point is that the child
-        is recognised before they have done anything for the agent to react to.
-        """
-        driver = self.agent_driver
-        if driver is None or not self.student_id or self.store.mode != "FULL":
-            return None
-
-        from agent_bridge import default_recall_query
-
-        name = (self.db.get_student(self.student_id) or {}).get("name") or self.student_id
-        hosted = self.settings.agent_context_policy != "local-trusted"
-        if self.lesson is not None and self.runner is not None:
-            # Put the position in place first, or the prompt reads
-            # "activity 1/0, stage IDLE" and the model has no idea where it is.
-            self.store.update_lesson(
-                lesson_id=self.lesson.lesson_id,
-                class_id=self.lesson.class_id,
-                activity_index=index,
-                activity_count=len(self.runner.activities),
-                stage="HOOK",
-                activity_id=self.runner.activities[index].id,
-                activity_generation=self.runner._generation,
-                current_student_id=self.student_id,
-            )
-        try:
-            result = await asyncio.wait_for(
-                driver.take_turn(
-                    student_id=self.student_id,
-                    recall_query=default_recall_query(self),
-                    only=("say_only",),
-                    # The system prompt lives in services/agent and has to stay
-                    # byte-identical for the provider's prefix cache, so the
-                    # action label is the only channel this turn has. Without
-                    # it the model was handed "STUDENT Mai" plus three
-                    # memories and opened with "Good morning, everyone!" on
-                    # three live runs out of three.
-                    relabel={
-                        "say_only": (
-                            "greet the class and welcome the current student back; "
-                            "do not invent or ask for their name or prior history"
-                            if hosted
-                            else (
-                                f"greet the class and welcome {name} back BY NAME, "
-                                "referring to one specific thing from MEMORY that "
-                                f"{name} found hard last time"
-                            )
-                        )
-                    },
-                ),
-                timeout=self.settings.agent_greeting_timeout_s,
-            )
-        except asyncio.TimeoutError:
-            log.info(
-                "[agent] greeting exceeded %.1fs — starting the lesson without one",
-                self.settings.agent_greeting_timeout_s,
-            )
-            # The greeting is the first thing the agent is ever asked for, so
-            # it is the earliest possible chance to find out the cloud is gone
-            # -- before the first question, rather than after the second hole.
-            self.modes.note_agent_turn(
-                False,
-                kind="timeout",
-                detail=f"greeting: no answer in {self.settings.agent_greeting_timeout_s:.0f}s",
-            )
-            return None
-        except Exception as exc:  # noqa: BLE001 - a greeting is never worth a failed start
-            log.exception("[agent] greeting failed — starting the lesson without one")
-            self.modes.note_agent_turn(
-                False, kind="unreachable", detail=f"greeting: {type(exc).__name__}"
-            )
-            return None
-        self.modes.note_agent_turn(True)
-        return result.as_dict()
+        """Deprecated: learner memory is never spoken to a shared room."""
+        del index
+        return None
 
     async def end_session(self) -> None:
         if self.session_id is None:
@@ -429,6 +379,51 @@ class Core:
         self.bus.publish(
             "speech.cancel", {"speechTurnId": speech_turn_id, "reason": reason}
         )
+
+    def snapshot(self) -> dict[str, Any]:
+        """One reconnect-safe aggregate, not a half-new classroom view."""
+        payload = self.store.snapshot()
+        controller = self.session_controller
+        if controller is not None and self.session_id is not None:
+            payload["session"] = controller.session_payload()
+            assignment = controller.assignments.current_for_activity(
+                self.session_id,
+                getattr(getattr(self.runner, "current", None), "id", ""),
+                getattr(self.runner, "_generation", 0),
+            )
+            if assignment is not None:
+                payload["assignment"] = assignment.public()
+                if assignment.capture_id is not None:
+                    payload["capture"] = assignment.capture_request()
+            payload["status"] = {
+                "liveness": "live",
+                "readiness": "ready"
+                if controller.session_state == "RUNNING"
+                else "degraded",
+                "teachable": controller.session_state == "RUNNING",
+                "lessonId": self.lesson.lesson_id if self.lesson else None,
+                "reason": controller.pause_reason,
+            }
+            if controller.pause_reason:
+                payload["recovery"] = {
+                    "reason": controller.pause_reason,
+                    "requiredAction": "resume_or_takeover",
+                }
+        active = next(
+            (
+                (turn_id, status)
+                for turn_id, status in reversed(tuple(self.conversations.playback.items()))
+                if status in {"produced", "playing", "cancel_requested"}
+            ),
+            None,
+        )
+        if active:
+            turn_id, status = active
+            payload["speech"] = {
+                "speechTurnId": turn_id,
+                "status": "playing" if status == "playing" else "queued",
+            }
+        return payload
 
 
 async def handle_barge_in(
@@ -484,11 +479,25 @@ def handle_client_hello(core: Core, sub: Subscriber, payload: dict[str, Any]) ->
             },
         )
         return
-    core.bus.send(sub, "scene.snapshot", core.store.snapshot())
+    snapshot = getattr(core, "snapshot", None)
+    core.bus.send(
+        sub,
+        "scene.snapshot",
+        snapshot() if callable(snapshot) else core.store.snapshot(),
+    )
 
 
 def build_core(settings: Settings | None = None) -> Core:
     settings = settings or Settings.from_env()
+    from data_policy import DataPolicy
+
+    policy = DataPolicy.parse(settings.data_policy)
+    if policy == DataPolicy.SYNTHETIC_DEV and (
+        not settings.dev_endpoints or not settings.synthetic_dev_confirmed
+    ):
+        raise RuntimeError(
+            "synthetic_dev requires CORE_DEV=1 and BRIGHT_SYNTHETIC_DEV_ACK=1"
+        )
     store = StateStore(mode=settings.mode_override or "OFFLINE")  # type: ignore[arg-type]
     bus = EventBus(lambda: store.state_version, queue_maxsize=settings.queue_maxsize)
     database = open_database(settings.db_path)
@@ -531,6 +540,12 @@ def build_core(settings: Settings | None = None) -> Core:
                 publish_speech=core.publish_speech,
                 cancel_speech=core.cancel_speech,
             )
+            core.session_controller = ClassSessionController(
+                core,
+                core.runner,
+                capture_ready_timeout_s=settings.capture_ready_timeout_s,
+            )
+            core.capability_leases = CapabilityLeaseRegistry(core)
         except Exception:  # noqa: BLE001 - a bad lesson file must not stop the service
             log.exception("failed to load lesson_run at %s", settings.lesson_run_path)
     else:
@@ -732,7 +747,7 @@ def create_app(settings: Settings | None = None, core: Core | None = None) -> Fa
             sub.role = requested_role
             # Always a full snapshot: the client's stateVersion is only ever a
             # reason to *take* one, never a reason to skip it.
-            core_.bus.send(sub, "scene.snapshot", core_.store.snapshot())
+            core_.bus.send(sub, "scene.snapshot", core_.snapshot())
             # ...and always state the mode. `mode.changed` fires only on a
             # CHANGE, so a client that connects while we are already DEGRADED or
             # OFFLINE would otherwise never hear about it and would sit on its
@@ -763,6 +778,8 @@ def create_app(settings: Settings | None = None, core: Core | None = None) -> Fa
         except RuntimeError:
             pass  # socket already closed by the writer
         finally:
+            if core_.capability_leases is not None:
+                core_.capability_leases.disconnect(sub)
             core_.bus.unsubscribe(sub)
             for task in (writer, heart):
                 if task is not None:
@@ -866,6 +883,44 @@ def create_app(settings: Settings | None = None, core: Core | None = None) -> Fa
             handle_client_hello(core_, sub, payload)
             return
 
+        if type_ == "capability.report":
+            try:
+                report = CapabilityReportPayload.model_validate(payload)
+                if core_.capability_leases is None:
+                    raise AssignmentRejected("capability registry unavailable")
+                lease = core_.capability_leases.report(sub, report)
+            except Exception as exc:  # noqa: BLE001
+                core_.bus.send(
+                    sub,
+                    "error",
+                    {"code": "invalid_capability_report", "message": str(exc)[:240]},
+                )
+                return
+            if lease is not None:
+                core_.bus.send(
+                    sub,
+                    "stage.lease.granted",
+                    {
+                        "leaseId": lease.lease_id,
+                        "clientInstanceId": lease.client_instance_id,
+                        "expiresAt": int(
+                            (time.time() + max(0.0, lease.expires_at - time.monotonic()))
+                            * 1000
+                        ),
+                    },
+                )
+                core_.bus.publish(
+                    "classroom.status",
+                    {
+                        "liveness": "live",
+                        "readiness": "ready",
+                        "teachable": True,
+                        "lessonId": core_.lesson.lesson_id if core_.lesson else None,
+                        "reason": "stage_audio_owner_ready",
+                    },
+                )
+            return
+
         if type_ == "control.command":
             if sub.role != "control":
                 core_.bus.send(sub, "error", {"code": "forbidden", "message": "only control may send commands"})
@@ -891,7 +946,10 @@ def create_app(settings: Settings | None = None, core: Core | None = None) -> Fa
                 driver = getattr(core_, "agent_driver", None)
                 if driver is not None:
                     driver.cancel_current(f"control:{command}")
-            await core_.runner.control(command, control.arg)
+            if core_.session_controller is not None:
+                await core_.session_controller.control(command, control.arg)
+            else:
+                await core_.runner.control(command, control.arg)
             return
 
         if type_ == "lesson.start":
@@ -924,9 +982,31 @@ def create_app(settings: Settings | None = None, core: Core | None = None) -> Fa
             if request.index >= len(core_.runner.activities):
                 core_.bus.send(sub, "error", {"code": "invalid_start_index", "message": "activity index is outside this lesson"})
                 return
-            started = await core_.start_lesson(
-                request.index, request.student_id, request.student_name
-            )
+            if core_.lesson.delivery_mode == "autonomous_class":
+                if request.lesson_id not in {None, core_.lesson.lesson_id}:
+                    core_.bus.send(sub, "error", {"code": "lesson_mismatch", "message": "lessonId does not match loaded lesson"})
+                    return
+                if request.class_id not in {None, core_.lesson.class_id}:
+                    core_.bus.send(sub, "error", {"code": "class_mismatch", "message": "classId does not match loaded lesson"})
+                    return
+                if request.roster is None:
+                    core_.bus.send(sub, "error", {"code": "roster_required", "message": "autonomous_class requires roster"})
+                    return
+            try:
+                started = await core_.start_lesson(
+                    request.index,
+                    request.student_id,
+                    request.student_name,
+                    roster=request.roster,
+                    attendance_ids=request.attendance_ids,
+                )
+            except ValueError as exc:
+                core_.bus.send(
+                    sub,
+                    "error",
+                    {"code": "invalid_class_setup", "message": str(exc)[:240]},
+                )
+                return
             reply = LessonStartedPayload(
                 requestId=request.request_id,
                 sessionId=started["sessionId"],
@@ -948,6 +1028,9 @@ def create_app(settings: Settings | None = None, core: Core | None = None) -> Fa
             if sub.role != "stage":
                 core_.bus.send(sub, "error", {"code": "forbidden", "message": "only stage may acknowledge playback"})
                 return
+            if core_.capability_leases is None or not core_.capability_leases.owns_audio(sub):
+                core_.bus.send(sub, "error", {"code": "stage_lease_required", "message": "only active Stage audio owner may acknowledge playback"})
+                return
             try:
                 parsed_playback = (
                     SpeechPlaybackStartedPayload.model_validate(payload)
@@ -968,6 +1051,9 @@ def create_app(settings: Settings | None = None, core: Core | None = None) -> Fa
                 else parsed_playback.status
             )
             event = "started" if type_ == "speech.playback.started" else "finished"
+            was_authorized_barge = (
+                core_.conversations.playback.get(speech_turn_id) == "cancel_requested"
+            )
             accepted, changed, reason = core_.conversations.note_playback(
                 speech_turn_id, event=event, status=status
             )
@@ -981,9 +1067,36 @@ def create_app(settings: Settings | None = None, core: Core | None = None) -> Fa
             if event == "started" and changed and core_.runner is not None:
                 core_.runner.on_playback_started(speech_turn_id)
             if event == "finished" and changed and core_.runner is not None:
-                # Failed/cancelled output must also release the lesson. Core's
-                # authored fallback remains usable even without audible TTS.
-                core_.runner.on_playback_finished(speech_turn_id)
+                driver = getattr(core_, "agent_driver", None)
+                if driver is not None and driver.note_playback_result(speech_turn_id, status):
+                    return
+                if status == "completed":
+                    core_.runner.on_playback_finished(speech_turn_id)
+                elif status == "cancelled" and was_authorized_barge:
+                    core_.runner.on_playback_interrupted(speech_turn_id, authorized=True)
+                else:
+                    core_.runner.on_playback_failed(speech_turn_id, status)
+            return
+
+        if type_ in {"response.capture.ready", "response.capture.started"}:
+            if sub.role != "control" or core_.capability_leases is None or not core_.capability_leases.owns_input(sub):
+                core_.bus.send(sub, "error", {"code": "control_input_lease_required", "message": "active Control audio-input owner required for capture"})
+                return
+            try:
+                if core_.session_controller is None:
+                    raise AssignmentRejected("no active class session")
+                if type_ == "response.capture.ready":
+                    parsed = CaptureReadyPayload.model_validate(payload)
+                    core_.session_controller.note_capture_ready(
+                        parsed.model_dump(by_alias=True, exclude_none=True)
+                    )
+                else:
+                    parsed = CaptureStartedPayload.model_validate(payload)
+                    core_.session_controller.note_capture_started(
+                        parsed.model_dump(by_alias=True, exclude_none=True)
+                    )
+            except Exception as exc:  # noqa: BLE001
+                core_.bus.send(sub, "error", {"code": "invalid_capture_state", "message": str(exc)[:240]})
             return
 
         # interaction.* and student.speech.final -> the reflex tier
@@ -992,6 +1105,22 @@ def create_app(settings: Settings | None = None, core: Core | None = None) -> Fa
             if driver is not None:
                 driver.cancel_current("new student response")
         if type_ == "student.speech.final":
+            # Assignment identifiers are broadcast for rendering/correlation;
+            # possession is not authorization to inject learner evidence.
+            if (
+                sub.role != "control"
+                or core_.capability_leases is None
+                or not core_.capability_leases.owns_input(sub)
+            ):
+                core_.bus.send(
+                    sub,
+                    "error",
+                    {
+                        "code": "control_input_lease_required",
+                        "message": "active Control audio-input owner required for speech evidence",
+                    },
+                )
+                return
             try:
                 speech_input = StudentSpeechFinalPayload.model_validate(payload)
             except Exception as exc:  # noqa: BLE001 - malformed wire input
@@ -1027,16 +1156,56 @@ def create_app(settings: Settings | None = None, core: Core | None = None) -> Fa
                 acknowledge("rejected")
                 return
             normalized = speech_input.model_dump(by_alias=True, exclude_none=True)
+            assignment = None
+            if core_.session_controller is not None:
+                try:
+                    assignment = await core_.session_controller.claim_response(normalized)
+                except AssignmentRejected as exc:
+                    core_.bus.send(sub, "error", {"code": "invalid_response_capability", "message": str(exc)[:240]})
+                    acknowledge("rejected")
+                    return
+                normalized["_coreStudentId"] = assignment.target
+                normalized["_responseTurnId"] = assignment.response_turn_id
+                normalized["_evidencePolicy"] = assignment.evidence_policy
+                capture_outcome = normalized.get("captureOutcome")
+                if capture_outcome == "noise_only":
+                    normalized["_coreOutcome"] = "uncertain"
+                elif capture_outcome == "no_speech":
+                    normalized["_coreOutcome"] = "silence"
+                elif capture_outcome in {"device_lost", "asr_timeout", "asr_unavailable"}:
+                    # Infrastructure failure is not evidence about the child.
+                    # Route it through the lesson's explicit recovery branch;
+                    # never permit Runner's default transition to advance.
+                    normalized["_coreOutcome"] = "unhandled"
+                    core_.session_controller.close_response(assignment, "unhandled")
+                    core_.session_controller.safe_pause(str(capture_outcome))
+                    acknowledge("unhandled")
+                    return
             # Never put a child's transcript in Scene/TurnContext/MCP state.
             # It is graded in-memory below and then discarded.
             core_.store.set_overlay(listening=False)
             core_.bus.publish("scene.update", core_.store.scene)
             outcome = await core_.runner.handle_interaction("speech", normalized)
+            if assignment is not None and outcome is not None:
+                core_.session_controller.close_response(assignment, outcome)
             acknowledge(outcome or "rejected")
             return
         if core_.runner is None:
             return
-        await core_.runner.handle_interaction(interaction_kind(type_), payload)
+        normalized = dict(payload)
+        assignment = None
+        if core_.session_controller is not None:
+            try:
+                assignment = await core_.session_controller.claim_response(normalized)
+            except AssignmentRejected as exc:
+                core_.bus.send(sub, "error", {"code": "invalid_response_capability", "message": str(exc)[:240]})
+                return
+            normalized["_coreStudentId"] = assignment.target
+            normalized["_responseTurnId"] = assignment.response_turn_id
+            normalized["_evidencePolicy"] = assignment.evidence_policy
+        outcome = await core_.runner.handle_interaction(interaction_kind(type_), normalized)
+        if assignment is not None and outcome is not None:
+            core_.session_controller.close_response(assignment, outcome)
 
     # ---------------------------------------------------------------- dev
     if settings.dev_endpoints:
@@ -1083,6 +1252,8 @@ def create_app(settings: Settings | None = None, core: Core | None = None) -> Fa
             core_ = get_core()
             if core_.runner is None:
                 raise HTTPException(status_code=409, detail="no lesson_run loaded")
+            if core_.session_controller is not None:
+                return await core_.session_controller.control(body.cmd, body.arg)
             return await core_.runner.control(body.cmd, body.arg)
 
         @app.post("/dev/interaction")

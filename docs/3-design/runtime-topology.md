@@ -222,7 +222,7 @@ bright/
 │   └── knowledge/                 offline retrieval
 │
 ├── mcp/
-│   └── classroom-mcp/             ★ the 4-tool contract Hermes sees
+│   └── classroom-mcp/             ★ one live terminal proposal tool
 │
 ├── agent/
 │   ├── skills/       Hermes skills — pedagogy strategies

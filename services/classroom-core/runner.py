@@ -41,7 +41,9 @@ from bright_contracts import Activity, Branch, Expect, LessonPosition, LessonRun
 
 log = logging.getLogger("core.runner")
 
-Outcome = Literal["correct", "near", "wrong", "silence", "timeout"]
+Outcome = Literal[
+    "correct", "near", "wrong", "uncertain", "unhandled", "silence", "timeout", "infra_failure"
+]
 
 #: ``decide_next(activity, outcome, payload) -> action_id | None``.
 #:
@@ -125,7 +127,10 @@ def grade(
                 confidence = float(payload.get("confidence", 0.0))
             except (TypeError, ValueError):
                 confidence = 0.0
-            return "correct" if confidence >= speech_correct_confidence else "near"
+            # Exact words with untrusted audio are not evidence of learning.
+            # ``near`` means a real linguistic near miss; low capture quality
+            # is a different state and must not lower mastery.
+            return "correct" if confidence >= speech_correct_confidence else "uncertain"
         if any(_speech_matches(said, target, approximate=True) for target in fuzzy):
             return "near"
         return "wrong"
@@ -260,7 +265,9 @@ _STAGE_BY_KIND = {
 
 
 def stage_for(activity: Activity, index: int, total: int) -> str:
-    """LessonRun carries no explicit stage; derive one for LessonPosition."""
+    """Use authored pedagogy stage; derive only for legacy lesson runs."""
+    if activity.teaching is not None:
+        return activity.teaching.stage
     if index == 0:
         return "HOOK"
     if index == total - 1 and activity.scene in ("text", "idle"):
@@ -291,6 +298,9 @@ class LessonRunner:
         decide_next: DecideFn | None = None,
         publish_speech: Callable[..., str] | None = None,
         cancel_speech: Callable[[str], None] | None = None,
+        transition_sink: Callable[[Any], Awaitable[Activity | None]] | None = None,
+        on_response_window: Callable[[Activity, int], Any] | None = None,
+        on_activity_state: Callable[[str], None] | None = None,
     ) -> None:
         self.bus = bus
         self.store = store
@@ -314,6 +324,9 @@ class LessonRunner:
         self.decide_next = decide_next
         self.publish_speech = publish_speech
         self.cancel_speech = cancel_speech
+        self.transition_sink = transition_sink
+        self.on_response_window = on_response_window
+        self.on_activity_state = on_activity_state
 
         self._index = -1
         self._generation = 0
@@ -322,6 +335,8 @@ class LessonRunner:
         self._pending_playback_turns: list[str] = []
         self._awaiting_timer: tuple[Activity, int] | None = None
         self._playback_watchdog: asyncio.Task[None] | None = None
+        self._playback_retry_count = 0
+        self._entry_narration: list[Narration] = []
         self._pending: set[asyncio.Task[None]] = set()
         self.running = False
         self.paused = False
@@ -380,6 +395,27 @@ class LessonRunner:
             self._playback_watchdog.cancel()
         self._playback_watchdog = None
 
+    def pause_current(self, *, takeover: bool = False) -> None:
+        """Synchronously freeze every activity clock and physical I/O gate.
+
+        Session policy stays in ``ClassSessionController``; this is only the
+        runner-side cancellation primitive used by that authority.
+        """
+        self.paused = True
+        self._generation += 1
+        self._cancel_timer()
+        self._awaiting_playback_turn = None
+        self._pending_playback_turns = []
+        self._awaiting_timer = None
+        self._cancel_playback_watchdog()
+        self._publish_epoch()
+        overlay = self.store.scene.overlay
+        self.store.set_overlay(
+            subtitle=None if takeover else getattr(overlay, "subtitle", None),
+            listening=False,
+        )
+        self.bus.publish("scene.update", self.store.scene)
+
     def _spawn(self, coro: Awaitable[None]) -> asyncio.Task[None]:
         task = asyncio.ensure_future(coro)
         self._pending.add(task)
@@ -420,11 +456,27 @@ class LessonRunner:
         if not self.activities:
             self._publish_position()
             return None
-        return await self._enter(index)
+        if self.transition_sink is not None:
+            from class_session import TransitionIntent
 
-    async def _enter(self, index: int) -> Activity | None:
+            return await self.transition_sink(
+                TransitionIntent(
+                    cause="start" if self._index < 0 else "control",
+                    from_activity_id=getattr(self.current, "id", None),
+                    activity_generation=self._generation,
+                    target_index=index,
+                )
+            )
+        return await self.commit_enter(index)
+
+    async def commit_enter(self, index: int) -> Activity | None:
+        """Apply one controller-authorized activity entry.
+
+        Callers request transitions through ``transition_sink``; only the
+        controller calls this commit primitive in autonomous mode.
+        """
         if index < 0 or index >= len(self.activities):
-            await self._finish()
+            await self.commit_finish()
             return None
 
         self._cancel_timer()
@@ -432,6 +484,7 @@ class LessonRunner:
         self._awaiting_playback_turn = None
         self._pending_playback_turns = []
         self._awaiting_timer = None
+        self._playback_retry_count = 0
         self._generation += 1
         generation = self._generation
         self._index = index
@@ -439,17 +492,25 @@ class LessonRunner:
         self._drag_done = []
         self._drag_moves = []
         activity = self.activities[index]
+        self._entry_narration = list(activity.narration or [])
         self.entry_counts[activity.id] = self.entry_counts.get(activity.id, 0) + 1
 
-        scene = self.store.set_scene(activity.scene, dict(activity.props or {}))
-        self.store.update_lesson(
-            lesson_id=self.lesson.lesson_id,
-            class_id=self.lesson.class_id,
-            activity_index=index,
-            activity_count=len(self.activities),
-            stage=stage_for(activity, index, len(self.activities)),
-            activity_id=activity.id,
-            activity_generation=generation,
+        self.store.commit_activity(
+            kind=activity.scene,
+            props=dict(activity.props or {}),
+            lesson_fields={
+                "lesson_id": self.lesson.lesson_id,
+                "class_id": self.lesson.class_id,
+                "activity_index": index,
+                "activity_count": len(self.activities),
+                "stage": stage_for(activity, index, len(self.activities)),
+                "activity_id": activity.id,
+                "activity_generation": generation,
+                "decision_revision": self.store.decision_revision,
+                "response_turn_id": None,
+                "assignment_id": None,
+                "current_student_id": None,
+            },
         )
         self.bus.publish("scene.update", self.store.scene)
         self._publish_position()
@@ -462,9 +523,18 @@ class LessonRunner:
             self._pending_playback_turns = list(turn_ids)
             self._awaiting_timer = (activity, generation)
             self._watch_playback_turn(turn_ids[0])
+            self._note_activity_state("NARRATING")
         else:
             self._arm_activity(activity, generation)
         return activity
+
+    # Temporary compatibility for tests/extensions which exercised the old
+    # private primitive. Runtime transitions never use this alias.
+    _enter = commit_enter
+
+    def _note_activity_state(self, state: str) -> None:
+        if self.on_activity_state is not None:
+            self.on_activity_state(state)
 
     def _publish_position(self) -> None:
         lesson: LessonPosition = self.store.lesson
@@ -510,23 +580,130 @@ class LessonRunner:
         self._arm_activity(activity, generation)
         return True
 
+    def on_playback_failed(self, speech_turn_id: str, status: str = "failed") -> bool:
+        """Recover from inaudible output without opening an answer window.
+
+        First failure retries authored text without a possibly-broken audio
+        asset. A second failure pauses safely.  Neither path silently arms a
+        microphone or starts the activity clock.
+        """
+        if not self._pending_playback_turns or self._awaiting_timer is None:
+            return False
+        if speech_turn_id != self._pending_playback_turns[0]:
+            return False
+        self._cancel_playback_watchdog()
+        activity, generation = self._awaiting_timer
+        if generation != self._generation or not self.running:
+            return False
+        if self._playback_retry_count < 1:
+            self._playback_retry_count += 1
+            controller = getattr(self, "session_controller", None)
+            if controller is not None:
+                controller.begin_recovery(f"playback_{status}")
+            else:
+                self.bus.publish(
+                    "classroom.status",
+                    {
+                        "liveness": "live",
+                        "readiness": "degraded",
+                        "teachable": False,
+                        "lessonId": self.lesson.lesson_id,
+                        "reason": f"playback_{status}",
+                        "recovery": {"reason": f"playback_{status}"},
+                    },
+                )
+            turn_ids = self._speak(
+                self._entry_narration, activity.id, include_audio_assets=False
+            )
+            self._pending_playback_turns = list(turn_ids)
+            self._awaiting_playback_turn = turn_ids[-1] if turn_ids else None
+            if turn_ids:
+                self._watch_playback_turn(turn_ids[0])
+                self._note_activity_state("NARRATING")
+                return True
+        self._pending_playback_turns = []
+        self._awaiting_playback_turn = None
+        self._awaiting_timer = None
+        self.store.set_overlay(listening=False)
+        self.bus.publish("scene.update", self.store.scene)
+        controller = getattr(self, "session_controller", None)
+        if controller is not None:
+            controller.safe_pause("playback_unavailable")
+        else:
+            self.paused = True
+            self.bus.publish(
+                "classroom.status",
+                {
+                    "liveness": "live",
+                    "readiness": "degraded",
+                    "teachable": False,
+                    "lessonId": self.lesson.lesson_id,
+                    "reason": "playback_unavailable",
+                    "recovery": {
+                        "reason": "playback_unavailable",
+                        "requiredAction": "resume_or_takeover",
+                    },
+                },
+            )
+        self._note_activity_state("CANCELLED")
+        return True
+
+    def on_playback_interrupted(self, speech_turn_id: str, *, authorized: bool) -> bool:
+        """Authorized facilitator barge-in is not an output failure."""
+        if not authorized:
+            return self.on_playback_failed(speech_turn_id, "cancelled")
+        return self.on_playback_finished(speech_turn_id)
+
     async def _release_after_playback_timeout(self, speech_turn_id: str) -> None:
         try:
             await asyncio.sleep(self.playback_ack_timeout_s)
         except asyncio.CancelledError:
             return
-        log.warning("playback ack timed out for %s; releasing lesson", speech_turn_id)
+        log.warning("playback ack timed out for %s; entering recovery", speech_turn_id)
         self._playback_watchdog = None
-        self.on_playback_finished(speech_turn_id)
+        self.on_playback_failed(speech_turn_id, "ack_timeout")
 
     def _arm_activity(self, activity: Activity, generation: int) -> None:
+        self._note_activity_state("ARMING")
         expects_speech = activity.expect is not None and activity.expect.kind == "speech"
+        if self.on_response_window is not None:
+            self.on_response_window(activity, generation)
+        if expects_speech and self.on_response_window is not None:
+            # Assignment exists, but Stage has not yet proved that the answer
+            # station is ready and recording. Do not arm VAD/listening here.
+            return
         if expects_speech:
             self.store.set_overlay(listening=True)
             self.bus.publish("scene.update", self.store.scene)
+        self._note_activity_state("WAITING")
         self._schedule_timer(activity, generation)
 
-    def _speak(self, narration: list[Narration] | None, activity_id: str) -> list[str]:
+    def arm_capture(self, activity_id: str, generation: int) -> bool:
+        """Start the speech window after Stage confirms capture started."""
+        activity = self.current
+        if (
+            activity is None
+            or activity.id != activity_id
+            or generation != self._generation
+            or self.paused
+            or not self.running
+            or activity.expect is None
+            or activity.expect.kind != "speech"
+        ):
+            return False
+        self.store.set_overlay(listening=True)
+        self.bus.publish("scene.update", self.store.scene)
+        self._note_activity_state("WAITING")
+        self._schedule_timer(activity, generation)
+        return True
+
+    def _speak(
+        self,
+        narration: list[Narration] | None,
+        activity_id: str,
+        *,
+        include_audio_assets: bool = True,
+    ) -> list[str]:
         turn_ids: list[str] = []
         for i, line in enumerate(narration or []):
             if self.publish_speech is not None:
@@ -536,7 +713,7 @@ class LessonRunner:
                     behavior="queue",
                     activity_id=activity_id,
                     activity_generation=self._generation,
-                    audio_asset=line.audio_asset,
+                    audio_asset=line.audio_asset if include_audio_assets else None,
                 )
             else:
                 # Standalone runner tests may omit the Core coordinator.  They
@@ -553,7 +730,11 @@ class LessonRunner:
                         "conversationTurnId": turn_id,
                         "activityId": activity_id,
                         "activityGeneration": self._generation,
-                        **({"audioAsset": line.audio_asset} if line.audio_asset else {}),
+                        **(
+                            {"audioAsset": line.audio_asset}
+                            if include_audio_assets and line.audio_asset
+                            else {}
+                        ),
                     },
                 )
                 self.bus.publish(
@@ -622,6 +803,9 @@ class LessonRunner:
             return None
         kind = interaction_kind(kind)
         payload = dict(payload or {})
+        # Identity is a Core-issued assignment, never a browser assertion.
+        payload.pop("studentId", None)
+        payload.pop("student_id", None)
 
         # ONE answer per activity. `self.answered` was being set here and never
         # read, so the last tap won and did real damage: the board re-revealed a
@@ -640,6 +824,8 @@ class LessonRunner:
 
         if kind == "drag" and activity.expect is not None and activity.expect.kind == "drag":
             outcome = self._grade_drag_move(activity, payload)
+        elif payload.get("_coreOutcome") in {"uncertain", "unhandled", "infra_failure"}:
+            outcome = payload["_coreOutcome"]
         else:
             outcome = grade(
                 activity.expect,
@@ -650,6 +836,7 @@ class LessonRunner:
         if outcome is None:
             return None
 
+        self._note_activity_state("RESOLVING")
         self._generation += 1           # invalidate the pending timer
         self._cancel_timer()
         self._awaiting_playback_turn = None
@@ -663,6 +850,7 @@ class LessonRunner:
 
         self._reveal(activity, kind, payload, outcome)
         self._record(activity, kind, payload, outcome)
+        self._note_activity_state("FEEDBACK")
         self.last_payload = payload
         self.last_latency_ms = (time.perf_counter() - started) * 1000.0
 
@@ -796,15 +984,42 @@ class LessonRunner:
                 self._spawn(result)
         if self.db is None:
             return
-        # An observation with a NULL student is a row recall can never find
-        # again. When the whole session belongs to one child, say so.
-        student_id = payload.get("studentId") or self.student_id
+        # Silence/timeout/capture uncertainty are participation/operations
+        # facts, not proof that a learner lacks a skill.
+        if outcome not in {"correct", "near", "wrong"}:
+            return
+        # In autonomous mode this value is injected from a claimed Core-issued
+        # assignment. It is never copied from the client payload.
+        student_id = payload.get("_coreStudentId") or self.student_id
+        if not student_id:
+            return
         # Payloads may contain a child's raw ASR transcript. Durable learner
         # memory keeps only Core-owned facts: activity, response modality and
         # graded outcome. The live transcript is deliberately not persisted or
         # FTS-indexed.
         evidence = f"activity={activity.id}; response_kind={kind}; outcome={outcome}"
-        skill = (self.lesson.focus or ["general"])[0]
+        teaching = getattr(activity, "teaching", None)
+        skill_ids = tuple(getattr(teaching, "skill_ids", None) or ())
+        delivery_mode = str(getattr(self.lesson, "delivery_mode", "legacy_single"))
+        if not skill_ids and delivery_mode == "legacy_single":
+            # Compatibility for existing authored single-learner runs. New
+            # autonomous lessons must identify the exact assessed skill.
+            skill_ids = tuple((self.lesson.focus or [])[:1])
+        if not skill_ids:
+            log.warning("not recording %s: activity %s has no teaching.skillIds", outcome, activity.id)
+            return
+        evidence_policy = str(
+            payload.get("_evidencePolicy")
+            or getattr(teaching, "evidence_policy", None)
+            or ("legacy_individual" if delivery_mode == "legacy_single" else "none")
+        )
+        if delivery_mode != "legacy_single" and evidence_policy not in {
+            "individual",
+            "individual_trusted",
+            "mastery",
+        }:
+            return
+        response_turn_id = payload.get("_responseTurnId")
         # This coroutine is scheduled after the reflex response has returned,
         # so it is already off the answer-to-pixels path.  Keep SQLite on the
         # event-loop thread: the connection is one Core-owned writer and a
@@ -812,13 +1027,16 @@ class LessonRunner:
         # Python 3.13 has been observed to leave the loop waiting forever for
         # its worker wake-up).  The transaction is a bounded local insert.
         async def persist_observation() -> None:
-            self.db.record_observation(
-                student_id,
-                skill,
-                outcome,
-                evidence,
-                self.session_id,
-            )
+            for skill in skill_ids:
+                self.db.record_observation(
+                    student_id,
+                    skill,
+                    outcome,
+                    evidence,
+                    self.session_id,
+                    response_turn_id=response_turn_id,
+                    activity_id=activity.id,
+                )
 
         self._spawn(persist_observation())
 
@@ -861,6 +1079,7 @@ class LessonRunner:
 
         decision: asyncio.Task[str | None] | None = None
         if gate and self.decide_next is not None and activity is not None:
+            self._note_activity_state("DECIDING")
             decision = asyncio.ensure_future(
                 self._decide(activity, outcome, dict(self.last_payload))
             )
@@ -993,7 +1212,13 @@ class LessonRunner:
         if target < 0:
             await self._advance_default(announced=announced)
             return
-        await self._enter(target)
+        await self._request_transition(
+            cause="outcome",
+            target_index=target,
+            outcome=outcome,
+            generation=generation if generation is not None else self._generation,
+            announced=announced,
+        )
 
     async def _advance_default(self, announced: bool = False) -> None:
         activity = self.current
@@ -1004,31 +1229,99 @@ class LessonRunner:
                     if target >= 0:
                         if not announced:
                             self._speak(branch.narration, f"{activity.id}#always")
-                        await self._enter(target)
+                        await self._request_transition(
+                            cause="timer",
+                            target_index=target,
+                            generation=self._generation,
+                            announced=announced,
+                        )
                         return
                     break
         nxt = self._index + 1
         if nxt >= len(self.activities):
-            await self._finish()
+            await self._request_transition(
+                cause="finish", target_index=None, generation=self._generation
+            )
             return
-        await self._enter(nxt)
+        await self._request_transition(
+            cause="timer",
+            target_index=nxt,
+            generation=self._generation,
+            announced=announced,
+        )
 
-    async def _finish(self) -> None:
+    async def _request_transition(
+        self,
+        *,
+        cause: str,
+        target_index: int | None,
+        generation: int,
+        outcome: str | None = None,
+        announced: bool = False,
+        decision_revision: int | None = None,
+        response_turn_id: str | None = None,
+    ) -> Activity | None:
+        if self.transition_sink is None:
+            if target_index is None:
+                await self.commit_finish()
+                return None
+            return await self.commit_enter(target_index)
+        from class_session import TransitionIntent
+
+        return await self.transition_sink(
+            TransitionIntent(
+                cause=cause,  # type: ignore[arg-type]
+                from_activity_id=getattr(self.current, "id", None),
+                activity_generation=generation,
+                target_index=target_index,
+                outcome=outcome,
+                decision_revision=decision_revision,
+                response_turn_id=response_turn_id,
+                announced=announced,
+            )
+        )
+
+    def resolve_intent_target(self, intent: Any) -> int | None:
+        """Pure authored-default resolution used by the controller."""
+        activity = self.current
+        if intent.outcome and activity is not None:
+            branch = resolve_branch(activity, intent.outcome)
+            if branch is not None:
+                target = self.index_of(branch.goto)
+                if target >= 0:
+                    return target
+        if activity is not None:
+            for branch in activity.branches or []:
+                if branch.on == "always":
+                    target = self.index_of(branch.goto)
+                    if target >= 0:
+                        return target
+        nxt = self._index + 1
+        return nxt if nxt < len(self.activities) else None
+
+    async def commit_finish(self) -> None:
         self._cancel_timer()
         self._cancel_playback_watchdog()
         self._generation += 1
         self.running = False
         self.finished = True
         self._index = len(self.activities)
-        self.store.set_scene("idle", {})
-        self.store.update_lesson(
-            lesson_id=self.lesson.lesson_id,
-            class_id=self.lesson.class_id,
-            activity_index=len(self.activities),
-            activity_count=len(self.activities),
-            stage="DONE",
-            activity_id="",
-            activity_generation=self._generation,
+        self.store.commit_activity(
+            kind="idle",
+            props={},
+            lesson_fields={
+                "lesson_id": self.lesson.lesson_id,
+                "class_id": self.lesson.class_id,
+                "activity_index": len(self.activities),
+                "activity_count": len(self.activities),
+                "stage": "DONE",
+                "activity_id": "",
+                "activity_generation": self._generation,
+                "decision_revision": self.store.decision_revision,
+                "response_turn_id": None,
+                "assignment_id": None,
+                "current_student_id": None,
+            },
         )
         self.bus.publish("scene.update", self.store.scene)
         self._publish_position()
@@ -1039,18 +1332,13 @@ class LessonRunner:
             if asyncio.iscoroutine(result):
                 self._spawn(result)
 
+    _finish = commit_finish
+
     # ------------------------------------------------------------ controls
     async def control(self, cmd: str, arg: str | None = None) -> dict[str, Any]:
         cmd = (cmd or "").lower()
         if cmd == "pause":
-            self.paused = True
-            self._generation += 1
-            self._cancel_timer()
-            self._awaiting_playback_turn = None
-            self._pending_playback_turns = []
-            self._awaiting_timer = None
-            self._cancel_playback_watchdog()
-            self._publish_epoch()
+            self.pause_current()
         elif cmd == "resume":
             if self.paused:
                 self.paused = False
@@ -1065,26 +1353,29 @@ class LessonRunner:
         elif cmd == "repeat":
             self.paused = False
             if self.current is not None:
-                await self._enter(self._index)
+                await self._request_transition(
+                    cause="control",
+                    target_index=self._index,
+                    generation=self._generation,
+                )
         elif cmd == "back":
             self.paused = False
-            await self._enter(max(0, self._index - 1))
+            await self._request_transition(
+                cause="control",
+                target_index=max(0, self._index - 1),
+                generation=self._generation,
+            )
         elif cmd == "takeover":
             # The facilitator drives; freeze the reflex tier until resume.
-            self.paused = True
-            self._generation += 1
-            self._cancel_timer()
-            self._awaiting_playback_turn = None
-            self._pending_playback_turns = []
-            self._awaiting_timer = None
-            self._cancel_playback_watchdog()
-            self._publish_epoch()
-            self.store.set_overlay(subtitle=None, listening=False)
-            self.bus.publish("scene.update", self.store.scene)
+            self.pause_current(takeover=True)
         elif cmd == "goto" and arg:
             target = self.index_of(arg)
             if target >= 0:
-                await self._enter(target)
+                await self._request_transition(
+                    cause="control",
+                    target_index=target,
+                    generation=self._generation,
+                )
         else:
             return {"ok": False, "reason": f"unknown command: {cmd}"}
         return {

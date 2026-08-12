@@ -42,6 +42,7 @@ import asyncio
 import json
 import logging
 import os
+import re
 import secrets
 import sys
 import time
@@ -59,6 +60,7 @@ from bright_contracts import (
 )
 
 from scheduler import AgentSeam
+from data_policy import DataPolicy, outbound_interaction
 
 log = logging.getLogger("core.agent")
 
@@ -284,7 +286,8 @@ def build_turn_context(
 ) -> TurnContext:
     """Assemble everything the agent is allowed to see."""
     student: StudentBrief | None = None
-    trusted = context_policy == "local-trusted"
+    policy = DataPolicy.parse(context_policy)
+    trusted = policy == DataPolicy.LOCAL_TRUSTED
     if student_id:
         try:
             row = core.db.get_student(student_id)
@@ -368,6 +371,8 @@ class TurnResult:
     elapsed_ms: int = 0
     usage: dict[str, Any] | None = None
     operational_error: bool = False
+    pending_action: str | None = None
+    pending_teacher_line: str | None = None
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -397,6 +402,46 @@ def make_tool_executor(
         return scope() if scope is not None else TurnScope()
 
     async def execute(name: str, arguments: dict[str, Any]) -> Any:
+        if name == "classroom_propose_move":
+            action_id = str(arguments.get("_action_id") or "")
+            teacher_line = " ".join(str(arguments.get("teacher_line") or "").split())
+            if not action_id:
+                return {"ok": False, "reason": "move capability was not resolved"}
+            if not teacher_line or len(teacher_line) > 180:
+                return {"ok": False, "reason": "teacher_line must be 1..180 characters"}
+            # Core already delivered truth-bearing feedback. Hermes may bridge
+            # to the next activity, never re-grade the child in free text.
+            unsafe = re.search(
+                r"\b(?:correct|incorrect|wrong|right answer|well done|good job|you(?:'re| are) right|you(?:'re| are) wrong)\b",
+                teacher_line,
+                flags=re.IGNORECASE,
+            )
+            if unsafe:
+                return {"ok": False, "reason": "teacher_line must be non-evaluative"}
+            if len(re.findall(r"[.!?](?:\s|$)", teacher_line)) > 2:
+                return {"ok": False, "reason": "teacher_line must be at most two sentences"}
+            if re.search(r"https?://|www\.|<[^>]+>|<\||\|>", teacher_line, re.IGNORECASE):
+                return {"ok": False, "reason": "teacher_line contains URL, markup or control token"}
+            roster = getattr(getattr(core, "session_controller", None), "roster", {})
+            forbidden_identity = {str(key).lower() for key in roster}
+            forbidden_identity |= {
+                str(getattr(value, "display_name", "")).strip().lower()
+                for value in roster.values()
+            }
+            lowered = teacher_line.lower()
+            if any(value and re.search(rf"(?<!\w){re.escape(value)}(?!\w)", lowered) for value in forbidden_identity):
+                return {"ok": False, "reason": "teacher_line may not name or identify a learner"}
+            legal = {a.id for a in available_actions(core) if a.id != "say_only"}
+            if action_id not in legal:
+                result.rejected = "resolved move is no longer legal"
+                return {"ok": False, "reason": "resolved move is no longer legal"}
+            # MCP admission creates a pending proposal only. AgentDriver waits
+            # for the terminal Hermes envelope and successful physical
+            # playback before asking the controller to commit the move.
+            result.pending_action = action_id
+            result.pending_teacher_line = teacher_line
+            return {"ok": True, "applied": False}
+
         if name == "classroom_get_state":
             s = _scope()
             return build_turn_context(
@@ -470,7 +515,7 @@ def make_tool_executor(
         if name == "classroom_recall":
             try:
                 s = _scope()
-                if s.context_policy != "local-trusted":
+                if DataPolicy.parse(s.context_policy) != DataPolicy.LOCAL_TRUSTED:
                     # Hosted classroom providers receive no durable learner
                     # notes, including through the MCP path. The initial
                     # TurnContext policy must not be bypassable by a tool call.
@@ -591,6 +636,7 @@ class AgentDriver:
         self._registry_turn_id: str | None = None
         self._turn_generation: tuple[str | None, int | None] | None = None
         self._accepted_own_transition = False
+        self._agent_playback: asyncio.Future[bool] | None = None
 
     def _open_speech(self) -> str:
         if self._speech_turn_id is not None:
@@ -669,6 +715,14 @@ class AgentDriver:
             self._registry_turn_id = None
         return self.cancel_current(reason)
 
+    def note_playback_result(self, speech_turn_id: str, status: str) -> bool:
+        if speech_turn_id != self._speech_turn_id or self._agent_playback is None:
+            return False
+        if self._agent_playback.done():
+            return True
+        self._agent_playback.set_result(status == "completed")
+        return True
+
     def _generation_is_current(self) -> bool:
         if self._turn_generation is None:
             return True
@@ -686,6 +740,7 @@ class AgentDriver:
         recall_query: str | None = None,
         only: Collection[str] | None = None,
         relabel: Mapping[str, str] | None = None,
+        decision_ready: asyncio.Event | None = None,
     ) -> TurnResult:
         if self._busy:
             self.skipped += 1
@@ -702,7 +757,11 @@ class AgentDriver:
             only=tuple(only) if only is not None else None,
             relabel=tuple(relabel.items()) if relabel else None,
             last_interaction=last_interaction,
-            context_policy=getattr(self.core.settings, "agent_context_policy", "hosted-minimal"),
+            context_policy=getattr(
+                self.core.settings,
+                "data_policy",
+                getattr(self.core.settings, "agent_context_policy", "hosted-minimal"),
+            ),
             text_stream_voice=bool(getattr(self.agent, "streams_text_as_voice", False)),
         )
         started = time.perf_counter()
@@ -735,10 +794,21 @@ class AgentDriver:
             prepare_turn = getattr(self.agent, "prepare_turn", None)
             if callable(prepare_turn):
                 turn_id = "bright-" + secrets.token_urlsafe(24)
+                # Hermes receives per-turn opaque capabilities, not reusable
+                # lesson action ids. The registry alone knows their meaning.
+                offered = [a for a in ctx.available_actions if a.id != "say_only"][:4]
+                moves: dict[str, str] = {}
+                opaque = []
+                for action in offered:
+                    move_id = "move-" + secrets.token_urlsafe(12)
+                    moves[move_id] = action.id
+                    opaque.append(action.model_copy(update={"id": move_id}))
+                ctx = ctx.model_copy(update={"available_actions": opaque})
                 self.core.turn_registry.register(
                     turn_id,
                     self._executor,
                     student_id=student_id,
+                    moves=moves,
                     ttl_s=max(
                         float(getattr(self.core.settings, "agent_turn_timeout_s", 6.0)),
                         float(getattr(self.core.settings, "agent_greeting_timeout_s", 12.0)),
@@ -750,8 +820,9 @@ class AgentDriver:
 
             try:
                 spoken: list[str] = []
+                terminal_complete = False
                 async for event in self.agent.turn(ctx):
-                    if not self._generation_is_current():
+                    if not self._generation_is_current() and not self._accepted_own_transition:
                         result.rejected = "activity generation changed during agent turn"
                         terminal_status = "cancelled"
                         terminal_reason = "activity_generation_changed"
@@ -759,8 +830,10 @@ class AgentDriver:
                     kind = getattr(event, "type", None)
                     if kind == "text_delta" and self._scope.text_stream_voice:
                         delta = str(getattr(event, "text", ""))
+                        # Hermes only yields this after response.completed and
+                        # one accepted pending proposal. Keep it buffered until
+                        # Done confirms a clean terminal response.
                         spoken.append(delta)
-                        self._speech_delta(delta)
                     elif kind == "done":
                         usage = getattr(event, "usage", None)
                         result.usage = usage.model_dump() if usage else None
@@ -772,10 +845,43 @@ class AgentDriver:
                         else:
                             terminal_status = "completed"
                             terminal_reason = None
-                if spoken:
-                    # Keep one human-readable utterance in diagnostics while
-                    # publishing every provider delta exactly once on the bus.
-                    result.said.append("".join(spoken))
+                            terminal_complete = True
+                if terminal_complete and spoken and result.pending_action:
+                    line = "".join(spoken)
+                    if line != result.pending_teacher_line:
+                        result.rejected = "terminal teacher_line did not match pending proposal"
+                    else:
+                        # Provider/model latency ends here. Physical playback
+                        # has its own independently bounded ACK phase.
+                        if decision_ready is not None:
+                            decision_ready.set()
+                        self._agent_playback = asyncio.get_running_loop().create_future()
+                        self._speech_delta(line)
+                        self._close_speech("completed")
+                        try:
+                            played = await asyncio.wait_for(
+                                self._agent_playback,
+                                timeout=float(
+                                    getattr(self.core.settings, "playback_ack_timeout_s", 10.0)
+                                ),
+                            )
+                        except asyncio.TimeoutError:
+                            played = False
+                        if played and self._generation_is_current():
+                            await _apply(
+                                self.core,
+                                result.pending_action,
+                                {},
+                                suppress_speech=True,
+                            )
+                            self._accepted_own_transition = True
+                            result.chose = result.pending_action
+                            result.applied = True
+                            result.said.append(line)
+                        else:
+                            result.rejected = "agent speech was not audibly completed"
+                            terminal_status = "error"
+                            terminal_reason = result.rejected
             except asyncio.CancelledError:
                 terminal_status = "cancelled"
                 terminal_reason = "agent timeout or superseded turn"
@@ -790,6 +896,10 @@ class AgentDriver:
             result.elapsed_ms = int((time.perf_counter() - started) * 1000)
             return result
         finally:
+            # Fast operational/validation failures wake the caller immediately
+            # rather than consuming the remainder of the inference budget.
+            if decision_ready is not None:
+                decision_ready.set()
             self._close_speech(terminal_status, terminal_reason)
             if turn_id is not None:
                 self.core.turn_registry.retire(turn_id)
@@ -797,6 +907,7 @@ class AgentDriver:
             self._active_task = None
             self._turn_generation = None
             self._accepted_own_transition = False
+            self._agent_playback = None
             self._busy = False
 
 
@@ -820,20 +931,23 @@ class _ResultProxy:
 # ──────────────────────────────── the auto turn ─────────────────────────────
 
 
-def _describe(activity: Activity, payload: dict[str, Any]) -> str:
+def _describe(
+    activity: Activity,
+    payload: dict[str, Any],
+    *,
+    policy: DataPolicy | str = DataPolicy.HOSTED_SEMANTIC,
+    outcome: str = "unhandled",
+) -> str:
     # The payload may contain a child's raw transcript.  The agent needs the
     # Core-graded outcome, not a durable/verbatim copy of what was said.
     kind = activity.expect.kind if activity.expect else "none"
-    detail = f"activity={activity.id}; response_kind={kind}"
-    # Board identifiers are authored, bounded semantic data and useful for
-    # adaptation. Only free-form speech text is forbidden from model context.
-    if kind == "choice" and payload.get("optionId"):
-        detail += f"; option_id={payload['optionId']}"
-    elif kind == "point" and payload.get("targetId"):
-        detail += f"; target_id={payload['targetId']}"
-    elif kind == "drag":
-        detail += f"; from_id={payload.get('fromId', '')}; to_id={payload.get('toId', '')}"
-    return detail
+    return outbound_interaction(
+        policy=policy,
+        activity_id=activity.id,
+        response_kind=kind,
+        outcome=outcome,
+        payload=payload,
+    ).render()
 
 
 class AutoTurn:
@@ -888,19 +1002,34 @@ class AutoTurn:
             return None
 
         kind = activity.expect.kind if activity.expect else "none"
+        policy = DataPolicy.parse(getattr(self.core.settings, "data_policy", "hosted_semantic"))
         last = LastInteraction(
-            kind=kind, detail=_describe(activity, payload), outcome=outcome  # type: ignore[arg-type]
+            kind=kind,
+            detail=_describe(activity, payload, policy=policy, outcome=outcome),
+            outcome=outcome,  # type: ignore[arg-type]
         )
 
         self.turns += 1
         started = time.perf_counter()
         try:
-            result = await asyncio.wait_for(
+            decision_ready = asyncio.Event()
+            turn_task = asyncio.create_task(
                 driver.take_turn(
-                    last_interaction=last, student_id=getattr(self.core, "student_id", None)
-                ),
-                timeout=self.timeout_s,
+                    last_interaction=last,
+                    student_id=getattr(self.core, "student_id", None),
+                    decision_ready=decision_ready,
+                )
             )
+            try:
+                await asyncio.wait_for(decision_ready.wait(), timeout=self.timeout_s)
+            except asyncio.TimeoutError:
+                turn_task.cancel()
+                await asyncio.gather(turn_task, return_exceptions=True)
+                raise
+            # The inference decision is ready. AgentDriver now owns a separate
+            # playback_ack_timeout_s fence, so audible queued speech cannot be
+            # misclassified as provider latency or demote a healthy model.
+            result = await turn_task
         except asyncio.TimeoutError:
             self.timeouts += 1
             self._record_elapsed(started)
@@ -1270,6 +1399,15 @@ def make_probe(agent: Any, *, max_tokens: int = 1) -> Callable[[], Awaitable[flo
     """
 
     async def probe() -> float | None:
+        health = getattr(agent, "health", None)
+        if callable(health):
+            started = time.perf_counter()
+            try:
+                healthy = await health()
+            except Exception as exc:  # noqa: BLE001 — unreachable is a measurement
+                log.info("[agent] sidecar health probe failed: %r", exc)
+                return None
+            return time.perf_counter() - started if healthy else None
         complete = getattr(agent, "complete", None)
         if complete is None:
             return None

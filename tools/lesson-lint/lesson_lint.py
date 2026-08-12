@@ -50,6 +50,7 @@ DEFAULT_ASSET_ROOTS = (
 )
 
 GRADED_OUTCOMES = ("correct", "near", "wrong", "silence", "timeout")
+AUTONOMOUS_OUTCOMES = (*GRADED_OUTCOMES, "uncertain", "unhandled")
 
 # Required prop keys per scene kind (PROTOCOL.md §2). A scene missing these
 # renders as an empty or broken board in front of the class.
@@ -146,7 +147,7 @@ def _duplicate_ids(entries: Iterable[Any]) -> list[str]:
     return dupes
 
 
-def check_meta(lesson: LessonSrc, report: Report) -> None:
+def check_meta(lesson: LessonSrc, report: Report, *, release: bool = False) -> None:
     for key, why in (
         ("id", "classroom-core uses it as lessonId, and the student records key off it"),
         ("title", "the teacher sees this in the console and the lesson list"),
@@ -168,11 +169,53 @@ def check_meta(lesson: LessonSrc, report: Report) -> None:
             "there is nothing to teach",
             "add a section starting with '## some_activity_id' and a yaml block under it",
         )
+    delivery = lesson.meta.get("delivery_mode", "legacy_single")
+    if delivery not in ("legacy_single", "autonomous_class"):
+        report.error(2, "", f"unknown delivery_mode '{delivery}'",
+                     "competition packaging must know which runtime invariants apply",
+                     "use delivery_mode: legacy_single or autonomous_class")
+    if delivery == "autonomous_class":
+        for key in ("curriculum", "session_plan"):
+            if not isinstance(lesson.meta.get(key), dict):
+                report.error(2, "", f"autonomous lesson has no '{key}' block",
+                             "Core cannot enforce pedagogy, pacing and closure without compiled data",
+                             f"add a {key}: mapping to the frontmatter")
+        duration = lesson.meta.get("duration_min")
+        if not isinstance(duration, (int, float)) or not 35 <= float(duration) <= 45:
+            report.error(2, "", "autonomous lesson duration is outside 35–45 minutes",
+                         "the product unit of truth is one complete classroom period",
+                         "set duration_min between 35 and 45")
+        curriculum = lesson.meta.get("curriculum") or {}
+        if release and curriculum.get("approvalStatus") != "approved":
+            report.error(2, "", "curriculum approval is not 'approved'",
+                         "a playable lesson is not automatically safe or pedagogically valid",
+                         "name the curriculum approver, complete review, then set approvalStatus: approved")
 
 
 def check_activity(activity: ActivitySrc, lesson: LessonSrc, report: Report,
                    asset_roots: tuple[Path, ...]) -> None:
     where = activity.id
+
+    if lesson.meta.get("delivery_mode") == "autonomous_class":
+        required = {
+            "stage", "stageBudgetS", "responseScope", "participationMode",
+            "skillIds", "evidencePolicy", "recovery",
+        }
+        teaching = activity.teaching or {}
+        missing = sorted(required - set(teaching))
+        if missing:
+            report.error(activity.yaml_line, where,
+                         "autonomous activity is missing teaching fields: " + ", ".join(missing),
+                         "the class controller cannot infer pedagogy from a board type",
+                         "add a complete teaching: block")
+        recovery = teaching.get("recovery") if isinstance(teaching, dict) else None
+        if not isinstance(recovery, dict) or not {
+            "easierActivityId", "safeDefaultActivityId"
+        }.issubset(recovery):
+            report.error(activity.yaml_line, where,
+                         "autonomous activity has no complete recovery ladder",
+                         "agent/audio/noise failure needs a deterministic next move",
+                         "set recovery.easierActivityId and recovery.safeDefaultActivityId")
 
     if activity.scene is None:
         report.error(
@@ -382,6 +425,15 @@ def check_activity(activity: ActivitySrc, lesson: LessonSrc, report: Report,
                         consequence + " -- this is the single most common way an authored lesson fails a class",
                         f'add   {outcome}: {{ goto: <recovery activity>, say: ["..."] }}   under  on:',
                     )
+            if lesson.meta.get("delivery_mode") == "autonomous_class" and not has_always:
+                for outcome in ("uncertain", "unhandled"):
+                    if outcome not in branch_by_outcome:
+                        report.error(
+                            activity.locate("on:") if activity.branches else activity.yaml_line,
+                            where, f"no '{outcome}' branch",
+                            "autonomous speech/noise/off-script recovery must be authored, not improvised",
+                            f'add   {outcome}: {{ goto: <safe activity>, say: ["..."] }}   under  on:',
+                        )
             # what can *actually* fire, given the timing (PROTOCOL §9.4)
             live = "timeout" if activity.duration_s else "silence"
             if live not in branch_by_outcome and not has_always:
@@ -461,7 +513,10 @@ def check_flow(lesson: LessonSrc, report: Report) -> dict[str, Any]:
                 out.append(index[branch.goto])
         covered = "always" in by_outcome
         if activity.expect is not None and activity.expect.get("kind") not in (None, "none"):
-            covered = covered or all(o in by_outcome for o in GRADED_OUTCOMES)
+            required_outcomes = (AUTONOMOUS_OUTCOMES
+                                 if lesson.meta.get("delivery_mode") == "autonomous_class"
+                                 else GRADED_OUTCOMES)
+            covered = covered or all(o in by_outcome for o in required_outcomes)
         if not covered and i + 1 < len(activities):
             out.append(i + 1)                       # core's fall-through
         return out
@@ -536,10 +591,10 @@ def _suggest(value: str, known: dict[str, Any]) -> str | None:
     return matches[0] if matches else None
 
 
-def lint(path: Path, asset_roots: tuple[Path, ...]) -> Report:
+def lint(path: Path, asset_roots: tuple[Path, ...], *, release: bool = False) -> Report:
     report = Report(path=path)
     lesson = parse_lesson(path)
-    check_meta(lesson, report)
+    check_meta(lesson, report, release=release)
     for activity in lesson.activities:
         check_activity(activity, lesson, report, asset_roots)
     report.stats = check_flow(lesson, report)
@@ -627,6 +682,8 @@ def main(argv: list[str] | None = None) -> int:
                         help="directory that asset:// resolves against (repeatable)")
     parser.add_argument("--json", action="store_true", help="machine-readable output")
     parser.add_argument("--strict", action="store_true", help="warnings fail too")
+    parser.add_argument("--release", action="store_true",
+                        help="enforce curriculum approval and competition packaging gates")
     parser.add_argument("--quiet", action="store_true", help="summary only")
     parser.add_argument("--no-color", action="store_true")
     args = parser.parse_args(argv)
@@ -639,7 +696,7 @@ def main(argv: list[str] | None = None) -> int:
     for raw in args.lesson:
         path = Path(raw)
         try:
-            report = lint(path, roots)
+            report = lint(path, roots, release=args.release)
         except LessonSourceError as exc:
             if args.json:
                 payloads.append({"lesson": str(path), "ok": False,

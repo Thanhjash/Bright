@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import type { MediaItem, VocabularyProps } from '@contracts'
 import { useBus } from '../../bus'
+import { currentResponseCorrelation } from '../../store/classroom'
 import { MediaTile, BoardShell, cx } from './parts'
 
 /**
@@ -24,13 +25,15 @@ export function VocabularyBoard({ props }: { props: VocabularyProps }) {
   const interactive = props.interaction !== 'none'
   const items = props.items ?? []
 
-  function point(item: MediaItem, event: React.PointerEvent<HTMLButtonElement>) {
+  function point(item: MediaItem, button: HTMLButtonElement, clientX?: number, clientY?: number) {
     if (!interactive) return
+    const correlation = currentResponseCorrelation()
+    if (!correlation) return
     setPressed(item.id) // optimistic, same tick as the tap
-    const r = event.currentTarget.getBoundingClientRect()
-    const x = r.width ? clamp01((event.clientX - r.left) / r.width) : 0.5
-    const y = r.height ? clamp01((event.clientY - r.top) / r.height) : 0.5
-    bus.send('interaction.point', { targetId: item.id, x, y })
+    const r = button.getBoundingClientRect()
+    const x = r.width && clientX !== undefined ? clamp01((clientX - r.left) / r.width) : 0.5
+    const y = r.height && clientY !== undefined ? clamp01((clientY - r.top) / r.height) : 0.5
+    bus.send('interaction.point', { targetId: item.id, x, y, ...correlation })
     window.setTimeout(() => setPressed((p) => (p === item.id ? null : p)), 420)
   }
 
@@ -49,7 +52,12 @@ export function VocabularyBoard({ props }: { props: VocabularyProps }) {
               key={item.id}
               type="button"
               disabled={!interactive}
-              onPointerDown={(e) => point(item, e)}
+              onPointerDown={(e) => point(item, e.currentTarget, e.clientX, e.clientY)}
+              onKeyDown={(event) => {
+                if (event.key !== 'Enter' && event.key !== ' ') return
+                event.preventDefault()
+                point(item, event.currentTarget)
+              }}
               style={{ animationDelay: `${i * 55}ms` }}
               className={cx(
                 'animate-rise card-surface relative flex min-h-0 overflow-hidden p-[2.2vh_1.2vw]',

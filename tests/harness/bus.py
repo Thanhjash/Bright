@@ -73,7 +73,7 @@ class BusClient:
     async def send(self, type_: str, payload: dict[str, Any]) -> None:
         self._out_seq += 1
         frame = {
-            "v": 2,
+            "v": 3,
             "type": type_,
             "seq": self._out_seq,
             "stateVersion": self.state_version,

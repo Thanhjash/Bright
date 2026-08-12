@@ -77,7 +77,7 @@ def test_wire_client_emits_protocol_v2_and_its_declared_role() -> None:
         return json.loads(client.ws.frames[0])
 
     frame = asyncio.run(scenario())
-    assert frame["v"] == 2
+    assert frame["v"] == 3
     assert frame["type"] == "client.hello"
     assert frame["payload"] == {"role": "stage"}
     assert frame["seq"] == 1

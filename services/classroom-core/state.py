@@ -38,6 +38,10 @@ class StateStore:
     ) -> None:
         self._lock = threading.RLock()
         self._version = 1
+        # A visual repaint is not a pedagogical decision.  Keep these fences
+        # separate so an overlay/subtitle update cannot invalidate an otherwise
+        # current teacher proposal.
+        self._decision_revision = 0
         self._scene = Scene(state_version=1, kind="idle", props={}, overlay=SceneOverlay())
         self._lesson = (lesson or IDLE_LESSON).model_copy(deep=True)
         self._mode: Mode = mode
@@ -48,6 +52,11 @@ class StateStore:
     @property
     def state_version(self) -> int:
         return self._version
+
+    @property
+    def decision_revision(self) -> int:
+        with self._lock:
+            return self._decision_revision
 
     @property
     def scene(self) -> Scene:
@@ -69,6 +78,8 @@ class StateStore:
             return {
                 "scene": self._scene.model_copy(deep=True),
                 "lesson": self._lesson.model_copy(deep=True),
+                "decisionRevision": self._decision_revision,
+                "activityGeneration": self._lesson.activity_generation,
             }
 
     # ------------------------------------------------------------ writing
@@ -104,6 +115,46 @@ class StateStore:
             self._apply_mode_badge()
             self._bump()
             return self._scene.model_copy(deep=True)
+
+    def advance_decision_revision(self) -> int:
+        """Advance the pedagogical fence without pretending it is a repaint."""
+        with self._lock:
+            self._decision_revision += 1
+            return self._decision_revision
+
+    def commit_activity(
+        self,
+        *,
+        kind: str,
+        props: dict[str, Any],
+        lesson_fields: dict[str, Any],
+        overlay: SceneOverlay | dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Atomically replace Scene + LessonPosition with one stateVersion.
+
+        Activity entry used to call ``set_scene`` then ``update_lesson`` and
+        publish an impossible half-new snapshot in between.  This is the
+        transition commit primitive used by ``ClassSessionController``.
+        """
+        with self._lock:
+            if isinstance(overlay, dict):
+                overlay = SceneOverlay.model_validate(overlay)
+            new_overlay = overlay.model_copy(deep=True) if overlay else SceneOverlay()
+            lesson = self._lesson.model_copy(deep=True)
+            for key, value in lesson_fields.items():
+                if not hasattr(lesson, key):
+                    raise KeyError(f"unknown lesson field: {key}")
+                setattr(lesson, key, value)
+            self._scene = Scene(
+                state_version=self._version,
+                kind=kind,  # type: ignore[arg-type]
+                props=dict(props),
+                overlay=new_overlay,
+            )
+            self._lesson = lesson
+            self._apply_mode_badge()
+            self._bump()
+            return self.snapshot()
 
     def set_scene_props(self, props: dict[str, Any]) -> Scene:
         """Re-render the current scene kind with new props (still a whole scene)."""

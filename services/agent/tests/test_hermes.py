@@ -77,7 +77,12 @@ def test_request_is_streaming_and_never_stored():
     assert body["model"] == "classroom"
     assert "turn-123" in body["input"]
     assert "tools" not in body, "Hermes tools come from its profile, never the client request"
-    assert "Never call classroom_say" in body["instructions"]
+    assert "instructions" not in body, "the live prompt is server-owned and cannot drift per request"
+
+
+def test_headers_never_enable_hermes_conversation_chaining():
+    config = HermesConfig.from_env({"HERMES_SESSION_KEY": "must-be-ignored"})
+    assert "X-Hermes-Session-Key" not in config.headers()
 
 
 def test_config_reads_environment_and_keeps_safe_defaults():
@@ -97,6 +102,22 @@ def test_config_reads_environment_and_keeps_safe_defaults():
     assert configured.model == "local-gemma"
     assert configured.request_timeout_s == 7
     assert configured.connect_timeout_s == 0.5
+
+
+async def test_health_uses_gateway_endpoint_without_model_completion():
+    seen: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return httpx.Response(200, json={"status": "ok"})
+
+    agent = make_agent(handler)
+    assert await agent.health() is True
+    assert len(seen) == 1
+    assert seen[0].method == "GET"
+    assert seen[0].url.path == "/health"
+    assert seen[0].headers["authorization"] == "Bearer secret"
+    await agent.aclose()
 
 
 async def test_sse_parser_supports_multiline_data_and_comments():
@@ -126,7 +147,7 @@ async def test_sse_parser_rejects_bad_json():
         _ = [event async for event in iter_sse_events(lines())]
 
 
-async def test_text_tool_and_usage_are_translated_in_order():
+async def test_only_committed_proposal_teacher_line_becomes_voice():
     def handler(request: httpx.Request) -> httpx.Response:
         assert request.headers["authorization"] == "Bearer secret"
         body = json.loads(request.content)
@@ -137,9 +158,15 @@ async def test_text_tool_and_usage_are_translated_in_order():
                 "id": "fc_1",
                 "type": "function_call",
                 "status": "in_progress",
-                "name": "mcp__bright_classroom__classroom_choose_next",
+                "name": "mcp__bright_classroom__classroom_propose_move",
                 "call_id": "call_1",
-                "arguments": '{"turn_id":"ignored-here","state_version":88,"action_id":"next_activity"}',
+                "arguments": json.dumps(
+                    {
+                        "turn_id": "ignored-here",
+                        "move_id": "next_activity",
+                        "teacher_line": "Let's try the next one.",
+                    }
+                ),
             },
         }
         result = {
@@ -148,14 +175,27 @@ async def test_text_tool_and_usage_are_translated_in_order():
                 "type": "function_call_output",
                 "status": "completed",
                 "call_id": "call_1",
-                "output": [{"type": "input_text", "text": '{"ok":true,"applied":"next_activity"}'}],
+                "output": [
+                    {
+                        "type": "input_text",
+                        "text": json.dumps(
+                            {
+                                "result": '{"ok":true,"applied":"next_activity"}',
+                                "structuredContent": {
+                                    "ok": True,
+                                    "applied": "next_activity",
+                                },
+                            }
+                        ),
+                    }
+                ],
             },
         }
         content = stream_body(
             created(),
             (
                 "response.output_text.delta",
-                {"type": "response.output_text.delta", "delta": "Good work!"},
+                {"type": "response.output_text.delta", "delta": "UNTRUSTED PRE-COMMIT TEXT"},
             ),
             ("response.output_item.added", call),
             ("response.output_item.added", result),
@@ -164,13 +204,16 @@ async def test_text_tool_and_usage_are_translated_in_order():
         return httpx.Response(200, content=content, headers={"content-type": "text/event-stream"})
 
     agent = make_agent(handler)
+    agent.prepare_turn("ignored-here")
     events = await collect(agent)
-    assert [event.text for event in events if isinstance(event, TextDelta)] == ["Good work!"]
+    assert [event.text for event in events if isinstance(event, TextDelta)] == [
+        "Let's try the next one."
+    ]
     call = next(event for event in events if isinstance(event, ToolCall))
-    assert call.name == "classroom_choose_next"
-    assert call.arguments["action_id"] == "next_activity"
+    assert call.name == "classroom_propose_move"
+    assert call.arguments["move_id"] == "next_activity"
     result = next(event for event in events if isinstance(event, ToolResult))
-    assert result.name == "classroom_choose_next"
+    assert result.name == "classroom_propose_move"
     assert result.ok is True
     assert result.result["applied"] == "next_activity"
     done = events[-1]
@@ -179,6 +222,140 @@ async def test_text_tool_and_usage_are_translated_in_order():
     assert done.usage.completion_tokens == 7
     assert done.usage.total_tokens == 38
     assert agent.last_response_id == "resp_test"
+
+
+async def test_completed_response_status_cannot_override_rejected_inner_mcp_result():
+    def handler(request: httpx.Request) -> httpx.Response:
+        call = {
+            "type": "response.output_item.added",
+            "item": {
+                "id": "fc_rejected",
+                "type": "function_call",
+                "status": "in_progress",
+                "name": "mcp__bright_classroom__classroom_propose_move",
+                "call_id": "call_rejected",
+                "arguments": json.dumps(
+                    {
+                        "turn_id": "turn-rejected",
+                        "move_id": "advance",
+                        "teacher_line": "Let's continue.",
+                    }
+                ),
+            },
+        }
+        output = {
+            "type": "response.output_item.added",
+            "item": {
+                "type": "function_call_output",
+                "status": "completed",
+                "call_id": "call_rejected",
+                "output": [
+                    {
+                        "type": "input_text",
+                        "text": json.dumps(
+                            {
+                                "result": '{"ok":false,"reason":"stale turn"}',
+                                "structuredContent": {"ok": False, "reason": "stale turn"},
+                            }
+                        ),
+                    }
+                ],
+            },
+        }
+        return httpx.Response(
+            200,
+            content=stream_body(created(), ("response.output_item.added", call), ("response.output_item.added", output), completed()),
+            headers={"content-type": "text/event-stream"},
+        )
+
+    agent = make_agent(handler)
+    agent.prepare_turn("turn-rejected")
+    events = await collect(agent)
+    assert not any(isinstance(event, TextDelta) for event in events)
+    result = next(event for event in events if isinstance(event, ToolResult))
+    assert result.ok is False
+    assert "stale turn" in (result.error or "")
+    assert isinstance(events[-1], Done)
+    assert events[-1].reason == "error"
+
+
+async def test_response_without_exactly_one_proposal_fails_closed():
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            content=stream_body(
+                created(),
+                (
+                    "response.output_text.delta",
+                    {"type": "response.output_text.delta", "delta": "Do not speak this."},
+                ),
+                completed(),
+            ),
+            headers={"content-type": "text/event-stream"},
+        )
+
+    agent = make_agent(handler)
+    agent.prepare_turn("turn")
+    events = await collect(agent)
+    assert not any(isinstance(event, TextDelta) for event in events)
+    assert events[-1].reason == "error"
+    assert "exactly one" in (events[-1].detail or "")
+
+
+async def test_second_proposal_makes_whole_response_invalid_and_speaks_nothing():
+    def call(number: int) -> tuple[str, dict[str, Any]]:
+        return (
+            "response.output_item.added",
+            {
+                "type": "response.output_item.added",
+                "item": {
+                    "type": "function_call",
+                    "name": "classroom_propose_move",
+                    "call_id": f"call_{number}",
+                    "arguments": json.dumps(
+                        {
+                            "turn_id": "turn",
+                            "move_id": f"move_{number}",
+                            "teacher_line": f"Line {number}",
+                        }
+                    ),
+                },
+            },
+        )
+
+    def output(number: int) -> tuple[str, dict[str, Any]]:
+        return (
+            "response.output_item.added",
+            {
+                "type": "response.output_item.added",
+                "item": {
+                    "type": "function_call_output",
+                    "status": "completed",
+                    "call_id": f"call_{number}",
+                    "output": [
+                        {
+                            "type": "input_text",
+                            "text": json.dumps(
+                                {"structuredContent": {"ok": True, "applied": f"move_{number}"}}
+                            ),
+                        }
+                    ],
+                },
+            },
+        )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            content=stream_body(created(), call(1), call(2), output(1), output(2), completed()),
+            headers={"content-type": "text/event-stream"},
+        )
+
+    agent = make_agent(handler)
+    agent.prepare_turn("turn")
+    events = await collect(agent)
+    assert not any(isinstance(event, TextDelta) for event in events)
+    assert events[-1].reason == "error"
 
 
 async def test_http_error_is_one_done_error_without_retry():
@@ -246,31 +423,14 @@ async def test_cancelling_turn_closes_the_stream_and_reraises_cancelled():
     await asyncio.wait_for(stream.closed.wait(), timeout=1)
 
 
-async def test_complete_returns_chat_compatible_shape_for_core_jobs():
-    def handler(request: httpx.Request) -> httpx.Response:
-        body = json.loads(request.content)
-        assert body["stream"] is False and body["store"] is False
-        return httpx.Response(
-            200,
-            json={
-                "id": "resp_summary",
-                "status": "completed",
-                "model": "classroom",
-                "output": [
-                    {
-                        "type": "message",
-                        "content": [{"type": "output_text", "text": '{"summary":"ok"}'}],
-                    }
-                ],
-                "usage": {"input_tokens": 4, "output_tokens": 3, "total_tokens": 7},
-            },
-        )
+async def test_live_complete_is_disabled_without_consuming_the_single_gateway_slot():
+    requests = 0
 
-    payload = await make_agent(handler).complete(
-        [
-            {"role": "system", "content": "Return JSON."},
-            {"role": "user", "content": "Summarize."},
-        ]
-    )
-    assert payload["choices"][0]["message"]["content"] == '{"summary":"ok"}'
-    assert payload["usage"]["total_tokens"] == 7
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal requests
+        requests += 1
+        return httpx.Response(500)
+
+    with pytest.raises(RuntimeError, match="live Hermes profile"):
+        await make_agent(handler).complete([{"role": "user", "content": "probe"}])
+    assert requests == 0

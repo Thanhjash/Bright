@@ -11,7 +11,7 @@
 > If another document contradicts this file, this file wins.
 
 **Updated:** 2026-08-12
-**Status:** direction locked; Option B code implemented, release verification open
+**Status:** direction locked; v3 autonomous vertical slice mechanically green, release gates open
 
 ---
 
@@ -29,9 +29,14 @@ We are building:
 
 English here is not a "chat feature." English is **an interactive environment**: listening, seeing, speaking, pointing, touching, playing, roleplaying, and exploring the world.
 
-### The setting: an Intel × UN competition
+### The setting: an Intel competition; exact programme attribution must be verified
 
-This is built as a competition entry for a programme run by **Intel and the United Nations**. That is context, not decoration, and it reorders two things:
+This is built as an Intel-focused competition entry. Earlier project notes described
+it as an **Intel × United Nations** programme, but the official Intel festival page
+reviewed on 2026-08-12 does not by itself establish UN co-ownership. Use the exact
+organizer wording from the entry rulebook in every public claim. The Intel/local and
+child-centred/global constraints below remain product requirements regardless of the
+final event name, and they reorder two things:
 
 **1. Running locally on Intel hardware is part of the argument, not a later phase.**
 
@@ -79,14 +84,15 @@ This is the target, stated plainly because it is easy to drift from:
 
 The distinction matters because it changes what has to be built. A tool that assists a teacher can leave gaps for the teacher to fill. An autonomous teacher cannot.
 
-**Autonomy demands four things this system does not yet have.** Naming them honestly, because the current build is closer to *adaptive courseware* than to a teacher:
+**Autonomy demands four things.** The v3 slice establishes their deterministic
+contracts, but does not yet prove a whole autonomous classroom:
 
 | Requirement | Where we are |
 |---|---|
-| **Runs a whole session unattended** — starts, paces itself across 45 minutes, decides when a stage has landed and it is time to move on, and ends | Production Start/Restart now exists, but an operator still triggers it and the agent still does not own the 45-minute arc |
-| **Handles what is not in the script** — a child asks about penguins, the room goes noisy, nobody understands the question | The `unhandled_utterance` path is designed ([architecture](../3-design/architecture.md)) and not built. Off-script input currently has nowhere to go |
-| **Manages a class, not a student** — who to call on, who has gone quiet, keeping 30 children with it | The whole memory and turn model is single-student today |
-| **Recovers on its own** — a wrong branch, a confused class, a failed activity | Falls back to the authored branch. Correct and safe, but that is *not stalling*, which is not the same as *recovering* |
+| **Runs a whole session unattended** — paces 35–45 minutes and closes it | A 37–39 minute compiled lesson and session controller exist. Stage budgets/checkpoints are metadata, but full pacing policy is not yet executed or soak-proven |
+| **Handles what is not in the script** — questions, noise, confusion | `uncertain`/`unhandled` branches and safe defaults exist. Only one sampled speech turn is wired; conversational recovery is not composed or room-proven |
+| **Manages a class, not a student** — calls learners fairly and attributes evidence | Roster, attendance, deterministic fairness/cooldown, assignments and participation ledger exist. Longitudinal class-aware memory is incomplete |
+| **Recovers on its own** — wrong branch, failed activity, lost capability | Capability loss and playback failure enter explicit recovery/safe pause. Recovery metadata is not yet fully executed, and a saved checkpoint is not restored after Core restart |
 
 **What stays true regardless:** NS-1. An autonomous teacher that stops when the model is unavailable is not autonomous — it is fragile. Autonomy is built *on top of* a lesson that runs without intelligence, never instead of it.
 
@@ -177,12 +183,11 @@ audio playback, animation       update belief about a student
 
 The agent does **not** generate HTML. It does **not** call `eval()`. It does not know CSS exists.
 
-The agent proposes within a constrained option set that Classroom Core computes:
+The live agent proposes one bounded move from the opaque options Classroom Core issued:
 
 ```
-classroom_get_state()          → state + available_actions[]
-classroom_choose_next(...)     → pick one of available_actions
-classroom_record_observation() → the only write into student state
+classroom_propose_move(turn_id, move_id, teacher_line)
+  → exactly one terminal proposal; Core revalidates and commits after playback
 ```
 
 For the live Option B runtime, streamed Hermes assistant text is the only adaptive
@@ -195,7 +200,9 @@ The renderer decides the UI. This is the single most important boundary in the s
 
 ### NS-4 — The runtime is replaceable; the contract is not
 
-Hermes is at `0.20.0` — a young, fast-moving project. If it stops fitting, we must be able to swap it in days, not rewrite the product.
+The live runtime pins `hermes-agent 0.20.0+bright.1` to upstream commit
+`03fa32c92dd445eb64c7f67434dd91b32c40701d`. Hermes is young and fast-moving;
+if it stops fitting, we must be able to swap it in days, not rewrite the product.
 
 Therefore **our actual assets** are:
 
@@ -211,7 +218,9 @@ Hermes, AIRI, and OpenVINO are all *swappable*. Those five are not.
 
 Classroom state lives in `classroom-core` (a schema'd DB), not in a model's context window. The model is *shown* state; it does not *own* state.
 
-Consequence: restarting the agent mid-class does not lose the lesson.
+Consequence: restarting the agent mid-class does not lose Core's live lesson state.
+Core now persists a controller checkpoint, but startup restore is not implemented;
+power-loss/Core-restart resume remains a release gate.
 
 ---
 

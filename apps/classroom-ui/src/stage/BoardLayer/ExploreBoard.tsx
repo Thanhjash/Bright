@@ -28,6 +28,7 @@
 import { useState } from 'react'
 import type { ExploreProps } from '@contracts'
 import { useBus } from '../../bus'
+import { currentResponseCorrelation } from '../../store/classroom'
 import { BoardShell, Picture, cx } from './parts'
 
 type Node = ExploreProps['nodes'][number]
@@ -41,12 +42,14 @@ export function ExploreBoard({ props }: { props: ExploreProps }) {
   const [pressed, setPressed] = useState<string | null>(null)
   const orbit = nodes.length > 0 && nodes.length <= ORBIT_MAX
 
-  function open(node: Node, event: React.PointerEvent<HTMLButtonElement>) {
+  function open(node: Node, button: HTMLButtonElement, clientX?: number, clientY?: number) {
+    const correlation = currentResponseCorrelation()
+    if (!correlation) return
     setPressed(node.id) // optimistic, same tick as the tap
-    const r = event.currentTarget.getBoundingClientRect()
-    const x = r.width ? clamp01((event.clientX - r.left) / r.width) : 0.5
-    const y = r.height ? clamp01((event.clientY - r.top) / r.height) : 0.5
-    bus.send('interaction.point', { targetId: node.id, x, y })
+    const r = button.getBoundingClientRect()
+    const x = r.width && clientX !== undefined ? clamp01((clientX - r.left) / r.width) : 0.5
+    const y = r.height && clientY !== undefined ? clamp01((clientY - r.top) / r.height) : 0.5
+    bus.send('interaction.point', { targetId: node.id, x, y, ...correlation })
     window.setTimeout(() => setPressed((p) => (p === node.id ? null : p)), 420)
   }
 
@@ -172,13 +175,18 @@ function NodeCard({
   index: number
   focused: boolean
   pressed: boolean
-  onOpen: (node: Node, e: React.PointerEvent<HTMLButtonElement>) => void
+  onOpen: (node: Node, button: HTMLButtonElement, clientX?: number, clientY?: number) => void
   style?: React.CSSProperties
 }) {
   return (
     <button
       type="button"
-      onPointerDown={(e) => onOpen(node, e)}
+      onPointerDown={(e) => onOpen(node, e.currentTarget, e.clientX, e.clientY)}
+      onKeyDown={(event) => {
+        if (event.key !== 'Enter' && event.key !== ' ') return
+        event.preventDefault()
+        onOpen(node, event.currentTarget)
+      }}
       style={{ ...style, animationDelay: `${index * 80}ms`, touchAction: 'none' }}
       className={cx(
         'animate-rise card-surface group z-20 flex cursor-pointer flex-col items-center gap-[0.9vh] overflow-hidden p-[1.2vh_0.7vw]',

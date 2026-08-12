@@ -20,6 +20,11 @@
 import { PROTOCOL_VERSION } from '@contracts'
 import type { Event, HeartbeatPayload } from '@contracts'
 import { BusEmitter } from './emitter'
+import {
+  beginConnectionEpoch,
+  CLIENT_INSTANCE_ID,
+  currentConnectionEpoch,
+} from './clientCapabilities'
 import type {
   Bus,
   ClientEventMap,
@@ -53,6 +58,7 @@ export interface WsBusOptions {
 
 export class WsBus implements Bus {
   readonly role: 'stage' | 'control'
+  readonly clientInstanceId = CLIENT_INSTANCE_ID
 
   #url: string
   #getStateVersion: () => number
@@ -125,9 +131,14 @@ export class WsBus implements Bus {
       if (!isCurrent()) return
       // New connection ⇒ new seq space, and no trustworthy local state.
       this.#inSeq = null
+      beginConnectionEpoch()
       this.#outSeq = 0
       this.#awaitingSnapshot = true
       this.#lastFrameAt = Date.now()
+      // PROTOCOL: client.hello is the mandatory first frame. Publishing the
+      // open status before this let BusProvider's capability reporter win the
+      // callback race and Core correctly closed the socket as malformed.
+      this.#hello()
       this.#setStatus({
         state: 'open',
         attempts: 0,
@@ -139,7 +150,6 @@ export class WsBus implements Bus {
       })
       this.#armLiveness()
       this.#emitter.emitReset('connected')
-      this.#hello()
     }
 
     socket.onmessage = (ev) => {
@@ -181,6 +191,10 @@ export class WsBus implements Bus {
       socket.close(1000, 'client shutdown')
     }
     this.#setStatus({ state: 'closed', attempts: 0, retryInMs: 0 })
+  }
+
+  connectionEpoch(): number {
+    return currentConnectionEpoch()
   }
 
   // ── outbound ───────────────────────────────────────────────────────────

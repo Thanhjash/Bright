@@ -27,7 +27,7 @@ from config import Settings
 
 ROOT = Path(__file__).resolve().parents[1]
 
-HELLO = {"v": 2, "type": "client.hello", "payload": {"role": "stage"}}
+HELLO = {"v": 3, "type": "client.hello", "payload": {"role": "stage"}}
 
 INTERVAL = 0.05
 DEAD = 0.5
@@ -69,7 +69,7 @@ def ack(ws, heartbeat: dict) -> None:
     ws.send_text(
         json.dumps(
             {
-                "v": 2,
+                "v": 3,
                 "type": "heartbeat.ack",
                 "seq": 1,
                 "stateVersion": heartbeat["stateVersion"],
@@ -162,7 +162,7 @@ def test_reconnecting_after_many_heartbeats_sees_no_gap(client: TestClient):
         second.send_text(
             json.dumps(
                 {
-                    "v": 2,
+                    "v": 3,
                     "type": "client.hello",
                     "seq": 1,
                     "stateVersion": last_version,

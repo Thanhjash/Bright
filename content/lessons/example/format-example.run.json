@@ -1,5 +1,7 @@
 {
-  "v": 1,
+  "v": 3,
+  "lessonSchemaVersion": 1,
+  "deliveryMode": "legacy_single",
   "lessonId": "en-a1-format-example",
   "classId": "demo",
   "title": "At the Market (format example)",

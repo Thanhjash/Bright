@@ -81,7 +81,7 @@ fi
 # Hermes is optional: Core still teaches the authored lesson without it. If a
 # release contains the pinned wheel set, install it into an isolated venv so
 # its fast-moving dependency graph cannot disturb speech/core.
-if compgen -G "$RELEASE/wheels/hermes_agent-0.20.0-*.whl" >/dev/null 2>&1; then
+if compgen -G "$RELEASE/wheels/hermes_agent-0.20.0+bright.1-*.whl" >/dev/null 2>&1; then
   if [[ ! -x "$PREFIX/hermes-venv/bin/python3" ]]; then
     step "Hermes python environment"
     python3 -m venv "$PREFIX/hermes-venv" || die "python3-venv is not installed."
@@ -90,20 +90,24 @@ if compgen -G "$RELEASE/wheels/hermes_agent-0.20.0-*.whl" >/dev/null 2>&1; then
   "$PREFIX/hermes-venv/bin/pip" install --no-index --find-links "$RELEASE/wheels" \
       -r "$RELEASE/infra/hermes/requirements.txt" >/dev/null \
     || die "Could not install the pinned Hermes packages from wheels/."
+  "$PREFIX/hermes-venv/bin/python3" "$RELEASE/infra/hermes/verify_runtime.py" \
+    || die "Installed Hermes is not Bright's verified live-classroom runtime."
   chown -R bright:bright "$PREFIX/hermes-venv"
 else
-  printf '    no Hermes 0.20.0 wheel — agent runtime remains optional/offline\n'
+  printf '    no verified Hermes 0.20.0+bright.1 wheel — agent runtime remains optional/offline\n'
 fi
 
-# Profile policy is release-owned, but never overwrite a field-edited profile.
-if [[ ! -f "$DATA/hermes/classroom/config.yaml" ]]; then
-  install -m 0640 -o bright -g bright "$RELEASE/infra/hermes/config.yaml" \
-      "$DATA/hermes/classroom/config.yaml"
-fi
-if [[ ! -f "$DATA/hermes/classroom/SOUL.md" ]]; then
-  install -m 0640 -o bright -g bright "$RELEASE/infra/hermes/SOUL.md" \
-      "$DATA/hermes/classroom/SOUL.md"
-fi
+# The classroom policy is executable release code, not field configuration.
+# Always promote it atomically so an appliance cannot keep broad/obsolete tools
+# after an update. Provider keys and model endpoints remain in bright.env.
+install -m 0640 -o bright -g bright "$RELEASE/infra/hermes/config.yaml" \
+    "$DATA/hermes/classroom/config.yaml.new"
+mv -f "$DATA/hermes/classroom/config.yaml.new" \
+    "$DATA/hermes/classroom/config.yaml"
+install -m 0640 -o bright -g bright "$RELEASE/infra/hermes/SOUL.md" \
+    "$DATA/hermes/classroom/SOUL.md.new"
+mv -f "$DATA/hermes/classroom/SOUL.md.new" \
+    "$DATA/hermes/classroom/SOUL.md"
 
 # --- 5. configuration --------------------------------------------------------
 if [[ -f "$CONF/bright.env" ]]; then

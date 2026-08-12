@@ -112,6 +112,8 @@ def compile_activity(activity: ActivitySrc) -> dict[str, Any]:
                 entry["narration"] = _narration(branch.say)
             branches.append(entry)
         out["branches"] = branches
+    if activity.teaching:
+        out["teaching"] = activity.teaching
     return out
 
 
@@ -131,7 +133,9 @@ def compile_lesson(lesson: LessonSrc, *, class_id: str | None = None) -> dict[st
                 manifest.append(audio)
 
     return {
-        "v": 1,
+        "v": 3,
+        "lessonSchemaVersion": int(meta.get("lesson_schema_version") or 1),
+        "deliveryMode": str(meta.get("delivery_mode") or "legacy_single"),
         "lessonId": str(meta.get("id") or lesson.path.stem),
         "classId": str(class_id or meta.get("class") or "demo"),
         "title": str(meta.get("title") or lesson.path.stem),
@@ -141,6 +145,8 @@ def compile_lesson(lesson: LessonSrc, *, class_id: str | None = None) -> dict[st
                                              or meta.get("studentsToCheck") or [])],
         "activities": activities,
         "mediaManifest": sorted(manifest),
+        **({"curriculum": meta["curriculum"]} if meta.get("curriculum") else {}),
+        **({"sessionPlan": meta["session_plan"]} if meta.get("session_plan") else {}),
     }
 
 
@@ -176,6 +182,8 @@ def main(argv: list[str] | None = None) -> int:
                         help="directory that asset:// resolves against (repeatable)")
     parser.add_argument("--force", action="store_true",
                         help="write even if lint found problems (for work in progress)")
+    parser.add_argument("--release", action="store_true",
+                        help="enforce curriculum approval and autonomous release gates")
     parser.add_argument("--stdout", action="store_true", help="print the run instead of writing it")
     args = parser.parse_args(argv)
 
@@ -190,7 +198,7 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     roots = tuple(Path(p).resolve() for p in args.assets) or lesson_lint.DEFAULT_ASSET_ROOTS
-    report = lesson_lint.lint(path, roots)
+    report = lesson_lint.lint(path, roots, release=args.release)
     if report.errors and not args.force:
         print(lesson_lint.render(report, sys.stdout.isatty(), quiet=False), file=sys.stderr)
         print("\nnot compiled: fix the problems above, or pass --force to write anyway",

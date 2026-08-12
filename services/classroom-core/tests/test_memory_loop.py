@@ -264,16 +264,16 @@ async def test_the_memory_loop_closes_across_two_sessions(core: Core):
     await core.start_lesson(index=1, student_id="s01")
     second = core.session_id
     assert second != first
+    assert len(agent.contexts) == turns_before, "private learner memory must not create public startup speech"
+    private = build_turn_context(core, student_id="s01", recall_query="animal_vocab")
+    assert private.student is not None
+    assert private.student.name == "Mai", "the child is recognised, not re-registered"
+    assert private.recalled, "session 1 remains available to a scoped teaching turn"
 
-    greeting = agent.contexts[turns_before]
-    assert greeting.student is not None
-    assert greeting.student.name == "Mai", "the child is recognised, not re-registered"
-    assert greeting.recalled, "session 1 reached session 2's prompt"
-
-    remembered = " ".join(m.text for m in greeting.recalled)
+    remembered = " ".join(m.text for m in private.recalled)
     assert "animal_vocab" in remembered
     assert any(
-        "not secure yet" in m.text for m in greeting.recalled
+        "not secure yet" in m.text for m in private.recalled
     ), f"the session summary itself should surface, got: {remembered}"
 
 
@@ -368,7 +368,23 @@ async def test_the_default_recall_query_covers_skills_and_prose(core: Core):
 # ------------------------------------------------------- greeting by name
 
 
-async def test_the_greeting_turn_is_offered_the_name_and_the_memory(core: Core):
+async def test_class_start_does_not_publish_private_name_or_memory(core: Core):
+    agent = wire(core, teach, reply=SUMMARY_JSON)
+    with_summariser(core, agent)
+    first = await play_a_session(core, student_id="s01", student_name="Mai")
+    await core.jobs.summarize_session(first)
+
+    sub = core.bus.subscribe(role="stage")
+    turns_before = len(agent.contexts)
+    await core.start_lesson(index=1, student_id="s01")
+    frames = [sub.queue.get_nowait() for _ in range(sub.queue.qsize())]
+    rendered = str(frames)
+    assert len(agent.contexts) == turns_before
+    assert "Mai" not in rendered
+    assert "not secure" not in rendered
+
+
+async def test_private_memory_is_loaded_only_when_a_scoped_turn_requests_it(core: Core):
     agent = wire(core, teach, reply=SUMMARY_JSON)
     with_summariser(core, agent)
     first = await play_a_session(core, student_id="s01", student_name="Mai")
@@ -376,41 +392,10 @@ async def test_the_greeting_turn_is_offered_the_name_and_the_memory(core: Core):
 
     turns_before = len(agent.contexts)
     await core.start_lesson(index=1, student_id="s01")
-    greeting = agent.contexts[turns_before]
-
-    # And it reaches the actual rendered prompt, not merely the context object.
-    from bright_agent.prompt import render_turn
-
-    prompt = render_turn(greeting)
-    assert "Mai" in prompt
-    assert "MEMORY" in prompt
-    assert "animal_vocab" in prompt
-    assert f"activity {greeting.lesson.activity_index + 1}/" in prompt
-    assert "1/0" not in prompt, "the position must be set before the greeting is built"
-
-
-async def test_the_greeting_asks_for_the_name_in_the_action_label(core: Core):
-    """The only channel this turn has.
-
-    `bright_agent`'s system prompt must stay byte-identical across turns for
-    the provider's prefix cache, and it lives in another service. The prompt
-    module names the alternative: put it in an `available_actions` label.
-    Without this the model was handed "STUDENT Mai" plus three memories and
-    still opened with "Good morning, everyone!" on three live runs of three.
-    """
-    agent = wire(core, teach, reply=SUMMARY_JSON)
-    with_summariser(core, agent)
-    first = await play_a_session(core, student_id="s01", student_name="Mai")
-    await core.jobs.summarize_session(first)
-
-    turns_before = len(agent.contexts)
-    await core.start_lesson(index=1, student_id="s01")
-
-    from bright_agent.prompt import render_turn
-
-    prompt = render_turn(agent.contexts[turns_before])
-    assert "welcome Mai back BY NAME" in prompt
-    assert "MEMORY" in prompt
+    assert len(agent.contexts) == turns_before
+    ctx = build_turn_context(core, student_id="s01", recall_query="animal_vocab")
+    assert ctx.student.name == "Mai"
+    assert ctx.recalled
 
 
 async def test_relabelling_cannot_widen_what_is_legal(core: Core):
@@ -426,13 +411,13 @@ async def test_relabelling_cannot_widen_what_is_legal(core: Core):
     assert core.runner.index == 1
 
 
-async def test_the_greeting_cannot_skip_the_authored_hook(core: Core):
-    """Restricted to `say_only`: it may speak, it may not move the lesson."""
+async def test_startup_agent_cannot_skip_the_authored_hook(core: Core):
+    """There is no startup agent turn; authored instruction starts directly."""
     agent = wire(core, choose("next_activity"))
     await core.start_lesson(index=1, student_id="s01", student_name="Mai")
 
-    assert [a.id for a in agent.contexts[0].available_actions] == ["say_only"]
-    assert core.runner.index == 1, "the greeting did not advance past the hook"
+    assert agent.contexts == []
+    assert core.runner.index == 1, "startup did not advance past the authored hook"
 
 
 async def test_no_greeting_without_a_student(core: Core):
@@ -471,11 +456,10 @@ async def test_re_reading_state_mid_turn_keeps_the_student(core: Core):
     core.db.record_observation("s01", "animal_vocab", "wrong", "chose dog for meow")
     agent = wire(core, peek)
     await core.start_lesson(index=1, student_id="s01", student_name="Mai")
-
-    _name, state = agent.results[0]
-    assert state["student"]["name"] == "Mai"
-    assert state["recalled"], "and the memories it was given"
-    assert [a["id"] for a in state["availableActions"]] == ["say_only"]
+    assert agent.results == [], "startup may not expose private state to an agent"
+    ctx = build_turn_context(core, student_id="s01", recall_query="animal_vocab")
+    assert ctx.student.name == "Mai"
+    assert ctx.recalled
 
 
 # ------------------------------------------------------------- small parts

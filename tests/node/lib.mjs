@@ -43,9 +43,21 @@ export async function launch() {
   })
 }
 
-/** A page that records every request URL, page error and console error. */
-export async function newPage(browser) {
-  const page = await browser.newPage({ viewport: { width: 1600, height: 900 } })
+/** One Chromium profile/context shared by Stage and Control windows. */
+export async function launchPersistent(userDataDir, options = {}) {
+  return chromium.launchPersistentContext(userDataDir, {
+    executablePath: process.env.CHROME_PATH,
+    args: [
+      ...LAUNCH_ARGS,
+      '--use-fake-device-for-media-stream',
+      '--use-fake-ui-for-media-stream',
+    ],
+    viewport: options.viewport ?? { width: 1366, height: 768 },
+  })
+}
+
+/** Attach the same diagnostics to a page created by Browser or Context. */
+export function instrumentPage(page) {
   const requests = []
   const pageErrors = []
   const consoleErrors = []
@@ -60,6 +72,12 @@ export async function newPage(browser) {
   return page
 }
 
+/** A page that records every request URL, page error and console error. */
+export async function newPage(browser) {
+  const page = await browser.newPage({ viewport: { width: 1600, height: 900 } })
+  return instrumentPage(page)
+}
+
 /** The app's live store, as plain JSON. */
 export async function store(page) {
   return page.evaluate(() => {
@@ -71,6 +89,13 @@ export async function store(page) {
       stateVersion: s.stateVersion,
       scene: s.scene,
       lesson: s.lesson,
+      session: s.session,
+      status: s.status,
+      assignment: s.assignment,
+      capture: s.capture,
+      stageLease: s.stageLease,
+      recovery: s.recovery,
+      speechLifecycle: s.speechLifecycle,
       mode: s.mode,
       overlaySubtitle: s.overlaySubtitle,
       speechSubtitle: s.speechSubtitle,

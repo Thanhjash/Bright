@@ -148,6 +148,17 @@ async def test_silence_gets_a_turn_too(core: Core):
     """A child who says nothing is the most informative outcome there is."""
     agent = wire(core, choose("say_only", text="It is alright. Listen once more."))
     await core.runner.start(4)                      # a5: speech, no durationS
+    assignment = core.session_controller.assignments.current_for_activity(
+        core.session_id or "unsessioned", "a5", core.runner._generation
+    )
+    assert assignment is not None and assignment.capture_id is not None
+    capture = {
+        "captureId": assignment.capture_id,
+        "assignmentId": assignment.assignment_id,
+        "responseTurnId": assignment.response_turn_id,
+    }
+    core.session_controller.note_capture_ready({**capture, "status": "ready"})
+    core.session_controller.note_capture_started(capture)
 
     await asyncio.sleep(0.25)                        # past silence_timeout_s
     await core.runner.drain()

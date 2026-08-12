@@ -25,7 +25,7 @@ from fastapi.responses import JSONResponse, Response
 ToolExecutor = Callable[[str, dict[str, Any]], Awaitable[Any]]
 
 PROTOCOL_VERSION = "2025-06-18"
-MUTATING_TOOLS = frozenset({"classroom_choose_next", "classroom_record_observation"})
+MUTATING_TOOLS = frozenset({"classroom_propose_move"})
 
 
 class TurnRejected(RuntimeError):
@@ -38,9 +38,14 @@ class TurnEntry:
     executor: ToolExecutor
     expires_at: float
     state_version: int
+    decision_revision: int
+    session_id: str | None
     activity_id: str | None
     activity_generation: int | None
+    response_turn_id: str | None
     student_id: str | None
+    moves: dict[str, str] = field(default_factory=dict)
+    terminal_mutation: str | None = None
     mutations: dict[str, Any] = field(default_factory=dict)
     lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     active_calls: set[asyncio.Task[Any]] = field(default_factory=set)
@@ -60,20 +65,34 @@ class TurnRegistry:
         executor: ToolExecutor,
         *,
         student_id: str | None,
+        moves: dict[str, str] | None = None,
         ttl_s: float | None = None,
     ) -> TurnEntry:
         if not turn_id or turn_id in self._turns:
             raise ValueError("turn_id must be non-empty and unique")
         runner = getattr(self.core, "runner", None)
         current = getattr(runner, "current", None)
+        controller = getattr(self.core, "session_controller", None)
+        assignment = None
+        session_id = getattr(self.core, "session_id", None)
+        if controller is not None and session_id:
+            assignment = controller.assignments.current_for_activity(
+                session_id,
+                getattr(current, "id", ""),
+                getattr(runner, "_generation", 0),
+            )
         entry = TurnEntry(
             turn_id=turn_id,
             executor=executor,
             expires_at=time.monotonic() + (ttl_s or self.default_ttl_s),
             state_version=int(self.core.store.state_version),
+            decision_revision=int(getattr(self.core.store, "decision_revision", 0)),
+            session_id=session_id,
             activity_id=getattr(current, "id", None),
             activity_generation=getattr(runner, "_generation", None),
+            response_turn_id=getattr(assignment, "response_turn_id", None),
             student_id=student_id,
+            moves=dict(moves or {}),
         )
         self._turns[turn_id] = entry
         self.prune()
@@ -106,13 +125,24 @@ class TurnRegistry:
             return entry
         runner = getattr(self.core, "runner", None)
         current = getattr(runner, "current", None)
-        if int(self.core.store.state_version) != entry.state_version:
-            raise TurnRejected("turn state_version is stale")
+        if int(getattr(self.core.store, "decision_revision", 0)) != entry.decision_revision:
+            raise TurnRejected("turn decision_revision is stale")
+        if getattr(self.core, "session_id", None) != entry.session_id:
+            raise TurnRejected("turn session is stale")
         if getattr(current, "id", None) != entry.activity_id:
             raise TurnRejected("turn activity is stale")
         if getattr(runner, "_generation", None) != entry.activity_generation:
             raise TurnRejected("turn activity generation is stale")
-        if getattr(self.core, "student_id", None) != entry.student_id:
+        controller = getattr(self.core, "session_controller", None)
+        if controller is not None and entry.response_turn_id is not None:
+            assignment = controller.assignments.current_for_activity(
+                str(entry.session_id), str(entry.activity_id), int(entry.activity_generation or 0)
+            )
+            if assignment is None or assignment.response_turn_id != entry.response_turn_id:
+                raise TurnRejected("turn response capability is stale")
+        elif getattr(self.core, "student_id", None) != entry.student_id:
+            # Legacy single-learner seam only. Autonomous attribution is bound
+            # by responseTurnId above, never by this process-level field.
             raise TurnRejected("turn learner scope is stale")
         return entry
 
@@ -140,9 +170,18 @@ class TurnRegistry:
                 # state by design, but an exact transport replay must return the
                 # first result rather than apply again or masquerade as a new turn.
                 self._resolve(turn_id)
+                if name == "classroom_propose_move":
+                    if entry.terminal_mutation is not None:
+                        raise TurnRejected("terminal proposal already used")
+                    move_id = str(clean.get("move_id") or "")
+                    action_id = entry.moves.get(move_id)
+                    if action_id is None:
+                        raise TurnRejected("move_id was not offered for this turn")
+                    clean["_action_id"] = action_id
                 result = await entry.executor(name, clean)
                 if dedupe_key:
                     entry.mutations[dedupe_key] = result
+                    entry.terminal_mutation = dedupe_key
                 return result
         finally:
             if task is not None:
@@ -166,47 +205,14 @@ def _schema(properties: dict[str, Any], required: list[str]) -> dict[str, Any]:
 
 TOOLS: tuple[dict[str, Any], ...] = (
     {
-        "name": "classroom_get_state",
-        "description": "Read authoritative state for this already-authorized turn.",
-        "inputSchema": _schema({}, []),
-    },
-    {
-        "name": "classroom_choose_next",
-        "description": "Propose one action from the ACTIONS list. Core validates and applies it once.",
+        "name": "classroom_propose_move",
+        "description": "Choose one offered move and one short non-evaluative teacher line. This ends the turn.",
         "inputSchema": _schema(
             {
-                "state_version": {"type": "integer"},
-                "action_id": {"type": "string"},
-                "params": {"type": "object", "additionalProperties": True},
+                "move_id": {"type": "string", "minLength": 1, "maxLength": 128},
+                "teacher_line": {"type": "string", "minLength": 1, "maxLength": 180},
             },
-            ["state_version", "action_id"],
-        ),
-    },
-    {
-        "name": "classroom_record_observation",
-        "description": "Record a structured observation for the current learner only.",
-        "inputSchema": _schema(
-            {
-                "student_id": {"type": "string"},
-                "skill": {"type": "string"},
-                "result": {
-                    "type": "string",
-                    "enum": ["correct", "near", "wrong", "silence"],
-                },
-                "evidence": {"type": "string"},
-            },
-            ["student_id", "skill", "result", "evidence"],
-        ),
-    },
-    {
-        "name": "classroom_recall",
-        "description": "Recall memory for the current learner only.",
-        "inputSchema": _schema(
-            {
-                "query": {"type": "string"},
-                "k": {"type": "integer", "minimum": 1, "maximum": 10, "default": 3},
-            },
-            ["query"],
+            ["move_id", "teacher_line"],
         ),
     },
 )
@@ -238,6 +244,11 @@ def _validate_arguments(tool: dict[str, Any], arguments: dict[str, Any]) -> str 
                 return f"{key} is below its minimum"
             if "maximum" in rule and value > rule["maximum"]:
                 return f"{key} is above its maximum"
+        if isinstance(value, str):
+            if "minLength" in rule and len(value) < rule["minLength"]:
+                return f"{key} is below its minimum length"
+            if "maxLength" in rule and len(value) > rule["maxLength"]:
+                return f"{key} is above its maximum length"
     return None
 
 
@@ -310,6 +321,7 @@ def build_mcp_router(core_getter: Callable[[], Any], token: str) -> APIRouter:
                 request_id,
                 {
                     "content": [{"type": "text", "text": json.dumps(result, separators=(",", ":"))}],
+                    "structuredContent": result,
                     "isError": not ok,
                 },
             )

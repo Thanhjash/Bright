@@ -7,7 +7,7 @@ import httpx
 import pytest
 from fastapi import FastAPI
 
-from agent_bridge import AgentDriver, TurnResult, TurnScope, build_turn_context, make_tool_executor
+from agent_bridge import AutoTurn, AgentDriver, TurnResult, TurnScope, build_turn_context, make_tool_executor
 from app import ConversationCoordinator
 from bright_contracts import Activity
 from bus import EventBus
@@ -43,6 +43,7 @@ def minimal_core():
             agent_context_policy="hosted-minimal",
             agent_turn_timeout_s=0.2,
             agent_greeting_timeout_s=0.2,
+            playback_ack_timeout_s=0.2,
         ),
         conversations=ConversationCoordinator(),
     )
@@ -55,7 +56,7 @@ def minimal_core():
     return core
 
 
-async def test_turn_registry_deduplicates_a_mutation_after_it_moves_state():
+async def test_turn_registry_deduplicates_one_terminal_proposal():
     core = minimal_core()
     calls = 0
 
@@ -65,17 +66,19 @@ async def test_turn_registry_deduplicates_a_mutation_after_it_moves_state():
         core.store.update_lesson(stage="RUNNING")
         return {"ok": True, "calls": calls}
 
-    core.turn_registry.register("secret", execute, student_id="s01")
-    args = {"turn_id": "secret", "state_version": 0, "action_id": "next_activity"}
-    first = await core.turn_registry.invoke("classroom_choose_next", args)
-    replay = await core.turn_registry.invoke("classroom_choose_next", args)
+    core.turn_registry.register(
+        "secret", execute, student_id="s01", moves={"opaque-next": "next_activity"}
+    )
+    args = {"turn_id": "secret", "move_id": "opaque-next", "teacher_line": "Let's continue."}
+    first = await core.turn_registry.invoke("classroom_propose_move", args)
+    replay = await core.turn_registry.invoke("classroom_propose_move", args)
 
     assert first == replay == {"ok": True, "calls": 1}
     assert calls == 1
-    with pytest.raises(TurnRejected, match="stale"):
+    with pytest.raises(TurnRejected, match="terminal proposal already used"):
         await core.turn_registry.invoke(
-            "classroom_choose_next",
-            {**args, "action_id": "repeat_activity"},
+            "classroom_propose_move",
+            {**args, "teacher_line": "Try the next one."},
         )
 
 
@@ -105,12 +108,14 @@ async def test_retiring_turn_cancels_an_inflight_tool_before_late_mutation():
         await asyncio.sleep(60)
         mutated = True
 
-    core.turn_registry.register("interrupt-me", execute, student_id="s01")
+    core.turn_registry.register(
+        "interrupt-me", execute, student_id="s01", moves={"repeat": "repeat_activity"}
+    )
     invocation = asyncio.create_task(
-        core.turn_registry.invoke("classroom_choose_next", {
+        core.turn_registry.invoke("classroom_propose_move", {
             "turn_id": "interrupt-me",
-            "state_version": 0,
-            "action_id": "repeat_activity",
+            "move_id": "repeat",
+            "teacher_line": "Let's try once more.",
         })
     )
     await entered.wait()
@@ -164,132 +169,132 @@ async def test_mcp_is_authenticated_and_never_exposes_classroom_say():
             json={"jsonrpc": "2.0", "id": 2, "method": "tools/list"},
         )
         names = {tool["name"] for tool in response.json()["result"]["tools"]}
-        assert names == {
-            "classroom_get_state",
-            "classroom_choose_next",
-            "classroom_record_observation",
-            "classroom_recall",
-        }
+        assert names == {"classroom_propose_move"}
         assert "classroom_say" not in names
         assert all("turn_id" in tool["inputSchema"]["required"] for tool in TOOLS)
 
 
-class StreamingHermesFake:
+class ProposalHermesFake:
     streams_text_as_voice = True
 
-    def __init__(self):
+    def __init__(self, core, teacher_line="Let's continue."):
+        self.core = core
+        self.teacher_line = teacher_line
         self.prepared = None
 
     def prepare_turn(self, turn_id):
         self.prepared = turn_id
 
-    async def turn(self, _ctx):
-        assert self.prepared and self.prepared.startswith("bright-")
-        yield SimpleNamespace(type="text_delta", text="Good ")
-        yield SimpleNamespace(type="text_delta", text="work!")
+    async def turn(self, ctx):
+        move_id = ctx.available_actions[0].id
+        result = await self.core.turn_registry.invoke(
+            "classroom_propose_move",
+            {
+                "turn_id": self.prepared,
+                "move_id": move_id,
+                "teacher_line": self.teacher_line,
+            },
+        )
+        assert result["ok"] is True and result["applied"] is False
+        yield SimpleNamespace(type="text_delta", text=self.teacher_line)
         yield SimpleNamespace(type="done", reason="complete", detail=None, usage=None)
 
 
-async def test_driver_publishes_one_correlated_stream_and_retires_capability():
+async def test_driver_keeps_proposal_pending_until_physical_playback_ack():
     core = minimal_core()
-    fake = StreamingHermesFake()
-    driver = AgentDriver(core, lambda _executor: fake)
+    moved = []
 
-    result = await driver.take_turn(student_id="s01")
+    async def start(index):
+        moved.append(index)
 
-    types = [frame["type"] for frame in core.bus.history]
-    assert types == [
-        "speech.turn.started",
-        "speech.text.delta",
-        "speech.text.delta",
-        "speech.turn.ended",
-    ]
-    starts = [frame for frame in core.bus.history if frame["type"] == "speech.turn.started"]
-    assert len(starts) == 1
-    turn_id = starts[0]["payload"]["speechTurnId"]
-    assert all(
-        frame["payload"].get("speechTurnId") == turn_id
-        for frame in core.bus.history
-        if frame["type"].startswith("speech.")
-    )
-    assert result.said == ["Good work!"]
-    assert fake.prepared not in core.turn_registry._turns
-
-
-class BlockingHermesFake(StreamingHermesFake):
-    async def turn(self, _ctx):
-        yield SimpleNamespace(type="text_delta", text="Wait")
-        await asyncio.sleep(60)
-
-
-async def test_cancelling_driver_cancels_the_exact_open_speech_turn_once():
-    core = minimal_core()
-    driver = AgentDriver(core, lambda _executor: BlockingHermesFake())
+    core.runner.start = start
+    driver = AgentDriver(core, lambda _executor: ProposalHermesFake(core))
+    core.agent_driver = driver
     task = asyncio.create_task(driver.take_turn(student_id="s01"))
-    await asyncio.sleep(0)
-    task.cancel()
-    with pytest.raises(asyncio.CancelledError):
-        await task
-
-    ended = [frame for frame in core.bus.history if frame["type"] == "speech.turn.ended"]
-    cancelled = [frame for frame in core.bus.history if frame["type"] == "speech.cancel"]
-    assert len(ended) == len(cancelled) == 1
-    assert ended[0]["payload"]["status"] == "cancelled"
-    assert ended[0]["payload"]["speechTurnId"] == cancelled[0]["payload"]["speechTurnId"]
-
-
-async def test_driver_refuses_to_cancel_a_different_speech_turn():
-    core = minimal_core()
-    driver = AgentDriver(core, lambda _executor: BlockingHermesFake())
-    task = asyncio.create_task(driver.take_turn(student_id="s01"))
-    await asyncio.sleep(0)
-
-    assert driver.cancel_speech_turn("not-the-active-turn", "barge") is False
-    assert not [f for f in core.bus.history if f["type"] == "speech.cancel"]
-
-    assert driver.cancel_speech_turn(driver._speech_turn_id, "barge") is True
-    with pytest.raises(asyncio.CancelledError):
-        await task
-    cancelled = [f for f in core.bus.history if f["type"] == "speech.cancel"]
-    assert len(cancelled) == 1
-
-
-class TwoDeltaHermesFake(StreamingHermesFake):
-    def __init__(self, release):
-        super().__init__()
-        self.release = release
-
-    async def turn(self, _ctx):
-        yield SimpleNamespace(type="text_delta", text="first")
-        await self.release.wait()
-        yield SimpleNamespace(type="text_delta", text=" stale")
-        yield SimpleNamespace(type="done", reason="complete", detail=None, usage=None)
-
-
-async def test_generation_takeover_stops_late_deltas_and_cancels_exact_turn():
-    core = minimal_core()
-    release = asyncio.Event()
-    driver = AgentDriver(core, lambda _executor: TwoDeltaHermesFake(release))
-    task = asyncio.create_task(driver.take_turn(student_id="s01"))
-    await asyncio.sleep(0)
-    core.runner._generation += 1
-    release.set()
+    for _ in range(10):
+        await asyncio.sleep(0)
+        if driver._speech_turn_id:
+            break
+    assert moved == []
+    assert driver.note_playback_result(driver._speech_turn_id, "completed") is True
     result = await task
-
-    deltas = [
-        frame["payload"]["delta"]
-        for frame in core.bus.history
-        if frame["type"] == "speech.text.delta"
-    ]
-    assert deltas == ["first"]
-    assert "generation changed" in (result.rejected or "")
-    ended = [frame for frame in core.bus.history if frame["type"] == "speech.turn.ended"]
-    cancelled = [frame for frame in core.bus.history if frame["type"] == "speech.cancel"]
-    assert len(ended) == len(cancelled) == 1
-    assert ended[0]["payload"]["speechTurnId"] == cancelled[0]["payload"]["speechTurnId"]
+    assert result.applied is True and result.chose == "repeat_activity"
+    assert moved == [0]
+    assert result.said == ["Let's continue."]
 
 
-class ErrorHermesFake(StreamingHermesFake):
+async def test_failed_agent_playback_discards_pending_move():
+    core = minimal_core()
+    moved = []
+
+    async def start(index):
+        moved.append(index)
+
+    core.runner.start = start
+    driver = AgentDriver(core, lambda _executor: ProposalHermesFake(core))
+    core.agent_driver = driver
+    task = asyncio.create_task(driver.take_turn(student_id="s01"))
+    for _ in range(10):
+        await asyncio.sleep(0)
+        if driver._speech_turn_id:
+            break
+    driver.note_playback_result(driver._speech_turn_id, "failed")
+    result = await task
+    assert result.applied is False
+    assert moved == []
+
+
+async def test_inference_budget_ends_before_independent_playback_ack_budget():
+    core = minimal_core()
+    moved = []
+
+    async def start(index):
+        moved.append(index)
+
+    core.runner.start = start
+    driver = AgentDriver(core, lambda _executor: ProposalHermesFake(core))
+    core.agent_driver = driver
+    gate = AutoTurn(core, timeout_s=0.01)
+    task = asyncio.create_task(gate(core.runner.current, "wrong", {}))
+    for _ in range(20):
+        await asyncio.sleep(0)
+        if driver._speech_turn_id:
+            break
+    # Exceed the model budget while the authored teacher line is queued. This
+    # is physical playback latency, not a provider timeout.
+    await asyncio.sleep(0.03)
+    assert task.done() is False
+    assert gate.timeouts == 0
+    assert driver.note_playback_result(driver._speech_turn_id, "completed") is True
+    assert await task == "repeat_activity"
+    assert moved == [0]
+
+
+@pytest.mark.parametrize(
+    "line",
+    ["Correct!", "Well done.", "https://bad.example", "<|ACT {}|>", "Mai, continue."],
+)
+async def test_truth_identity_and_markup_teacher_lines_are_rejected(line):
+    core = minimal_core()
+    core.session_controller = SimpleNamespace(
+        roster={"s01": SimpleNamespace(display_name="Mai")}
+    )
+    result = TurnResult()
+    execute = make_tool_executor(core, result)
+    answer = await execute(
+        "classroom_propose_move",
+        {"_action_id": "repeat_activity", "teacher_line": line},
+    )
+    assert answer["ok"] is False
+    assert result.pending_action is None
+
+
+class ErrorHermesFake:
+    streams_text_as_voice = True
+
+    def prepare_turn(self, _turn_id):
+        pass
+
     async def turn(self, _ctx):
         yield SimpleNamespace(type="done", reason="error", detail="sidecar down", usage=None)
 

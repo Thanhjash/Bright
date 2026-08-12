@@ -52,8 +52,8 @@ def test_grade_point_and_drag():
         ("Um, I like cats!", 0.99, "near"),
         ("I do not like cats", 0.99, "wrong"),
         ("I like cats but I hate dogs", 0.99, "wrong"),
-        ("I like cats", 0.74, "near"),
-        ("I like cats", None, "near"),
+        ("I like cats", 0.74, "uncertain"),
+        ("I like cats", None, "uncertain"),
         ("I like cat", 0.99, "near"),
         ("I hate homework", 0.99, "wrong"),
         ("   ", 0.99, "silence"),
@@ -205,7 +205,7 @@ async def test_answer_generation_is_immediately_published(runner: LessonRunner, 
     await runner.stop()
 
 
-async def test_missing_playback_ack_releases_speech_activity(tiny_lesson, store, bus):
+async def test_missing_playback_ack_never_silently_arms_speech_activity(tiny_lesson, store, bus):
     from runner import LessonRunner
     from bright_contracts import Narration
 
@@ -223,8 +223,8 @@ async def test_missing_playback_ack_releases_speech_activity(tiny_lesson, store,
     await runner.start(4)
     assert store.scene.overlay is None or store.scene.overlay.listening is not True
     await asyncio.sleep(0.13)
-    assert store.scene.overlay is not None and store.scene.overlay.listening is True
-    assert runner._timer is not None
+    assert store.scene.overlay is None or store.scene.overlay.listening is not True
+    assert runner._timer is None
     await runner.stop()
 
 

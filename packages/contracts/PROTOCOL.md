@@ -2,7 +2,7 @@
 
 Single source of truth for every wire format in the system. **Both sides of every boundary code against this file.** If you are an agent working on one service, do not invent fields — add them here first.
 
-Version: `2`. Every envelope and scene carries `v: 2`. A receiver that sees an unknown version **rejects loudly** rather than guessing. Version 2 adds production lesson start, activity/utterance correlation, streamed speech turns, and physical playback acknowledgements.
+Version: `3`. Every envelope and scene carries `v: 3`. A receiver that sees an unknown version **rejects loudly** rather than guessing. Version 3 adds autonomous class-session state, Core-issued response assignments, capture lifecycle correlation, capability leases, and a lesson schema version independent of the wire version.
 
 ---
 
@@ -24,7 +24,7 @@ Every message on the WebSocket bus. No exceptions.
 
 ```ts
 interface Event<T = unknown> {
-  v: 2
+  v: 3
   type: EventType        // dotted, see catalog
   seq: number            // monotonic per connection, gap = you missed something
   stateVersion: number   // bumps on every state mutation
@@ -42,7 +42,13 @@ Direction: `↑` client→server, `↓` server→client, `↕` both.
 | Type | Dir | Payload |
 |---|---|---|
 | `scene.update` | ↓ | `Scene` — full scene, never a diff |
-| `scene.snapshot` | ↓ | `{ scene: Scene, lesson: LessonPosition }` — reply to `client.hello` |
+| `scene.snapshot` | ↓ | `{ scene, lesson, session?, status?, assignment?, capture?, speech?, recovery? }` — complete reconnect state |
+| `class.session.updated` | ↓ | `ClassSessionState`; authoritative autonomous-session state |
+| `class.turn.assigned` | ↓ | `TurnAssignment`; Core-issued response capability, never client identity |
+| `class.turn.closed` | ↓ | `{ assignmentId, responseTurnId, outcome }`; exactly-once terminal response window |
+| `response.capture.requested` | ↓ | `CaptureRequest`; opens one bounded answer-station attempt |
+| `classroom.status` | ↓ | liveness/readiness/teachable/recovery state for the current lesson profile |
+| `stage.lease.granted` | ↓ | one expiring physical-audio-owner lease |
 | `speech.say` | ↓ | legacy full-text adapter: `{ text, audioAsset?, turnId, conversationId?, replyToUtteranceId? }` |
 | `speech.turn.started` | ↓ | `{ speechTurnId, behavior, source, conversationTurnId, activityId?, activityGeneration?, audioAsset? }` |
 | `speech.text.delta` | ↓ | `{ speechTurnId, delta }` |
@@ -57,20 +63,67 @@ Direction: `↑` client→server, `↓` server→client, `↕` both.
 | `error` | ↓ | `{ code: string, message: string }` |
 | `heartbeat` | ↓ | `{ ts: number }` — see §9.8. Consumes no `seq` |
 | `heartbeat.ack` | ↑ | `{ ts: number }` |
+| `capability.report` | ↑ | leased client/device capabilities with instance and connection epoch |
+| `response.capture.ready` | ↑ | capture setup result for an exact `captureId` |
+| `response.capture.started` | ↑ | physical microphone start for an exact `captureId` |
 | `speech.playback.started` | ↑ | `{ speechTurnId }`; Stage only, on first real audio |
 | `speech.playback.finished` | ↑ | `{ speechTurnId, status: 'completed'|'cancelled'|'failed', reason?, metrics? }`; Stage only, one terminal ACK |
 | `speech.barge_in` | ↑ | `{ requestId, speechTurnId, activityId, activityGeneration }`; Control-only request to cancel that exact active teacher turn before opening the mic |
 | `client.hello` | ↑ | `{ role: 'stage' \| 'control', stateVersion?: number }` |
-| `interaction.choice` | ↑ | `{ optionId: string, studentId?: string }` |
-| `interaction.point` | ↑ | `{ targetId: string, x: number, y: number }` |
-| `interaction.drag` | ↑ | `{ fromId: string, toId: string }` |
+| `interaction.choice` | ↑ | `{ optionId, assignmentId, responseTurnId }` |
+| `interaction.point` | ↑ | `{ targetId, x, y, assignmentId, responseTurnId }` |
+| `interaction.drag` | ↑ | `{ fromId, toId, assignmentId, responseTurnId }` |
 | `control.command` | ↑ | `{ cmd: 'pause'\|'resume'\|'skip'\|'repeat'\|'back'\|'takeover', arg?: string }` |
-| `lesson.start` | ↑ | `{ requestId, index?, studentId?, studentName? }`; Control only, including production |
-| `student.speech.final` | ↑ | `{ utteranceId, activityId, activityGeneration, text, studentId?, confidence }` |
+| `lesson.start` | ↑ | `{ requestId, lessonId?, classId?, roster?, attendanceIds?, index? }`; Control only. Legacy single-learner fields are ignored by `autonomous_class` |
+| `student.speech.final` | ↑ | `{ utteranceId, assignmentId, responseTurnId, captureId, captureOutcome, activityId, activityGeneration, text, confidence, synthetic?, syntheticFixtureId? }`; synthetic markers are legal only in guarded `synthetic_dev` |
 
 `Stage` is the only physical audio owner and playback-ACK sender. `Control` is
 the mic/control owner. Core rejects spoofed roles, unknown turns, illegal ACK
 transitions, and stale activity generations.
+
+### Autonomous class and capture capabilities
+
+```ts
+type SessionStatus = 'PREPARING'|'RUNNING'|'PAUSED'|'RECOVERING'|'CLOSING'|'COMPLETED'|'ABORTED'
+type ResponseScope = 'selected_individual'|'group'|'choral'|'anonymous'|'uncertain'
+type CaptureOutcome = 'speech'|'no_speech'|'noise_only'|'device_lost'|'asr_timeout'|'asr_unavailable'
+
+interface TurnAssignment {
+  assignmentId: string
+  responseTurnId: string
+  sessionId: string
+  decisionRevision: number
+  activityId: string
+  activityGeneration: number
+  targetId?: string
+  responseScope: ResponseScope
+  captureScope: 'answer_station'|'board'|'none'
+  expiresAt: number
+}
+
+interface CaptureRequest {
+  captureId: string
+  assignmentId: string
+  responseTurnId: string
+  readyDeadlineAt: number       // absolute epoch ms
+  speechOnsetDeadlineMs: number // relative to response.capture.started
+  maxDurationMs: number
+  endSilenceMs: number
+}
+```
+
+The answer station is an assigned station, not biometric identity. Individual
+evidence records `identityVerified: false`; it is legal only for a live
+`selected_individual` assignment after the child-operated Ready action. VAD may
+endpoint speech but MUST NOT choose the speaker. `no_speech`, noise and device or
+ASR failures remain distinct and never lower mastery.
+
+Capability reports are leases, not permanent booleans. They carry
+`clientInstanceId`, `connectionEpoch`, `reportedAt`, role and capability details.
+Core expires them, grants exactly one Stage audio-owner lease and computes three
+different states: process `liveness`, dependency `readiness`, and lesson-specific
+`teachable`. Loss of a required capability enters explicit recovery; it never
+silently advances the lesson.
 
 ### Push-to-talk barge-in
 
@@ -90,10 +143,12 @@ the echo tail). If either half of the handshake times out, recording stays
 closed. Late provider deltas and tool mutations remain fenced by the activity
 generation and retired agent turn.
 
-One logical child→teacher exchange has a `conversationTurnId`; one mic capture
-has an `utteranceId`; every independently queued/cancellable teacher utterance
-has a `speechTurnId`. They are not interchangeable. A new activity generation
-fences late ASR, agent deltas, tool results, and playback ACKs.
+One logical child→teacher exchange has a `responseTurnId`; one recording attempt
+has a `captureId`; one final ASR delivery has an `utteranceId`; every independently
+queued/cancellable teacher utterance has a `speechTurnId`. They are not
+interchangeable. Core binds every response to an opaque `assignmentId`; browser
+payloads never establish learner identity. A new decision revision or activity
+generation fences late ASR, agent proposals, tool results, and playback ACKs.
 
 ---
 
@@ -103,7 +158,7 @@ What the board shows. `classroom-core` owns it; the UI is a pure function of it.
 
 ```ts
 interface Scene {
-  v: 2
+  v: 3
   stateVersion: number
   kind: SceneKind
   props: SceneProps          // discriminated by kind
@@ -197,6 +252,9 @@ interface LessonPosition {
   stage: string          // HOOK | INPUT | PRACTICE | ... free string
   activityId: string
   activityGeneration: number
+  decisionRevision: number
+  responseTurnId?: string
+  assignmentId?: string
   currentStudentId?: string
 }
 ```
@@ -209,7 +267,9 @@ The compiled, playable lesson. **Must be sufficient to run a full class with the
 
 ```ts
 interface LessonRun {
-  v: 2
+  v: 3                         // wire compatibility
+  lessonSchemaVersion: 1       // authored-content schema evolution
+  deliveryMode: 'legacy_single' | 'autonomous_class'
   lessonId: string
   classId: string
   title: string
@@ -218,6 +278,8 @@ interface LessonRun {
   studentsToCheck: string[]
   activities: Activity[]
   mediaManifest: string[]        // every asset:// referenced anywhere
+  curriculum?: CurriculumSpec
+  sessionPlan?: SessionPlan
 }
 
 interface Activity {
@@ -228,6 +290,7 @@ interface Activity {
   durationS?: number             // auto-advance; omit = wait for interaction
   expect?: Expect                // how to grade
   branches?: Branch[]            // where to go next
+  teaching?: TeachingSpec        // required for autonomous_class
 }
 
 interface Narration {
@@ -243,7 +306,7 @@ interface Expect {
 }
 
 interface Branch {
-  on: 'correct' | 'near' | 'wrong' | 'silence' | 'timeout' | 'always'
+  on: 'correct' | 'near' | 'wrong' | 'uncertain' | 'unhandled' | 'silence' | 'timeout' | 'always'
   goto: string                   // activity id
   narration?: Narration[]        // said before jumping
 }
@@ -426,8 +489,8 @@ an utterance is still in flight.
 
 ### 9.7 `LessonPosition.stage`
 
-`LessonRun` carries no stage field, so the server **derives** `stage` from scene
-kind and index: `HOOK / INPUT / PRACTICE / PRODUCTION / EXPLORE / WRAP / DONE`.
+Protocol v3 autonomous activities carry `teaching.stage`; Core reports that authored
+stage. Legacy lessons may still use the scene/index derivation fallback.
 
 ### 9.8 Liveness — the board must notice a dead link
 
@@ -465,7 +528,7 @@ because the badge lives in the scene overlay.
 Hermes plain assistant text deltas are the sole adaptive human-facing speech
 source in the live Option B profile. `classroom_say` is not exposed there;
 otherwise tool speech and assistant text can be spoken twice. Core-authored
-narration uses the same v2 speech-turn pipeline and remains the deterministic
+narration uses the same v3 speech-turn pipeline and remains the deterministic
 fallback. Inline `<|ACT|>` tokens are parsed in `airi-bridge`, fire after the
 associated audio segment, and never reach TTS as literal text.
 

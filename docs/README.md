@@ -60,7 +60,8 @@ docs/
 ├── 2-decisions/   choices made, with evidence. Read before re-litigating one.
 ├── 3-design/      how it works. Architecture, topology, what we reuse and why.
 ├── 4-build/       what we are doing. Plans, open questions, and two LIVING docs.
-└── 5-research/    external research and prompts to run.
+├── 5-research/    external research and code-grounded audits.
+└── journals/      concise records of decisions, deviations, and lessons learned.
 ```
 
 ### 1-vision
@@ -87,10 +88,11 @@ docs/
 |---|---|
 | [state-of-the-project.md](4-build/state-of-the-project.md) | 🔴 **LIVING. Read this first if you want the honest picture.** What is proven, what is not, what to do next |
 | [tracker.md](4-build/tracker.md) | 🔴 **LIVING.** Status board, definition of done per component, integration tests, measured facts, risks |
-| [phase-1-plan.md](4-build/phase-1-plan.md) | The plan we are executing. Hosted model, `TeacherAgent` seam, agent loop, memory schema |
+| [phase-1-plan.md](4-build/phase-1-plan.md) | Historical Phase-1 plan. Hosted model seam, agent loop and memory schema; superseded where it conflicts with v3 status/roadmap |
 | [execution-plan.md](4-build/execution-plan.md) | Adversarial review. What actually kills this project, and milestone ordering |
 | [open-questions.md](4-build/open-questions.md) | Eleven spikes with kill criteria, plus decisions that need a human |
 | [option-b-implementation-status.md](4-build/option-b-implementation-status.md) | **Current implementation handoff:** delivered slices, verification evidence, and remaining release blockers |
+| [autonomous-classroom-roadmap.md](4-build/autonomous-classroom-roadmap.md) | **Current product roadmap:** dependency-ordered gates from Option B to a competition-ready autonomous classroom |
 
 ### 5-research
 | | |
@@ -98,6 +100,12 @@ docs/
 | [2026-08-11-edge-stack-viability.md](5-research/2026-08-11-edge-stack-viability.md) | Gemma-on-Intel throughput, ASR/TTS options, constrained decoding. **Contains one correction issued the same day by direct measurement** |
 | [PROMPT-avatar-decision.md](5-research/PROMPT-avatar-decision.md) | Ready-to-run deep-research prompt: which avatar format, and which character for Vietnamese children |
 | [2026-08-12-codebase-exploration.md](5-research/2026-08-12-codebase-exploration.md) | Code-grounded audit of the interrupted implementation; historical observations, not runtime doctrine |
+| [2026-08-12-cto-autonomous-classroom-audit.md](5-research/2026-08-12-cto-autonomous-classroom-audit.md) | CTO audit of product, architecture, classroom validity, appliance, local Gemma, governance and competition evidence |
+
+### Journals
+| | |
+|---|---|
+| [260812-autonomous-classroom-roadmap.md](journals/260812-autonomous-classroom-roadmap.md) | Decision record: autonomous classroom as release unit, Option B retained, evidence-gated execution |
 
 ### Outside `docs/`
 | | |
@@ -119,13 +127,15 @@ docs/
 ## Status
 
 ```
-✅  the board works        lesson plays, grades, branches — with no LLM at all
-✅  Option B code slices   Hermes sidecar + Core MCP + correlated speech are implemented
-🔧  release verification  TestClient lifecycle, composed smoke, and room evidence remain
-✅  deterministic floor   lesson, board, speech service, and fallback path exist
-⚠️  classroom validity    real-child/room safety and latency gates remain release blockers
-🔴  SP-0 untouched         lesson-authoring cost — still the #1 project risk
+✅  protocol/runtime floor Protocol v3, class sessions, leases, capture correlation
+✅  Option B live boundary one terminal Hermes proposal tool; Core commits after playback
+✅  product lesson draft   37–39 minute Market Food path; all headless paths terminate
+✅  mechanical evidence   Core 224; agent 82; AIRI 165; Chromium v3 2; content gates green
+⚠️  release verification  one sampled speech turn only; no real composed room/provider proof
+🔴  approval/governance    curriculum approver, child-room evidence and ship rights remain
 ```
 
-Test counts in older build documents are snapshots, not current truth. Use the test
-commands and release gates in the repository at the commit being evaluated.
+Agent evidence excludes four live-provider tests. The Chromium v3 test is a mocked
+browser contract flow, not real audio or Hermes evidence. Test counts in older build
+documents are historical snapshots; use repository commands and release gates at the
+commit being evaluated.

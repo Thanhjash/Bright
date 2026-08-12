@@ -11,6 +11,11 @@ import { IS_MOCK } from '../lib/env'
 import { useClassroom } from '../store/classroom'
 import { createBus } from './createBus'
 import { connectBusToStore } from './wiring'
+import {
+  capabilityReport,
+  setLocalCapabilities,
+  subscribeLocalCapabilities,
+} from './clientCapabilities'
 import type { Bus } from './types'
 
 const BusContext = createContext<Bus | null>(null)
@@ -30,12 +35,33 @@ export function BusProvider({
     // just churns one connection, and navigating between the two routes in a
     // single window never leaves an orphaned socket or timer behind.
     const unwire = connectBusToStore(bus)
+    setLocalCapabilities(role === 'stage'
+      ? {
+          stage_link: false,
+          // Technical capability only; the room preflight still asks the
+          // facilitator to verify the physical speaker/display path.
+          audio_output: typeof Audio !== 'undefined',
+          display: typeof screen !== 'undefined' && screen.width > 0,
+        }
+      : { control_link: false, microphone: IS_MOCK })
+    const report = () => {
+      const connected = bus.status().state === 'open' || bus.status().state === 'mock'
+      setLocalCapabilities(role === 'stage' ? { stage_link: connected } : { control_link: connected })
+      if (connected)
+        bus.send('capability.report', capabilityReport(role))
+    }
+    const unstatus = bus.onStatus(report)
+    const uncap = subscribeLocalCapabilities(report)
+    const heartbeat = window.setInterval(report, 4_000)
     useClassroom
       .getState()
       .log('system', IS_MOCK ? 'mock mode — no backend' : `connecting as ${role}`)
     bus.connect()
     return () => {
       unwire()
+      unstatus()
+      uncap()
+      window.clearInterval(heartbeat)
       bus.close()
     }
   }, [bus, role])

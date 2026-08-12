@@ -68,6 +68,14 @@ export function activeSpeechTurnIds(): string[] {
   return [...active]
 }
 
+/** Forget connection-scoped observations before applying a full snapshot. */
+export function resetOutputActivity(): void {
+  active.clear()
+  playing = null
+  suppressedUntil = 0
+  notify()
+}
+
 /** Exact audible turn, falling back to the sole queued intent before audio starts. */
 export function interruptibleSpeechTurnId(): string | null {
   bus()

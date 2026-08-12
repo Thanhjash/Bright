@@ -1,7 +1,7 @@
 # 03 — DECISION: Option B classroom runtime
 
 **Date:** 2026-08-12
-**Status:** LOCKED FOR IMPLEMENTATION
+**Status:** LOCKED; v3 vertical slice implemented, release evidence open
 **Scope:** live classroom path
 
 ## Decision
@@ -17,7 +17,7 @@ Control mic -> Bright ASR -> Classroom Core -> Hermes adapter -> Hermes sidecar
                               ^                    |
                               |---- Bright MCP ----|
                               |
-                              +-> protocol v2 -> Stage -> AIRI/TTS/projector
+                              +-> protocol v3 -> Stage -> AIRI/TTS/projector
 ```
 
 This is “Option B”. It deliberately avoids copying Hermes into Bright's process.
@@ -36,11 +36,12 @@ at the conversation boundary rather than assumed from topology.
 | physical classroom audio | Stage |
 | avatar, lipsync, timed emotion | AIRI bridge |
 
-There are no dual writers. Hermes may propose; Core validates every proposal against
-the current state and activity generation. An expired, duplicated, unscoped, or stale
-tool call fails closed. Stock Hermes uses static MCP schemas, so Bright does not claim
-that invalid dynamic action IDs are impossible to emit; Core validation is the safety
-boundary and the provider matrix measures how often validation is needed.
+There are no dual writers. In the live profile Hermes must call exactly one terminal
+tool, `classroom_propose_move(turn_id, move_id, teacher_line)`. Core issued the opaque
+turn and legal move IDs, revalidates them at commit time, bounds the teacher line, and
+applies the move only after matching physical playback completes. An expired,
+duplicated, unscoped, or stale proposal fails closed. This deliberately avoids asking
+stock Hermes to discover a changing multi-tool surface.
 
 ## Live speech contract
 
@@ -50,9 +51,11 @@ create a second voice path. Core correlates the response to a conversation turn 
 publishes an ordered speech turn. Stage is the only browser role permitted to play
 it and reports playback started/finished. Control is the only mic owner.
 
-The live classroom begins half-duplex with push-to-talk. Listening opens only after
-the matching playback-finished acknowledgement and an echo-tail cooldown. If PTT
-is pressed during output, Control requests an authorized exact-turn barge-in; Core
+The autonomous-classroom slice is half-duplex. Core issues an exact response assignment
+and capture request; the child-operated answer station reports Ready and opens only
+after the matching playback-finished acknowledgement and an echo-tail cooldown. A
+legacy/manual PTT path remains for recovery. If PTT is pressed during output, Control
+requests an authorized exact-turn barge-in; Core
 validates the activity epoch, cancels that turn, and the mic remains closed until
 Stage reports termination plus the echo tail. Full-duplex/VAD barge-in remains a
 later measured capability, not a demo assumption.
@@ -63,13 +66,21 @@ The hosted classroom request contains pseudonymous session/learner references an
 the minimum current pedagogical context. It contains no real child name, raw audio,
 prior raw transcript, or cross-learner recall. Classroom Hermes requests use
 `store: false`; no hosted conversation chain or long-term child memory is relied on.
-Raw transcripts are ephemeral inputs to grading and must not be serialized into
-observations, SQLite/FTS evidence, logs, or hosted summaries.
+The current-turn transcript is an ephemeral input to deterministic grading. Under the
+implemented `hosted_semantic` policy Hermes receives only the graded semantic outcome,
+not raw transcript. Raw synthetic transcript may reach Hermes only under the explicit
+`synthetic_dev` policy with acknowledgement and fixture provenance; it must not be
+serialized into observations, SQLite/FTS evidence, logs or hosted summaries, and it is
+not production proof.
 
 Hermes' live profile has an explicit allowlist containing only the Bright classroom
-MCP server. Terminal, filesystem, browser, cron, delegation, general memory, and
-other default tools are absent. A future planner profile must be a separate trust
-domain and may not silently broaden the live profile.
+MCP server and its one terminal proposal tool. Terminal, filesystem, browser, cron,
+delegation, general memory, and other default tools are absent. The pinned runtime is
+`hermes-agent 0.20.0+bright.1`, upstream commit
+`03fa32c92dd445eb64c7f67434dd91b32c40701d`; its patch disables live persistence,
+conversation chaining, background work and a second inference after the terminal
+tool. A future planner profile must be a separate trust domain and may not silently
+broaden the live profile.
 
 ## Failure and cancellation
 

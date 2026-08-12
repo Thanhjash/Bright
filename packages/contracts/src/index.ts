@@ -4,7 +4,7 @@
  * Change PROTOCOL.md first, then both mirrors.
  */
 
-export const PROTOCOL_VERSION = 2 as const
+export const PROTOCOL_VERSION = 3 as const
 
 // ─────────────────────────── Event envelope ───────────────────────────
 
@@ -21,6 +21,12 @@ export type EventType =
   // server → client
   | 'scene.update'
   | 'scene.snapshot'
+  | 'class.session.updated'
+  | 'class.turn.assigned'
+  | 'class.turn.closed'
+  | 'response.capture.requested'
+  | 'classroom.status'
+  | 'stage.lease.granted'
   | 'speech.say'
   | 'speech.turn.started'
   | 'speech.text.delta'
@@ -47,10 +53,22 @@ export type EventType =
   | 'speech.playback.finished'
   | 'speech.barge_in'
   | 'heartbeat.ack'
+  | 'capability.report'
+  | 'response.capture.ready'
+  | 'response.capture.started'
 
 export type Mode = 'FULL' | 'DEGRADED' | 'OFFLINE'
 
-export interface SceneSnapshotPayload { scene: Scene; lesson: LessonPosition }
+export interface SceneSnapshotPayload {
+  scene: Scene
+  lesson: LessonPosition
+  session?: ClassSessionState
+  status?: ClassroomStatusPayload
+  assignment?: TurnAssignment
+  capture?: CaptureRequest
+  speech?: { speechTurnId: string; status: 'queued' | 'playing' | 'terminal' }
+  recovery?: { reason: string; requiredAction?: string }
+}
 export interface SpeechSayPayload {
   text: string
   audioAsset?: string
@@ -100,16 +118,28 @@ export interface ErrorPayload { code: string; message: string }
 export interface HeartbeatPayload { ts: number }
 
 export interface ClientHelloPayload { role: 'stage' | 'control'; stateVersion?: number }
-export interface InteractionChoicePayload { optionId: string; studentId?: string }
-export interface InteractionPointPayload { targetId: string; x: number; y: number }
-export interface InteractionDragPayload { fromId: string; toId: string }
+export interface ResponseCorrelation {
+  assignmentId: string
+  responseTurnId: string
+}
+export interface InteractionChoicePayload extends ResponseCorrelation { optionId: string }
+export interface InteractionPointPayload extends ResponseCorrelation { targetId: string; x: number; y: number }
+export interface InteractionDragPayload extends ResponseCorrelation { fromId: string; toId: string }
+export type CaptureOutcome =
+  | 'speech' | 'no_speech' | 'noise_only' | 'device_lost' | 'asr_timeout' | 'asr_unavailable'
 export interface StudentSpeechFinalPayload {
   text: string
-  studentId?: string
   confidence: number
   utteranceId: string
+  assignmentId: string
+  responseTurnId: string
+  captureId: string
+  captureOutcome: CaptureOutcome
   activityId: string
   activityGeneration: number
+  /** Accepted by Core only when the process is explicitly in synthetic_dev. */
+  synthetic?: true
+  syntheticFixtureId?: string
 }
 
 export interface StudentResponseAcceptedPayload {
@@ -119,7 +149,12 @@ export interface StudentResponseAcceptedPayload {
 
 export interface LessonStartPayload {
   requestId: string
+  lessonId?: string
+  classId?: string
+  roster?: Array<{ id: string; displayName: string; seat?: string }>
+  attendanceIds?: string[]
   index?: number
+  /** legacy single-learner compatibility; autonomous_class ignores it. */
   studentId?: string
   studentName?: string
 }
@@ -132,6 +167,75 @@ export interface LessonStartedPayload {
   studentId?: string
   index: number
   stateVersion: number
+}
+
+export type SessionStatus =
+  | 'PREPARING' | 'RUNNING' | 'PAUSED' | 'RECOVERING'
+  | 'CLOSING' | 'COMPLETED' | 'ABORTED'
+export type ResponseScope = 'selected_individual' | 'group' | 'choral' | 'anonymous' | 'uncertain'
+export interface ClassSessionState {
+  sessionId: string
+  status: SessionStatus
+  decisionRevision: number
+  startedAt?: number
+  elapsedS: number
+  stage: string
+  currentTargetId?: string
+  responseTurnId?: string
+  pauseReason?: string
+  resumeAllowed?: boolean
+  requiredAction?: string
+}
+export interface TurnAssignment {
+  assignmentId: string
+  responseTurnId: string
+  sessionId: string
+  decisionRevision: number
+  activityId: string
+  activityGeneration: number
+  targetId?: string
+  targetDisplayName?: string
+  responseScope: ResponseScope
+  captureScope: 'answer_station' | 'board' | 'none'
+  expiresAt: number
+}
+export interface TurnClosedPayload extends ResponseCorrelation {
+  outcome: Outcome | 'rejected'
+}
+export interface CaptureRequest {
+  captureId: string
+  assignmentId: string
+  responseTurnId: string
+  readyDeadlineAt: number
+  speechOnsetDeadlineMs: number
+  maxDurationMs: number
+  endSilenceMs: number
+}
+export interface CaptureReadyPayload extends ResponseCorrelation {
+  captureId: string
+  status: 'ready' | 'failed'
+  reason?: string
+}
+export interface CaptureStartedPayload extends ResponseCorrelation { captureId: string }
+export interface CapabilityReportPayload {
+  clientInstanceId: string
+  connectionEpoch: number
+  role: 'stage' | 'control'
+  capabilities: Record<string, boolean | string | number>
+  reportedAt: number
+}
+export interface StageLeaseGrantedPayload {
+  leaseId: string
+  clientInstanceId: string
+  expiresAt: number
+}
+export interface ClassroomStatusPayload {
+  liveness: 'live' | 'dead'
+  readiness: 'ready' | 'degraded' | 'not_ready'
+  teachable: boolean
+  lessonId?: string
+  reason?: string
+  recovery?: { reason: string; requiredAction?: string }
 }
 
 export type ControlCommand =
@@ -220,6 +324,9 @@ export interface LessonPosition {
   stage: string
   activityId: string
   activityGeneration: number
+  decisionRevision: number
+  responseTurnId?: string
+  assignmentId?: string
   currentStudentId?: string
 }
 
@@ -238,7 +345,8 @@ export interface Expect {
   acceptFuzzy?: string[]
 }
 
-export type BranchOn = 'correct' | 'near' | 'wrong' | 'silence' | 'timeout' | 'always'
+export type BranchOn =
+  | 'correct' | 'near' | 'wrong' | 'uncertain' | 'unhandled' | 'silence' | 'timeout' | 'always'
 export interface Branch {
   on: BranchOn
   goto: string
@@ -253,10 +361,40 @@ export interface Activity {
   durationS?: number
   expect?: Expect
   branches?: Branch[]
+  teaching?: TeachingSpec
+}
+
+export type ParticipationMode = 'whole_class' | 'pair' | 'group' | 'selected_individual' | 'anonymous'
+export type EvidencePolicy = 'none' | 'participation' | 'class_aggregate' | 'individual'
+export interface TeachingSpec {
+  stage: string
+  stageBudgetS: number
+  responseScope: ResponseScope
+  participationMode: ParticipationMode
+  skillIds: string[]
+  evidencePolicy: EvidencePolicy
+  recovery: { easierActivityId: string; safeDefaultActivityId: string }
+  checkpoint?: boolean
+}
+export interface CurriculumSpec {
+  locale: string
+  learnerWedge: string
+  frameworkRefs: string[]
+  objectives: Array<{ id: string; description: string; evidence: string }>
+  approver: string
+  approvalStatus: 'draft' | 'approved'
+}
+export interface SessionPlan {
+  durationMin: number
+  closureReserveS: number
+  namedTurnBudget: number
+  fairnessCooldown: number
 }
 
 export interface LessonRun {
   v: typeof PROTOCOL_VERSION
+  lessonSchemaVersion: 1
+  deliveryMode: 'legacy_single' | 'autonomous_class'
   lessonId: string
   classId: string
   title: string
@@ -265,6 +403,8 @@ export interface LessonRun {
   studentsToCheck: string[]
   activities: Activity[]
   mediaManifest: AssetRef[]
+  curriculum?: CurriculumSpec
+  sessionPlan?: SessionPlan
 }
 
 // ─────────────────────────── ACT tokens ───────────────────────────
@@ -311,7 +451,8 @@ export interface AvailableAction {
  * omitted them, making it impossible to tell the agent a student had gone
  * quiet — caught the first time a silence was fed through a live turn.
  */
-export type Outcome = 'correct' | 'near' | 'wrong' | 'silence' | 'timeout'
+export type Outcome =
+  | 'correct' | 'near' | 'wrong' | 'uncertain' | 'silence' | 'timeout' | 'unhandled'
 
 export interface TurnContext {
   stateVersion: number

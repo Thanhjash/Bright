@@ -1,11 +1,12 @@
 # 03 — ARCHITECTURE
 
 > **Current implementation authority:** [Option B classroom runtime](../2-decisions/option-b-classroom-runtime.md).
-> This design chapter contains earlier exploration. In particular, stock Hermes MCP
-> discovery uses static schemas, so dynamic decoder enums and a guaranteed single
-> repair attempt are not current guarantees. Core validation, deadlines, and turn
-> fencing are the live safety boundary. Streamed assistant text—not
-> `classroom_say`—is the live adaptive voice source. The diagrams and lifecycle
+> This design chapter includes future-system context. The implemented live profile
+> exposes exactly one terminal MCP tool,
+> `classroom_propose_move(turn_id, move_id, teacher_line)`. Core-issued opaque moves,
+> validation, deadlines, turn fencing and playback-before-commit are the live safety
+> boundary. The validated `teacher_line`—not `classroom_say` or a second finalizer—is
+> the live adaptive voice source. The diagrams and lifecycle
 > below show the target system: local Gemma, Hermes cron/planning/memory, perception,
 > and pre-class compilation are not claims about the live classroom profile. That
 > profile explicitly disables Hermes memory, cron, delegation, terminal, filesystem,
@@ -88,19 +89,18 @@ After handling, Core **emits an event upward** so Hermes learns about it — but
 
 | Decision | Owner |
 |---|---|
-| What the next activity is | Hermes |
-| What scaffolding level this student needs | Hermes |
-| Recasting a student's wrong sentence | Hermes |
-| Who to call on | Hermes (Core proposes candidates) |
-| Updating skill estimates | Hermes writes via tool, Core persists |
-| Whether to open EXPLORE | Hermes |
+| Legal next move set, target learner and fairness | Core |
+| One bounded semantic move and short teacher line | Hermes proposes; Core commits |
+| Grading and evidence attribution | Core |
+| Roster, attendance, participation and cooldown | Core |
+| Stage/time/recovery policy | Core; execution remains incomplete |
+| Whether to use an offered EXPLORE move | Hermes proposes; Core revalidates |
 
 ### Three operating modes (NS-1 made concrete)
 
 ```
-FULL       Hermes responds < 3s     → agent fully drives the class
-DEGRADED   Hermes slow / timing out → Core plays lesson_run sequentially;
-                                       Hermes only intervenes at checkpoints
+FULL       Hermes responds in budget → one proposal may adapt the authored path
+DEGRADED   Hermes slow / timing out  → Core plays lesson_run sequentially
 OFFLINE    Hermes dead              → Core plays lesson_run to completion,
                                        logs everything for post-class processing
 ```
@@ -119,25 +119,19 @@ The first draft of this section listed 26 distinct operations. At Tau2 **42.2**,
 
 **Design rule:** the agent should *propose within a constrained option set*, not *compose from a large primitive vocabulary*. Rendering primitives belong to Core, not to the model.
 
-### Primary surface — semantic tools
+### Implemented live surface — one terminal semantic proposal
 
-```
-classroom_get_state()
-    → { lesson, stage, position, current_student, board_summary,
-        state_version, available_actions[] }
-
-classroom_choose_next(state_version, action_id, params?)
-    → picks from available_actions[] returned by get_state.
-      Rejected if state_version is stale.
-
-classroom_record_observation(student_id, skill, result, evidence)
-    → the only write into student state
+```text
+classroom_propose_move(turn_id, move_id, teacher_line)
 ```
 
-The live Hermes profile does not expose `classroom_say`. Hermes assistant text is
-streamed through the Bright adapter and becomes the single adaptive voice. Core's
-authored narration uses the same correlated speech protocol for deterministic
-fallback. This prevents tool speech and final assistant text from being spoken twice.
+Core registers an opaque live `turn_id` and legal `move_id` values before calling
+Hermes. Hermes calls the tool exactly once. Core rejects unknown, stale, duplicated or
+already-terminal proposals and bounds `teacher_line` to two sentences/180 characters,
+without names, markup, URLs or correctness/praise claims. The move remains pending
+until Stage reports matching physical playback completion; only then is its semantic
+transition committed. The adapter discards free assistant text and does not run a
+second inference/finalizer, preventing double speech and post-tool drift.
 
 The crucial move is `available_actions[]`. Core computes what is *legal right now* from `lesson_run.json` + current state, and hands the model a short enumerated list:
 
@@ -152,9 +146,11 @@ The crucial move is `available_actions[]`. Core computes what is *legal right no
 ]
 ```
 
-This converts an open-ended tool-routing problem (where 42.2 is scary) into a **constrained multiple choice** (where a 4.5B model is much stronger). It also makes every agent decision auditable and replayable in evals.
+This converts an open-ended tool-routing problem into a constrained choice whose final
+authority remains in Core. It also makes every agent decision auditable and replayable.
 
-`state_version` gating means a stale decision — the model deciding based on state from 4 seconds ago — is rejected rather than applied to a board that has moved on.
+The opaque turn binding includes the current lesson/activity generations and decision
+revision, so a stale decision is rejected rather than applied to a board that moved on.
 
 #### Semantic constraint is not enough — constrain the decoder too
 
@@ -168,34 +164,31 @@ Structured JSON generation, constrained decoding:          +0.90 quality
 Constrained retry, mean pass rate across 13 models:  62.5% → 75.2%
 ```
 
-**Future optimization, not a current guarantee:** a provider may emit
-`classroom_choose_next` under grammar-constrained decoding generated from the current
-`available_actions[]`. Stock Hermes discovers static MCP schemas, so the Option B
-baseline cannot mutate this enum per request. Core therefore validates both
-`state_version` and `action_id`, rejects stale/illegal calls, and records the failure.
+**Future optimization, not a current guarantee:** a provider may emit the terminal
+proposal under grammar-constrained decoding generated from current legal moves. Stock
+Hermes discovers static MCP schemas, so Core still validates the opaque turn/move,
+rejects stale or illegal calls, and records the failure.
 Provider conformance tests determine whether a future local serving stack can add
 decoder constraints without changing the contract.
 
 This has a serving-layer consequence: whether OVMS/OpenVINO GenAI exposes guided decoding is unverified. If it does not, llama.cpp (mature GBNF grammar support) becomes the stronger serving choice. Folded into SP-2 — it is now the highest-value thing that spike checks.
 
-### Secondary surface — read-only, added only if evals justify it
+### Secondary surface — not exposed live; add only if evals justify it
 
 ```
 student_get_profile(student_id)
 knowledge_search(query)
 ```
 
-Everything else from the original 26 becomes an **`available_actions` entry**, not a tool. `board.show_vocabulary`, `board.ask_choice`, `board.sentence_builder`, `board.highlight`, `board.clear` are internal Core functions driven by `lesson_run.json` — the model never names them.
+Everything else remains an internal Core operation driven by `lesson_run.json`; the
+model never names rendering primitives or writes learner memory directly.
 
 ### Fallback ladder if routing accuracy is still poor (SP-3)
 
 ```
-Tier A  4 tools + available_actions      ← start here
-Tier B  drop to 2: get_state + choose_next; narration becomes templated
-Tier C  no tool calling at all — constrained JSON decode from a
-        single completion, parsed by Core. Model becomes a chooser.
-Tier D  Core runs lesson_run linearly; model only writes
-        observations after class (the DEGRADED mode from §2)
+Tier A  one terminal proposal tool       ← implemented live profile
+Tier B  no live model call; authored/scripted move chooser
+Tier C  Core runs lesson_run linearly     ← DEGRADED/OFFLINE floor
 ```
 
 Tier D is already required by NS-1, so the fallback path is not extra work — it is the floor we are building anyway.
@@ -204,15 +197,15 @@ Tier D is already required by NS-1, so the fallback path is not extra work — i
 
 1. **No tool accepts HTML, CSS, JS, or a selector.**
 2. **All assets are referenced as `asset://id`**, resolved by Core. The agent never sees a filesystem path.
-3. **Every mutating call carries `state_version`.** Small models repeat and lag; the contract must be able to say no.
+3. **Every proposal is bound to an opaque Core-issued turn and move.** Small models repeat and lag; the contract must be able to say no.
 
 ### One thing Hermes does that we must disable
 
 `hermes-agent/agent/conversation_loop.py` implements a multi-attempt tool-repair loop. In a chat assistant that is a feature; in a live classroom it means a 3× latency spike while 30 children wait.
 
-Configure provider retries as low as stock Hermes allows, but do not claim exact
-single-attempt behaviour: Hermes also has internal tool-name/JSON repair paths. Core's
-wall-clock deadline is authoritative. On expiry it logically cancels the turn,
+The Bright Hermes patch removes live persistence/background work, disables repair
+chaining after the terminal tool, and configures one provider attempt. Core's
+wall-clock deadline remains authoritative: on expiry it logically cancels the turn,
 rejects late effects, falls back to the authored action, and logs the outcome.
 
 ---
@@ -264,7 +257,9 @@ Speaker embedding (ECAPA)    ─┤
 Currently selected turn      ─┘
 ```
 
-When the posterior falls below threshold → **do not guess**. Emit `student_id: null, confidence: 0.4` and let Hermes handle it (or ask "Is that Minh?").
+Identity fusion is a future path, not the current slice. Today Core assigns one named
+learner to the explicit answer station; group/choral responses cannot become individual
+evidence. When identity is uncertain, **do not guess** and do not write learner memory.
 
 **Privacy:** no raw video/audio stored by default. Only embeddings and events. A written policy is required before any real deployment with children.
 
@@ -399,11 +394,14 @@ fallback_language: vi
 | Tier | Holds | Stored in |
 |---|---|---|
 | Procedural | how to teach, strategies | Hermes Skills |
-| Teacher long-term | synthesized observations about the class | Hermes memory provider |
+| Teacher long-term | synthesized class observations (future) | Bright-owned schema; not Hermes live memory |
 | Learning state | per-student skill estimates | **our schema'd DB** |
 | Content | curriculum, media | content store + retrieval |
 
-Raw transcripts **never** enter Gemma's context.
+Raw transcript is ephemeral input to deterministic grading. The implemented
+`hosted_semantic` request sends Hermes only the graded outcome. Raw synthetic transcript
+may reach Hermes only under the acknowledged `synthetic_dev` policy with a fixture ID;
+it never becomes durable memory, recalled context or cross-learner history.
 
 ### Student record
 
@@ -425,9 +423,8 @@ Raw transcripts **never** enter Gemma's context.
 ## 9. Lifecycle of one class
 
 ```
-BEFORE   (Hermes cron, unattended)
-  read curriculum → read class state → pick review content
-  → generate lesson_run.json → preload media → ready
+BEFORE   (target; not in the live classroom profile)
+  author/review curriculum → compile lesson_run.json → preload media → ready
 
 DURING
   observe → teach → ask → student responds

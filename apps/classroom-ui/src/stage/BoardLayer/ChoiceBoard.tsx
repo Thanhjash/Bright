@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { ChoiceProps } from '@contracts'
 import { useBus } from '../../bus'
+import { currentResponseCorrelation } from '../../store/classroom'
 import { BoardShell, MediaTile, Prompt, cx } from './parts'
 
 /**
@@ -24,8 +25,10 @@ export function ChoiceBoard({ props }: { props: ChoiceProps }) {
 
   function choose(optionId: string) {
     if (revealed || pending) return
+    const correlation = currentResponseCorrelation()
+    if (!correlation) return
     setPending(optionId)
-    bus.send('interaction.choice', { optionId })
+    bus.send('interaction.choice', { optionId, ...correlation })
   }
 
   return (
@@ -49,6 +52,11 @@ export function ChoiceBoard({ props }: { props: ChoiceProps }) {
               type="button"
               disabled={Boolean(revealed)}
               onPointerDown={() => choose(option.id)}
+              onKeyDown={(event) => {
+                if (event.key !== 'Enter' && event.key !== ' ') return
+                event.preventDefault()
+                choose(option.id)
+              }}
               style={{ animationDelay: `${i * 60}ms` }}
               className={cx(
                 'animate-rise card-surface relative flex min-h-0 overflow-hidden p-[2.2vh_1.2vw]',

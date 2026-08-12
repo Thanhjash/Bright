@@ -24,12 +24,13 @@ export type PlaybackStatus = 'completed' | 'cancelled' | 'failed'
 export type SpeechBehavior = 'queue' | 'interrupt' | 'replace'
 
 export interface SpeechOutputCallbacks {
-  onPlaybackStarted?: (speechTurnId: string) => void
+  onPlaybackStarted?: (speechTurnId: string, metrics?: Record<string, number>) => void
   onPlaybackFinished?: (
     speechTurnId: string,
     status: PlaybackStatus,
     reason?: string,
     reportToCore?: boolean,
+    metrics?: Record<string, number>,
   ) => void
 }
 
@@ -48,6 +49,8 @@ interface ManagedTurn {
   audioAsset?: string
   assetConsumed: boolean
   reportTerminal: boolean
+  openedAt: number
+  playbackStartedAt?: number
 }
 
 let player: SpeechPlayer | null = null
@@ -93,7 +96,19 @@ function finish(speechTurnId: string, status: PlaybackStatus, reason?: string): 
     return
   managed.terminal = true
   turns.delete(speechTurnId)
-  callbacks.onPlaybackFinished?.(speechTurnId, status, reason, managed.reportTerminal)
+  const now = performance.now()
+  callbacks.onPlaybackFinished?.(
+    speechTurnId,
+    status,
+    reason,
+    managed.reportTerminal,
+    {
+      totalMs: Math.round(now - managed.openedAt),
+      ...(managed.playbackStartedAt === undefined
+        ? {}
+        : { playbackMs: Math.round(now - managed.playbackStartedAt) }),
+    },
+  )
 }
 
 function ensurePlayer(): SpeechPlayer {
@@ -110,7 +125,10 @@ function ensurePlayer(): SpeechPlayer {
       if (!managed || managed.started)
         return
       managed.started = true
-      callbacks.onPlaybackStarted?.(turnId)
+      managed.playbackStartedAt = performance.now()
+      callbacks.onPlaybackStarted?.(turnId, {
+        firstAudioMs: Math.round(managed.playbackStartedAt - managed.openedAt),
+      })
     },
     onTurnEnd: (turnId) => {
       const failed = failedTurns.delete(turnId)
@@ -171,6 +189,7 @@ export function startSpeech({
     audioAsset,
     assetConsumed: false,
     reportTerminal: true,
+    openedAt: performance.now(),
   })
 }
 
