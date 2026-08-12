@@ -1,0 +1,61 @@
+# Bright's live-classroom Hermes profile.  Keep this deliberately narrow:
+# Classroom Core, not Hermes, is the source of truth and sole state writer.
+
+model:
+  # Hosted now: point these at an OpenAI-compatible hosted endpoint.
+  # Local later: change only base_url/default to OVMS or another local server.
+  provider: "${HERMES_MODEL_PROVIDER}"
+  base_url: "${HERMES_MODEL_BASE_URL}"
+  api_key: "${HERMES_MODEL_API_KEY}"
+  default: "${HERMES_MODEL_NAME}"
+  max_tokens: 400
+
+agent:
+  # The class owns the wall clock.  This bounds normal say/act/final rounds;
+  # Core's outer timeout remains the authoritative stop condition.
+  max_turns: 3
+  api_max_retries: 1
+  disabled_toolsets:
+    - terminal
+    - file
+    - browser
+    - web
+    - memory
+    - session_search
+    - delegate
+    - cronjob
+    - tts
+
+# An explicit MCP server name is an allowlist for the API-server platform.
+# Never replace this with the broad hermes-api-server preset.
+platform_toolsets:
+  api_server:
+    - bright-classroom
+
+mcp_servers:
+  bright-classroom:
+    url: "http://127.0.0.1:${CORE_PORT}/mcp"
+    headers:
+      Authorization: "Bearer ${BRIGHT_MCP_TOKEN}"
+    enabled: true
+    timeout: 2
+    connect_timeout: 1
+    supports_parallel_tool_calls: false
+    trust: full
+    tools:
+      include:
+        - classroom_get_state
+        - classroom_choose_next
+        - classroom_record_observation
+        - classroom_recall
+      resources: false
+      prompts: false
+
+gateway:
+  api_server:
+    enabled: true
+    host: 127.0.0.1
+    port: 8642
+    key: "${HERMES_API_KEY}"
+    model_name: bright-classroom
+    max_concurrent_runs: 1

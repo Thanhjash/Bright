@@ -1,0 +1,23 @@
+[Unit]
+Description=Bright AI Classroom
+Documentation=file:///opt/bright/current/docs/3-design/runtime-topology.md
+
+# One handle for the whole appliance, so a human command is
+#   systemctl restart bright.target
+# and never a list of four service names. Every unit is PartOf=bright.target,
+# so stopping the target stops all of them and restarting it restarts all of
+# them -- which is the only operation a support call will ever ask for.
+Wants=bright-speech.service
+Wants=bright-core.service
+Wants=bright-hermes.service
+Wants=bright-ui.service
+Wants=bright-kiosk.service
+
+# Deliberately NOT After=network-online.target. This appliance is designed to
+# work in a school with no network at all. Waiting on a network that will
+# never come up would add 30-120 s of dead time to every single boot
+# (systemd-networkd-wait-online's default timeout), for nothing.
+After=local-fs.target
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,62 @@
+[Unit]
+Description=Bright classroom stage — Chromium kiosk on the projector
+PartOf=bright.target
+
+# Ordering that actually means something. `After=` alone only orders process
+# *start*; each service unit below blocks in ExecStartPost until its /health
+# answers, so by the time this unit runs, core and the UI are genuinely
+# serving. Without that the kiosk loads the page before the WebSocket hub
+# exists and the first thing the class sees is a reconnect spinner.
+After=bright-core.service bright-ui.service
+Requires=bright-core.service bright-ui.service
+
+# Speech is Wants, not Requires, and deliberately NOT in After=. Whisper is
+# the slowest thing on the box; making the projector wait for it would add its
+# whole load time to "time until the teacher sees something". The kiosk waits
+# for it below, advisorily.
+Wants=bright-speech.service
+
+# Nobody is on site. Never give up permanently: a unit sitting in `failed`
+# after 5 restarts is a classroom with no sound and nobody to type
+# `systemctl reset-failed`.
+StartLimitIntervalSec=0
+
+[Service]
+Type=exec
+User=bright
+Group=bright
+EnvironmentFile=/etc/bright/bright.env
+
+# Advisory wait, note the leading `-`: give speech up to 90 s to finish
+# loading so the first spoken line is not silent, but if speech is broken we
+# still put the stage on the projector. NS-1 — a failure in one layer must not
+# leave the classroom looking at a black screen.
+ExecStartPre=-/opt/bright/current/scripts/wait-healthy.sh http://127.0.0.1:${SPEECH_PORT}/health 90 stt:true
+
+# xinit owns the X server; the session script owns the browser. On a
+# Wayland-only image replace this line with:
+#   ExecStart=/usr/bin/cage -- /opt/bright/current/infra/kiosk/kiosk.sh
+ExecStart=/usr/bin/xinit /opt/bright/current/infra/kiosk/kiosk.sh -- :0 vt1 -nolisten tcp -keeptty
+
+Restart=always
+RestartSec=2
+TimeoutStartSec=180
+
+# The stage is the most expendable process on the box: it holds no state, and
+# reconnect-and-resnapshot means restarting it resumes mid-activity. If memory
+# runs out, this is what should die.
+OOMScoreAdjust=500
+CPUWeight=100
+MemoryAccounting=yes
+CPUAccounting=yes
+
+# Needs the tty and the GPU; the hardening applied to the backend services
+# does not transfer.
+PAMName=login
+TTYPath=/dev/tty1
+StandardInput=tty
+TTYVTDisallocate=yes
+SupplementaryGroups=video input render audio
+
+[Install]
+WantedBy=bright.target

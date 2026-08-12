@@ -1,0 +1,50 @@
+[Unit]
+Description=Bright speech — offline text-to-speech and speech-to-text
+Documentation=file:///opt/bright/current/services/speech/app.py
+PartOf=bright.target
+After=local-fs.target
+# No After=bright-core: speech does not call core, and core does not call
+# speech (the browser calls both directly). Starting them in parallel is the
+# difference between a ~10 s boot and a serialised one.
+
+# Nobody is on site. Never give up permanently: a unit sitting in `failed`
+# after 5 restarts is a classroom with no sound and nobody to type
+# `systemctl reset-failed`.
+StartLimitIntervalSec=0
+
+[Service]
+Type=exec
+User=bright
+Group=bright
+WorkingDirectory=/opt/bright/current/services/speech
+EnvironmentFile=/etc/bright/bright.env
+ExecStart=/opt/bright/venv/bin/python3 /opt/bright/current/services/speech/app.py
+
+# uvicorn does not accept connections until the lifespan startup hook has
+# finished, and that hook is where Piper and Whisper are loaded. So a
+# successful /health here is a genuine "models are resident" signal, not
+# "the port is open" -- and it is the largest single term in the cold-boot
+# budget. TimeoutStartSec must cover a cold page cache on slow storage.
+ExecStartPost=/opt/bright/current/scripts/wait-healthy.sh http://127.0.0.1:${SPEECH_PORT}/health 150
+TimeoutStartSec=180
+
+Restart=always
+RestartSec=3
+
+# Speech is heavy but recoverable. Kill it before classroom-core.
+OOMScoreAdjust=100
+CPUWeight=150
+MemoryAccounting=yes
+CPUAccounting=yes
+
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+ReadWritePaths=/var/lib/bright /var/log/bright
+
+[Install]
+WantedBy=bright.target

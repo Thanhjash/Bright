@@ -1,0 +1,55 @@
+[Unit]
+Description=Bright classroom-core — lesson runner, state machine, event bus
+Documentation=file:///opt/bright/current/docs/3-design/runtime-topology.md
+PartOf=bright.target
+After=local-fs.target
+# When a local model server is added, this becomes:
+#   After=bright-ovms.service
+#   Wants=bright-ovms.service          <- Wants, never Requires
+# Requires= would mean a dead model server takes the classroom down with it,
+# and NS-1 says the exact opposite: the lesson runs when the LLM is dead.
+
+# Nobody is on site. Never give up permanently: a unit sitting in `failed`
+# after 5 restarts is a classroom with no sound and nobody to type
+# `systemctl reset-failed`.
+StartLimitIntervalSec=0
+
+[Service]
+Type=exec
+User=bright
+Group=bright
+WorkingDirectory=/opt/bright/current/services/classroom-core
+EnvironmentFile=/etc/bright/bright.env
+ExecStart=/opt/bright/venv/bin/python3 /opt/bright/current/services/classroom-core/app.py
+ExecStartPost=/opt/bright/current/scripts/wait-healthy.sh http://127.0.0.1:${CORE_PORT}/health 60
+TimeoutStartSec=90
+
+Restart=always
+RestartSec=2
+
+# classroom-core is the source of truth and the reflex tier (NS-2, < 100 ms).
+# Under memory pressure it must be the last thing the kernel considers, and
+# under CPU pressure it must win against Whisper and Chromium.
+OOMScoreAdjust=-500
+CPUWeight=400
+MemoryAccounting=yes
+CPUAccounting=yes
+IOWeight=300
+
+# SIGTERM lets the FastAPI lifespan shutdown run, which closes the SQLite
+# connection cleanly and checkpoints the WAL. Give it room; a hard SIGKILL
+# here is the one shutdown path that leaves a large WAL to replay next boot.
+KillSignal=SIGTERM
+TimeoutStopSec=20
+
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+ReadWritePaths=/var/lib/bright /var/log/bright
+
+[Install]
+WantedBy=bright.target

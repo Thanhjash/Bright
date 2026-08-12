@@ -1,0 +1,95 @@
+{
+  "corpus": {
+    "id": "bright-room-safety-synthetic-v1",
+    "version": 1,
+    "createdAt": "2026-08-11",
+    "license": "CC0-1.0",
+    "provenance": "Prompts and utterances authored for Bright; audio generated locally with Bright Piper TTS and deterministic ffmpeg transformations.",
+    "limitations": [
+      "Synthetic adult TTS is not evidence of child-speech accuracy.",
+      "Pitch shifting and artificial room noise do not reproduce a real classroom.",
+      "Release for real classrooms requires consented recordings with device and room metadata."
+    ]
+  },
+  "_comment": [
+    "Room-test utterances for the speech service.",
+    "",
+    "'expect' mirrors the contracts Expect shape exactly (PROTOCOL 9.4) and is fed",
+    "to services/classroom-core/runner.py:grade() unmodified -- the harness never",
+    "reimplements grading.",
+    "",
+    "'intent' is what a TEACHER in the room would judge that utterance to be.",
+    "The harness separately computes the ORACLE outcome: what grade() returns for a",
+    "perfect transcript. Where oracle != intent, the disagreement is a lesson-",
+    "authoring / protocol property that both models share, and the harness reports",
+    "it apart from the model comparison instead of blaming the ASR for it."
+  ],
+  "questions": [
+    {
+      "id": "q_animal",
+      "prompt": "What animal do you see?",
+      "expect": {
+        "kind": "speech",
+        "correct": ["cat", "a cat", "it is a cat", "it's a cat"],
+        "acceptFuzzy": ["kitty", "kitten", "meow"]
+      },
+      "utterances": [
+        { "id": "cat_bare",        "say": "Cat.",                 "intent": "correct" },
+        { "id": "cat_article",     "say": "A cat.",               "intent": "correct" },
+        { "id": "cat_sentence",    "say": "It's a cat.",          "intent": "correct" },
+        { "id": "cat_full",        "say": "It is a cat.",         "intent": "correct" },
+        { "id": "cat_hesitant",    "say": "Umm... a cat?",        "intent": "correct" },
+        { "id": "cat_shout",       "say": "Cat! Cat!",            "intent": "correct" },
+        { "id": "cat_slow",        "say": "A... cat.",            "intent": "correct" },
+        { "id": "near_kitty",      "say": "Kitty.",               "intent": "near" },
+        { "id": "near_kitten",     "say": "A kitten.",            "intent": "near" },
+        { "id": "wrong_dog",       "say": "Dog.",                 "intent": "wrong" },
+        { "id": "wrong_dog_art",   "say": "A dog.",               "intent": "wrong" },
+        { "id": "wrong_dog_hes",   "say": "Umm... dog?",          "intent": "wrong" },
+        { "id": "wrong_bird",      "say": "Bird.",                "intent": "wrong" },
+        { "id": "wrong_rabbit",    "say": "A rabbit.",            "intent": "wrong" },
+        { "id": "wrong_horse",     "say": "Horse.",               "intent": "wrong" },
+        { "id": "wrong_dunno",     "say": "I don't know.",        "intent": "wrong" },
+        { "id": "trap_negation",   "say": "I don't like cats.",   "intent": "wrong",
+          "note": "Containment trap: grade() takes 'cat' inside 'cats'. Model-independent." },
+        { "id": "silence",         "say": "",                     "intent": "silence",
+          "note": "Synthesised as near-silent room tone; tests the empty-transcript path." }
+      ]
+    },
+    {
+      "id": "q_colour",
+      "prompt": "What colour is the ball?",
+      "expect": {
+        "kind": "speech",
+        "correct": ["red"],
+        "acceptFuzzy": ["orange", "pink"]
+      },
+      "utterances": [
+        { "id": "red_bare",     "say": "Red.",        "intent": "correct" },
+        { "id": "red_sentence", "say": "It's red.",   "intent": "correct" },
+        { "id": "near_orange",  "say": "Orange.",     "intent": "near" },
+        { "id": "wrong_blue",   "say": "Blue.",       "intent": "wrong" },
+        { "id": "wrong_green",  "say": "Green.",      "intent": "wrong" },
+        { "id": "wrong_yellow", "say": "Yellow.",     "intent": "wrong" }
+      ]
+    },
+    {
+      "id": "q_count",
+      "prompt": "How many apples are there?",
+      "expect": {
+        "kind": "speech",
+        "correct": ["three", "3"],
+        "acceptFuzzy": ["two", "four"]
+      },
+      "utterances": [
+        { "id": "three_bare",     "say": "Three.",             "intent": "correct" },
+        { "id": "three_sentence", "say": "There are three.",   "intent": "correct" },
+        { "id": "near_four",      "say": "Four.",              "intent": "near" },
+        { "id": "wrong_five",     "say": "Five.",              "intent": "wrong" },
+        { "id": "wrong_eight",    "say": "Eight.",             "intent": "wrong" },
+        { "id": "l2_free",        "say": "Free.",              "intent": "correct",
+          "note": "Common L2 substitution for 'three'. A teacher accepts it; the authored expect does not." }
+      ]
+    }
+  ]
+}

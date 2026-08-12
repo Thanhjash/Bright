@@ -1,0 +1,13 @@
+# Start the Bright USB update when a stick is plugged in.
+#
+# NOT INSTALLED BY DEFAULT. Read the long comment in
+# infra/systemd/bright-usb-update.service before you enable this: it turns
+# "anyone who can reach the machine's USB port" into "anyone who can run code
+# as root on the machine", and update bundles are not signed yet.
+#
+# It also only fires once the stick is MOUNTED, which on a minimal appliance
+# image means udisks2 or an fstab entry has to exist. Without one of those the
+# rule fires and usb-update.sh correctly reports that it found no stick.
+
+ACTION=="add", SUBSYSTEM=="block", ENV{ID_BUS}=="usb", ENV{DEVTYPE}=="partition", \
+  TAG+="systemd", ENV{SYSTEMD_WANTS}+="bright-usb-update.service"

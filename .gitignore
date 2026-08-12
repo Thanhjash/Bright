@@ -1,0 +1,37 @@
+# secrets
+.env
+.env.local
+*.key
+
+# deps / build
+node_modules/
+dist/
+.turbo/
+__pycache__/
+*.pyc
+.venv/
+venv/
+.pytest_cache/
+tests/.artifacts/
+.tools/
+apps/classroom-ui/public/live2d
+
+# vendored upstreams (huge, cloned separately)
+references/
+vendor/
+
+# runtime data
+data/students/
+data/runs/
+models/
+*.log
+
+# os
+.DS_Store
+Thumbs.db
+
+# runtime db
+data/*.db
+data/*.db-wal
+data/*.db-shm
+**/data/bright.db*

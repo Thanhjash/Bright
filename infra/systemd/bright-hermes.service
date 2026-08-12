@@ -1,0 +1,41 @@
+[Unit]
+Description=Bright Hermes — primary classroom agent runtime
+Documentation=file:///opt/bright/current/infra/hermes/config.yaml
+PartOf=bright.target
+After=local-fs.target bright-core.service
+Wants=bright-core.service
+StartLimitIntervalSec=0
+# Optional at image-build time: an appliance without the pinned Hermes wheel
+# skips this unit and Core continues in its authored fallback mode.
+ConditionPathExists=/opt/bright/hermes-venv/bin/hermes
+
+[Service]
+Type=exec
+User=bright
+Group=bright
+WorkingDirectory=/var/lib/bright/hermes/classroom
+EnvironmentFile=/etc/bright/bright.env
+Environment=HERMES_HOME=/var/lib/bright/hermes/classroom
+
+ExecStart=/opt/bright/hermes-venv/bin/hermes gateway
+ExecStartPost=/opt/bright/current/scripts/wait-healthy.sh http://127.0.0.1:8642/health 60
+TimeoutStartSec=90
+
+Restart=always
+RestartSec=2
+OOMScoreAdjust=150
+CPUWeight=100
+MemoryAccounting=yes
+CPUAccounting=yes
+
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+ReadWritePaths=/var/lib/bright/hermes /var/log/bright
+
+[Install]
+WantedBy=bright.target

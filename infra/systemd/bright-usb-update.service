@@ -1,0 +1,31 @@
+[Unit]
+Description=Bright — install an update from a plugged-in USB stick
+Documentation=file:///opt/bright/current/scripts/usb-update.sh
+
+# NOT ENABLED BY DEFAULT, AND NOT INSTALLED BY install.sh.
+#
+# This unit makes a teacher's job trivial: plug the stick in, walk away. It
+# also means that anyone who can plug a USB stick into the machine can run
+# code on it as root. Today an update stick is protected by a SHA256 checksum,
+# which proves the stick is INTACT and proves nothing about who made it.
+#
+# Enable this only after update bundles are signed and the appliance image
+# carries the public key. Until then the extra step -- a human deciding to run
+# usb-update.sh -- is the only authentication in the update path, and removing
+# it in the name of convenience would be the single worst decision available
+# in this system: 40 million children's machines, one USB stick, no recovery.
+#
+# To enable, once signing exists:
+#   cp infra/systemd/bright-usb-update.service /etc/systemd/system/
+#   cp infra/udev/99-bright-usb.rules /etc/udev/rules.d/
+#   systemctl daemon-reload && udevadm control --reload
+
+[Service]
+Type=oneshot
+ExecStart=/opt/bright/current/scripts/usb-update.sh
+# The update stops the classroom services and restarts them; that must not
+# look like this unit failing.
+SuccessExitStatus=0 1
+TimeoutStartSec=1800
+StandardOutput=journal
+StandardError=journal

@@ -1,0 +1,418 @@
+{
+  "v": 2,
+  "lessonId": "en-a1-animals-01",
+  "classId": "demo",
+  "title": "Animals Around Us",
+  "focus": ["animal_vocab", "listening_a1"],
+  "review": ["greetings"],
+  "studentsToCheck": ["s01"],
+  "mediaManifest": [
+    "asset://animals/cat.svg",
+    "asset://animals/dog.svg",
+    "asset://animals/bird.svg",
+    "asset://animals/fish.svg"
+  ],
+  "activities": [
+    {
+      "id": "hook_hello",
+      "scene": "text",
+      "props": {
+        "text": "Animals!",
+        "size": "xl"
+      },
+      "narration": [
+        {
+          "text": "Hello everyone! Today we are learning about animals.",
+          "act": { "emotion": "happy", "motion": "Happy" }
+        },
+        {
+          "text": "Look at the board. Are you ready?",
+          "act": { "emotion": { "name": "curious", "intensity": 0.7 } }
+        }
+      ],
+      "durationS": 8
+    },
+    {
+      "id": "vocab_animals",
+      "scene": "vocabulary",
+      "props": {
+        "items": [
+          { "id": "cat", "text": "cat", "asset": "asset://animals/cat.svg" },
+          { "id": "dog", "text": "dog", "asset": "asset://animals/dog.svg" },
+          { "id": "bird", "text": "bird", "asset": "asset://animals/bird.svg" },
+          { "id": "fish", "text": "fish", "asset": "asset://animals/fish.svg" }
+        ],
+        "interaction": "tap"
+      },
+      "narration": [
+        { "text": "Four animals. Cat. Dog. Bird. Fish." },
+        {
+          "text": "Say them with me: cat, dog, bird, fish.",
+          "act": { "emotion": "happy" }
+        }
+      ],
+      "durationS": 25
+    },
+    {
+      "id": "q_meow",
+      "scene": "choice",
+      "props": {
+        "prompt": "Which animal says \"meow\"?",
+        "options": [
+          { "id": "cat", "text": "cat", "asset": "asset://animals/cat.svg" },
+          { "id": "dog", "text": "dog", "asset": "asset://animals/dog.svg" },
+          { "id": "bird", "text": "bird", "asset": "asset://animals/bird.svg" }
+        ]
+      },
+      "narration": [
+        {
+          "text": "Listen. Meow, meow. Which animal says meow?",
+          "act": { "emotion": "question" }
+        }
+      ],
+      "durationS": 20,
+      "expect": {
+        "kind": "choice",
+        "correct": "cat"
+      },
+      "branches": [
+        {
+          "on": "correct",
+          "goto": "q_legs",
+          "narration": [
+            {
+              "text": "Yes! The cat says meow. Very good!",
+              "act": { "emotion": "happy", "motion": "Happy" }
+            }
+          ]
+        },
+        {
+          "on": "wrong",
+          "goto": "help_meow",
+          "narration": [
+            {
+              "text": "Not quite. Let's look again.",
+              "act": { "emotion": "curious" }
+            }
+          ]
+        },
+        {
+          "on": "silence",
+          "goto": "help_meow",
+          "narration": [
+            { "text": "It is a hard one. Let me help you.", "act": { "emotion": "think" } }
+          ]
+        },
+        {
+          "on": "timeout",
+          "goto": "help_meow",
+          "narration": [{ "text": "Time is up. Let's look together.", "act": { "emotion": "think" } }]
+        }
+      ]
+    },
+    {
+      "id": "help_meow",
+      "scene": "vocabulary",
+      "props": {
+        "items": [
+          { "id": "cat", "text": "cat - meow", "asset": "asset://animals/cat.svg" },
+          { "id": "dog", "text": "dog - woof", "asset": "asset://animals/dog.svg" }
+        ],
+        "interaction": "none",
+        "highlightId": "cat"
+      },
+      "narration": [
+        { "text": "The cat says meow. The dog says woof." },
+        { "text": "Cat. Meow. Good.", "act": { "emotion": "happy" } }
+      ],
+      "durationS": 10,
+      "branches": [{ "on": "always", "goto": "q_legs" }]
+    },
+    {
+      "id": "q_legs",
+      "scene": "choice",
+      "props": {
+        "prompt": "How many legs does a bird have?",
+        "options": [
+          { "id": "two", "text": "two" },
+          { "id": "four", "text": "four" },
+          { "id": "six", "text": "six" }
+        ]
+      },
+      "narration": [
+        {
+          "text": "One more question. How many legs does a bird have?",
+          "act": { "emotion": "question" }
+        }
+      ],
+      "durationS": 20,
+      "expect": {
+        "kind": "choice",
+        "correct": "two",
+        "acceptFuzzy": ["four"]
+      },
+      "branches": [
+        {
+          "on": "correct",
+          "goto": "wrap_bye",
+          "narration": [
+            { "text": "Correct! A bird has two legs.", "act": { "emotion": "happy" } }
+          ]
+        },
+        {
+          "on": "near",
+          "goto": "wrap_bye",
+          "narration": [
+            {
+              "text": "Close! A dog has four legs, but a bird has two.",
+              "act": { "emotion": "curious" }
+            }
+          ]
+        },
+        {
+          "on": "wrong",
+          "goto": "wrap_bye",
+          "narration": [
+            { "text": "A bird has two legs. Two!", "act": { "emotion": "awkward" } }
+          ]
+        },
+        {
+          "on": "silence",
+          "goto": "wrap_bye",
+          "narration": [{ "text": "A bird has two legs. Remember: two.", "act": { "emotion": "think" } }]
+        },
+        {
+          "on": "timeout",
+          "goto": "wrap_bye",
+          "narration": [{ "text": "A bird has two legs. Remember: two.", "act": { "emotion": "think" } }]
+        }
+      ]
+    },
+    {
+      "id": "wrap_bye",
+      "scene": "text",
+      "props": {
+        "text": "cat · meow · bird · two",
+        "size": "lg"
+      },
+      "narration": [
+        { "text": "Great work. You know the animals and their sounds." },
+        {
+          "text": "Now let us use the words in two short games.",
+          "act": { "emotion": "curious" }
+        }
+      ],
+      "durationS": 10
+    },
+    {
+      "id": "match_sounds",
+      "scene": "matching",
+      "props": {
+        "left": [
+          { "id": "cat", "text": "cat", "asset": "asset://animals/cat.svg" },
+          { "id": "dog", "text": "dog", "asset": "asset://animals/dog.svg" }
+        ],
+        "right": [
+          { "id": "meow", "text": "meow" },
+          { "id": "woof", "text": "woof" }
+        ],
+        "solved": []
+      },
+      "narration": [
+        {
+          "text": "One more game. Put each sound with its animal.",
+          "act": { "emotion": "question" }
+        }
+      ],
+      "durationS": 6,
+      "expect": {
+        "kind": "drag",
+        "correct": ["cat>meow", "dog>woof"],
+        "acceptFuzzy": ["cat>woof", "dog>meow"]
+      },
+      "branches": [
+        {
+          "on": "correct",
+          "goto": "build_sentence",
+          "narration": [
+            {
+              "text": "Both right! Cat says meow, dog says woof.",
+              "act": { "emotion": "happy", "motion": "Happy" }
+            }
+          ]
+        },
+        {
+          "on": "near",
+          "goto": "help_sounds",
+          "narration": [
+            { "text": "Careful — that is the other animal.", "act": { "emotion": "curious" } }
+          ]
+        },
+        {
+          "on": "wrong",
+          "goto": "help_sounds",
+          "narration": [
+            { "text": "Not that one. Listen again.", "act": { "emotion": "curious" } }
+          ]
+        },
+        {
+          "on": "silence",
+          "goto": "build_sentence",
+          "narration": [
+            { "text": "Cat says meow. Dog says woof.", "act": { "emotion": "think" } }
+          ]
+        },
+        {
+          "on": "timeout",
+          "goto": "build_sentence",
+          "narration": [
+            { "text": "Cat says meow. Dog says woof.", "act": { "emotion": "think" } }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "help_sounds",
+      "scene": "vocabulary",
+      "props": {
+        "items": [
+          { "id": "cat", "text": "cat - meow", "asset": "asset://animals/cat.svg" },
+          { "id": "dog", "text": "dog - woof", "asset": "asset://animals/dog.svg" }
+        ],
+        "interaction": "none",
+        "highlightId": "dog"
+      },
+      "narration": [{ "text": "Meow is the cat. Woof is the dog. Now you know." }],
+      "durationS": 3,
+      "branches": [{ "on": "always", "goto": "build_sentence" }]
+    },
+    {
+      "id": "build_sentence",
+      "scene": "sentence_builder",
+      "props": {
+        "tokens": [
+          { "id": "t_i", "text": "I" },
+          { "id": "t_like", "text": "like" },
+          { "id": "t_cats", "text": "cats" }
+        ],
+        "placed": [],
+        "target": "I like cats."
+      },
+      "narration": [
+        { "text": "Now build the sentence. I like cats.", "act": { "emotion": "question" } }
+      ],
+      "durationS": 6,
+      "expect": {
+        "kind": "drag",
+        "correct": ["t_i", "t_like", "t_cats"]
+      },
+      "branches": [
+        {
+          "on": "correct",
+          "goto": "say_it",
+          "narration": [
+            { "text": "Perfect. I like cats.", "act": { "emotion": "happy", "motion": "Happy" } }
+          ]
+        },
+        {
+          "on": "near",
+          "goto": "say_it",
+          "narration": [{ "text": "Almost. I like cats.", "act": { "emotion": "curious" } }]
+        },
+        {
+          "on": "wrong",
+          "goto": "say_it",
+          "narration": [
+            { "text": "The first word is I. I like cats.", "act": { "emotion": "curious" } }
+          ]
+        },
+        {
+          "on": "silence",
+          "goto": "say_it",
+          "narration": [{ "text": "It says: I like cats.", "act": { "emotion": "think" } }]
+        },
+        {
+          "on": "timeout",
+          "goto": "say_it",
+          "narration": [{ "text": "It says: I like cats.", "act": { "emotion": "think" } }]
+        }
+      ]
+    },
+    {
+      "id": "say_it",
+      "scene": "vocabulary",
+      "props": {
+        "items": [
+          { "id": "cat", "text": "I like cats.", "asset": "asset://animals/cat.svg" }
+        ],
+        "interaction": "none",
+        "highlightId": "cat"
+      },
+      "narration": [
+        { "text": "Now say it with me. I like cats.", "act": { "emotion": "happy" } },
+        { "text": "Your turn. Say: I like cats.", "act": { "emotion": "question" } }
+      ],
+      "durationS": 8,
+      "expect": {
+        "kind": "speech",
+        "correct": ["I like cats"],
+        "acceptFuzzy": ["I like cat", "I like a cat", "I like the cats", "I like dogs"]
+      },
+      "branches": [
+        {
+          "on": "correct",
+          "goto": "wrap_encore",
+          "narration": [
+            {
+              "text": "Beautiful English! I like cats.",
+              "act": { "emotion": "happy", "motion": "Happy" }
+            }
+          ]
+        },
+        {
+          "on": "near",
+          "goto": "wrap_encore",
+          "narration": [
+            { "text": "Very close. Listen: I like cats.", "act": { "emotion": "curious" } }
+          ]
+        },
+        {
+          "on": "wrong",
+          "goto": "wrap_encore",
+          "narration": [
+            { "text": "Good try. Say it after me: I like cats.", "act": { "emotion": "curious" } }
+          ]
+        },
+        {
+          "on": "silence",
+          "goto": "wrap_encore",
+          "narration": [
+            { "text": "Next time you say it. I like cats.", "act": { "emotion": "think" } }
+          ]
+        },
+        {
+          "on": "timeout",
+          "goto": "wrap_encore",
+          "narration": [
+            { "text": "Next time you say it. I like cats.", "act": { "emotion": "think" } }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "wrap_encore",
+      "scene": "text",
+      "props": {
+        "text": "I like cats.",
+        "size": "xl"
+      },
+      "narration": [
+        {
+          "text": "That is everything for today. Wonderful work. Goodbye!",
+          "act": { "emotion": "happy", "motion": "Happy" }
+        }
+      ],
+      "durationS": 3
+    }
+  ]
+}

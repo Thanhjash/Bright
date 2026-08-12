@@ -1,0 +1,44 @@
+[Unit]
+Description=Bright classroom UI — static file server for the built stage
+PartOf=bright.target
+After=local-fs.target
+
+# Nobody is on site. Never give up permanently: a unit sitting in `failed`
+# after 5 restarts is a classroom with no sound and nobody to type
+# `systemctl reset-failed`.
+StartLimitIntervalSec=0
+
+[Service]
+Type=exec
+User=bright
+Group=bright
+WorkingDirectory=/opt/bright/current
+EnvironmentFile=/etc/bright/bright.env
+# NOT `pnpm dev`. The appliance serves the built bundle from the Python
+# standard library: no node, no node_modules, no package manager, no file
+# watcher. That removes ~400 MB of RSS and an entire dependency tree from the
+# boot path of a machine nobody can log into.
+ExecStart=/opt/bright/venv/bin/python3 /opt/bright/current/scripts/serve-ui.py \
+    --root /opt/bright/current/apps/classroom-ui/dist \
+    --host 127.0.0.1 --port ${UI_PORT}
+ExecStartPost=/opt/bright/current/scripts/wait-healthy.sh http://127.0.0.1:${UI_PORT}/__health 30
+TimeoutStartSec=45
+
+Restart=always
+RestartSec=2
+
+OOMScoreAdjust=0
+CPUWeight=50
+MemoryAccounting=yes
+CPUAccounting=yes
+
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+# The UI server never writes anything.
+ReadOnlyPaths=/opt/bright
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+
+[Install]
+WantedBy=bright.target

@@ -1,0 +1,32 @@
+[project]
+name = "classroom-core"
+version = "1.0.0"
+description = "Bright classroom-core: state store, event bus, lesson runner. No LLM calls."
+requires-python = ">=3.13"
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.32",
+    "websockets>=13",
+    "pydantic>=2.9",
+    "apscheduler>=3.10,<4",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3",
+    "pytest-asyncio>=0.24",
+    "httpx>=0.27",
+]
+
+# The service is a set of flat modules run in place (uvicorn app:app), not a
+# distributable. `bright_contracts` is put on sys.path by config.py rather than
+# copied -- packages/contracts/python has no pyproject of its own.
+[tool.uv]
+package = false
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = [".", "../../packages/contracts/python"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+filterwarnings = ["ignore::DeprecationWarning"]
