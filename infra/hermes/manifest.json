@@ -7,9 +7,9 @@
   "patches": [
     {
       "file": "patches/0001-bright-live-ephemeral.patch",
-      "sha256": "8fdd8969a270854817b60ebad34aea16ed993798df2f4adce2edc0621226068a"
+      "sha256": "e98ef6bc6bd7b98b455c7067fea8d4cdb60ab745cfc244b9c5266281ea11a776"
     }
   ],
-  "wheel_sha256": "3d581c412ab7522dffa20acd33bc1bc11cb4400856f26a79060b7e662b27be69",
-  "bright_live_sha256": "26270bd2b135d2e0b5a9584e55fb40169823c84eb6f245e520f115cd544c7ead"
+  "wheel_sha256": "7d82697c4dbe2e9f0947eb33ebdb61e334802305c5e86dad162ad04602f69c87",
+  "bright_live_sha256": "95e95278e7f9a88a7424d5852be43eb4bae073b7c4092835fa22ff0aee4417f5"
 }

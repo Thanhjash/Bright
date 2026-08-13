@@ -24,6 +24,7 @@ from .hermes import (
     build_hermes_input,
     build_hermes_request,
     iter_sse_events,
+    render_hermes_turn,
 )
 from .prompt import SYSTEM_PROMPT, build_messages, render_turn
 from .tools import (
@@ -61,6 +62,7 @@ __all__ = [
     "build_hermes_input",
     "build_hermes_request",
     "iter_sse_events",
+    "render_hermes_turn",
     # tools
     "ToolExecutor",
     "build_tools",

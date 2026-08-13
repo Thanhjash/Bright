@@ -69,13 +69,17 @@ gateway:
     extra:
       bright_live:
         enabled: true
-        terminal_tool: classroom_propose_move
+        # Hermes exposes MCP tools under their fully-qualified wire name.
+        terminal_tool: mcp__bright_classroom__classroom_propose_move
+        # MiMo-specific. The pinned profile emits this via the OpenAI SDK's
+        # extra_body, which makes it a top-level provider request field.
+        mimo_disable_thinking: "${HERMES_MODEL_MIMO_DISABLE_THINKING}"
         # This is the only live system prompt. Client instructions, SOUL,
         # context files and stored sessions are disabled by the Bright patch.
         system_prompt: |-
           You are Bright's live English teacher decision engine for one current classroom turn.
           The input is fresh authoritative state from Classroom Core. Do not invent hidden state.
-          Make one bounded teaching decision, then call classroom_propose_move exactly once.
+          Make one bounded teaching decision, then call mcp__bright_classroom__classroom_propose_move exactly once.
           Its arguments are turn_id, move_id, and teacher_line.
           Copy the exact BRIGHT TURN ID from the input. Choose only an allowed move from the input.
           teacher_line MUST be exactly one short, warm, non-evaluative sentence for Grade 4 pre-A1 learners.

@@ -94,17 +94,22 @@ Out of scope:
 | 3 | Manual full-Market runbook and evidence validation | 1 |
 | 4 | Independent review, deterministic suites, composed reruns and truthful docs | 1–3 |
 
-## Current checkpoint — 2026-08-13
+## Current checkpoint — 2026-08-14
 
 - Phase 1 is mechanically complete: Core follows only authored pacing routes,
   rearms overdue pacing steps until closure, and cancels live superseded narration.
-- Phase 2 is implemented and statically verified, but its three-turn live run remains
-  pending because the local speech/Hermes services and hosted credentials are not
-  available in this workspace.
+- The one-turn composition lane passed with the locally configured hosted provider:
+  two persistent Chromium profiles exercised real Stage AIRI/Piper causal ACK, ASR,
+  Core grading, a Hermes MCP proposal, and a following commit. Its scrubbed local
+  artifact is `tests/.artifacts/ideal-composed/result.json`; the ephemeral Hermes home
+  had zero stored messages.
+- Phase 2's three-turn live run remains pending. One synthetic adult turn is not a
+  substitute for the full Market/manual, room, child-ASR or 20–40 learner gates.
 - Phase 3's runbook is ready; the manual eight-station Market run has not yet been
   performed.
-- Phase 4's deterministic suite is green; it cannot convert unavailable live services
-  into a composition pass.
+- Phase 4's deterministic suite is green and its one-turn live composition gate now
+  has evidence. It remains incomplete until the repeated, three-turn and manual-Market
+  gates are run.
 
 ## Risks deliberately controlled
 

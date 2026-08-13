@@ -56,11 +56,12 @@ causal WebAudio playback acknowledgement. The harness stores a scrubbed event-or
 artifact at `tests/.artifacts/ideal-composed/result.json`; it records no answer text,
 transcript, cookies, or credentials.
 
-On 2026-08-13 this lane passed once in `fake-audio-file` mode: the artifact recorded
-`ok: true`, real ASR and Piper HTTP 200 responses, a correct Core outcome, one agent
-turn, a Stage-originated playback completion at event 368, and the later Core commit at
-event 370. The fresh `bright_live` Hermes home from that run had zero stored messages
-after policy moved to `gateway.api_server.extra.bright_live`.
+On 2026-08-14 this lane passed once in `fake-audio-file` mode. Its local, Git-ignored
+artifact at `tests/.artifacts/ideal-composed/result.json` recorded `ok: true`, real ASR
+and Piper HTTP 200 responses, a correct Core outcome, one hosted Hermes MCP proposal
+and agent turn, a Stage-originated causal playback completion at event 116, and the
+later Core commit at event 117. The fresh `bright_live` Hermes home from that run had
+zero stored messages after policy moved to `gateway.api_server.extra.bright_live`.
 
 The acceptance launcher intentionally widens only this synthetic cold-provider run to
 90 seconds and lowers only its generated-fixture speech threshold to `0.65`. Normal
@@ -201,5 +202,6 @@ gate remains the release evidence for the most important of those: no incorrect
 child answer may be graded correct.
 
 The ideal fake-file pass also does **not** prove a physical room, a child, a full Market
-lesson, or an autonomous 20–40 learner classroom. `manual-physical-mic` is the next
-operator run, followed by the separate no-false-accept room corpus and full-session gates.
+lesson, or an autonomous 20–40 learner classroom. It covers one synthetic adult turn
+only. `manual-physical-mic` is the next operator run, followed by the separate
+no-false-accept room corpus and full-session gates.

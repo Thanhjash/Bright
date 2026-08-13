@@ -54,6 +54,83 @@ is_placeholder() {
   [[ -z "$value" || "$lower" == change-me* || "$lower" == changeme* || "$lower" == placeholder* ]]
 }
 
+generate_loopback_secret() {
+  # These credentials authenticate only processes bound to 127.0.0.1.  They
+  # are deliberately made in memory for this launcher process: do not add
+  # them to .env, a runtime file, a log, or command output.
+  if command -v openssl >/dev/null 2>&1; then
+    openssl rand -hex 32
+  else
+    od -An -N32 -tx1 /dev/urandom | tr -d ' \n'
+  fi
+}
+
+ensure_ephemeral_loopback_secret() {
+  local name="$1" value="${!1:-}" generated
+  if ! is_placeholder "$value"; then
+    return 0
+  fi
+  generated="$(generate_loopback_secret)"
+  [[ -n "$generated" ]] || die "could not generate local loopback credential"
+  printf -v "$name" '%s' "$generated"
+  export "$name"
+}
+
+align_gateway_api_credentials() {
+  # Hermes' API-server adapter authenticates with API_SERVER_KEY. Bright's
+  # HTTP adapter intentionally exposes that same local bearer through the
+  # HERMES_API_KEY client setting. The two names therefore describe opposite
+  # sides of one loopback-only trust boundary, not two independent credentials.
+  #
+  # Prefer an explicitly supplied API_SERVER_KEY because that is what Hermes'
+  # config loader ultimately uses. This also keeps older developer .env files
+  # with two different local placeholders/keys working without editing them:
+  # the launcher reconciles the client value in this process only.
+  local server_key="${API_SERVER_KEY:-}" client_key="${HERMES_API_KEY:-}"
+  if is_placeholder "$server_key"; then
+    if ! is_placeholder "$client_key"; then
+      server_key="$client_key"
+    else
+      server_key="$(generate_loopback_secret)"
+      [[ -n "$server_key" ]] || die "could not generate local loopback credential"
+    fi
+  fi
+  API_SERVER_KEY="$server_key"
+  HERMES_API_KEY="$server_key"
+  export API_SERVER_KEY HERMES_API_KEY
+}
+
+load_legacy_model_defaults() {
+  local explicit_hermes_model=0
+  for name in HERMES_MODEL_PROVIDER HERMES_MODEL_BASE_URL HERMES_MODEL_API_KEY HERMES_MODEL_NAME; do
+    if [[ -n "${!name:-}" ]]; then
+      explicit_hermes_model=1
+      break
+    fi
+  done
+  # Bright already uses LLM_* for DirectAgent.  The Hermes profile speaks the
+  # same OpenAI-compatible provider, so retain those developer credentials as
+  # the default and reserve HERMES_MODEL_* for an explicit override/local
+  # backend.  Do not reinterpret a supplied Hermes field.
+  HERMES_MODEL_PROVIDER="${HERMES_MODEL_PROVIDER:-custom}"
+  HERMES_MODEL_BASE_URL="${HERMES_MODEL_BASE_URL:-${LLM_BASE_URL:-}}"
+  HERMES_MODEL_API_KEY="${HERMES_MODEL_API_KEY:-${LLM_API_KEY:-}}"
+  HERMES_MODEL_NAME="${HERMES_MODEL_NAME:-${LLM_MODEL:-}}"
+  # MiMo's OpenAI-compatible endpoint accepts a non-standard *top-level*
+  # thinking switch.  Carry the already-proven DirectAgent setting into the
+  # hosted profile only when all model fields still come from LLM_*. An
+  # explicit Hermes/local backend defaults to false, unless its operator
+  # explicitly selects otherwise via HERMES_MODEL_MIMO_DISABLE_THINKING.
+  if [[ -z "${HERMES_MODEL_MIMO_DISABLE_THINKING+x}" ]]; then
+    if (( explicit_hermes_model )); then
+      HERMES_MODEL_MIMO_DISABLE_THINKING=false
+    else
+      HERMES_MODEL_MIMO_DISABLE_THINKING="${LLM_DISABLE_THINKING:-false}"
+    fi
+  fi
+  export HERMES_MODEL_PROVIDER HERMES_MODEL_BASE_URL HERMES_MODEL_API_KEY HERMES_MODEL_NAME HERMES_MODEL_MIMO_DISABLE_THINKING
+}
+
 require_secret() {
   local name="$1" value="${!1:-}"
   [[ -n "$value" ]] || die "$name is required (value is never printed)"
@@ -81,10 +158,20 @@ model_cache_dir() {
 load_environment() {
   # Do this after reading .env so this command's fail-closed values cannot be
   # weakened by developer configuration.
+  load_legacy_model_defaults
+  align_gateway_api_credentials
+  ensure_ephemeral_loopback_secret BRIGHT_MCP_TOKEN
   export BRIGHT_RUN_PROFILE=ideal_hosted
   export BRIGHT_REQUIRE_LIVE_PROFILE=1
   export BRIGHT_AGENT=hermes
   export CORE_DEV=0
+  # Hermes only enrolls its API-server platform when it is explicit in its
+  # launch environment. Pin these to the same loopback listener/config that
+  # Bright's adapter calls; config.yaml remains the narrow tool allowlist.
+  export API_SERVER_ENABLED=true
+  export API_SERVER_HOST=127.0.0.1
+  export API_SERVER_PORT="$HERMES_PORT"
+  export API_SERVER_MODEL_NAME=bright-classroom
   export CORE_PORT SPEECH_PORT UI_PORT HERMES_PORT
   export PIPER_DIR WHISPER_DIR WHISPER_MODEL HERMES_HOME CORE_LESSON_RUN
   export HERMES_API_URL="http://127.0.0.1:${HERMES_PORT}"
@@ -216,10 +303,33 @@ wait_for() {
     else
       body="$(curl -sf --max-time 3 "$url" 2>/dev/null || true)"
     fi
-    if [[ -n "$body" ]] && [[ "$body" == *"$needle"* ]]; then return 0; fi
+    if [[ -n "$body" ]] && response_matches "$body" "$needle"; then return 0; fi
     sleep 1
   done
   die "$name did not become ready; inspect $LOGS/$name.log"
+}
+
+response_matches() {
+  local body="$1" requirement="$2"
+  # API health handlers are allowed to choose normal or compact JSON
+  # serialization.  A literal substring such as `"status": "ok"` made the
+  # Hermes readiness gate depend on whitespace, so validate that one stable
+  # response contract as JSON.  Other probes intentionally remain literal
+  # because they assert payload details (speech model/voice and Core mode).
+  if [[ "$requirement" == "json-status-ok" ]]; then
+    printf '%s' "$body" | python3 -c '
+import json
+import sys
+
+try:
+    payload = json.load(sys.stdin)
+except (json.JSONDecodeError, ValueError):
+    raise SystemExit(1)
+raise SystemExit(0 if isinstance(payload, dict) and payload.get("status") == "ok" else 1)
+'
+    return
+  fi
+  [[ "$body" == *"$requirement"* ]]
 }
 
 start_all() {
@@ -253,14 +363,18 @@ PY
   wait_for speech "http://127.0.0.1:$SPEECH_PORT/health" "\"sttModel\":\"$WHISPER_MODEL\""
 
   start_one core "$CORE_PY" "$ROOT/services/classroom-core/app.py"
-  wait_for core "http://127.0.0.1:$CORE_PORT/health" '"status":"ok"'
+  wait_for core "http://127.0.0.1:$CORE_PORT/health" json-status-ok
 
-  start_one hermes "$HERMES_BIN" gateway
-  wait_for hermes "http://127.0.0.1:$HERMES_PORT/health" '"status": "ok"' "$HERMES_API_KEY"
+  # `gateway` without a subcommand launches Hermes' management CLI and can
+  # exit successfully without binding the configured API server.  Keep this
+  # foreground process pinned to the actual API-server entrypoint; nohup in
+  # start_one supplies the external process supervision.
+  start_one hermes "$HERMES_BIN" gateway run --external-supervisor
+  wait_for hermes "http://127.0.0.1:$HERMES_PORT/health" json-status-ok "$HERMES_API_KEY"
   wait_for core "http://127.0.0.1:$CORE_PORT/health" '"mode":"FULL"'
 
   start_one ui python3 "$ROOT/scripts/serve-ui.py" --root "$ROOT/apps/classroom-ui/dist" --port "$UI_PORT"
-  wait_for ui "http://127.0.0.1:$UI_PORT/__health" '"status": "ok"'
+  wait_for ui "http://127.0.0.1:$UI_PORT/__health" json-status-ok
   # The browser owns microphone permission and the Stage audio lease, so the
   # product cannot truthfully be "classroom ready" until the acceptance
   # browser has connected both roles.  Do not turn a running-daemons check
@@ -280,7 +394,7 @@ component_status() {
   else
     body="$(curl -sf --max-time 3 "$url" 2>/dev/null || true)"
   fi
-  if [[ "$body" == *"$needle"* ]]; then
+  if response_matches "$body" "$needle"; then
     printf '  ready %s\n' "$name"
     return 0
   fi
@@ -293,8 +407,15 @@ status_all() {
   local bad=0
   component_status speech "http://127.0.0.1:$SPEECH_PORT/health" '"stt":true' || bad=1
   component_status core "http://127.0.0.1:$CORE_PORT/health" '"mode":"FULL"' || bad=1
-  component_status hermes "http://127.0.0.1:$HERMES_PORT/health" '"status": "ok"' "${HERMES_API_KEY:-}" || bad=1
-  component_status ui "http://127.0.0.1:$UI_PORT/__health" '"status": "ok"' || bad=1
+  # /health is deliberately unauthenticated in Hermes' API-server contract.
+  # `status` is a cross-invocation diagnostic: the launcher creates a fresh
+  # in-memory loopback key when the developer has not configured one, whereas
+  # an already-running gateway holds the key from its own invocation.  Passing
+  # that new key would turn a healthy gateway into a false "not-ready" result.
+  # Do not relax startup or Core-to-Hermes authentication; both still use the
+  # matching per-run bearer above.
+  component_status hermes "http://127.0.0.1:$HERMES_PORT/health" json-status-ok || bad=1
+  component_status ui "http://127.0.0.1:$UI_PORT/__health" json-status-ok || bad=1
   local readiness
   readiness="$(curl -s --max-time 3 "http://127.0.0.1:$CORE_PORT/ready" 2>/dev/null || true)"
   if [[ "$readiness" == *'"status":"ready"'* ]]; then

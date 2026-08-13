@@ -1,5 +1,5 @@
 ---
-date: 2026-08-13
+date: 2026-08-14
 session: ideal-composed-hosted-evidence
 ---
 
@@ -19,9 +19,11 @@ playback acknowledgement.
 - A generated adult Piper WAV was used only as Chromium's fake microphone device. It
   passed through real browser `MediaRecorder`, Whisper, Core grading, hosted Hermes and
   its narrow MCP tool, Piper, AIRI browser playback, and Stage's causal WebAudio ACK.
-- The scrubbed result artifact reported `ok: true`; it saw real ASR and Piper HTTP 200
-  responses, a correct Core outcome, one agent speech turn, playback completion at
-  event 368, and the following Core commit at event 370.
+- The scrubbed result artifact at
+  `tests/.artifacts/ideal-composed/result.json` reported `ok: true`; it saw real ASR
+  and Piper HTTP 200 responses, a correct Core outcome, one Hermes MCP proposal and
+  agent speech turn, Stage playback completion at event 116, and the following Core
+  commit at event 117.
 - Correcting live policy placement to `gateway.api_server.extra.bright_live` left the
   inspected ephemeral Hermes runtime database with zero stored messages.
 
@@ -31,6 +33,8 @@ One ideal-condition composed turn has a real causal chain. In particular, Core d
 commit the model-proposed move until after the Stage browser reported that the agent
 audio had actually begun and then completed. It also demonstrates the intended Hermes
 boundary: a short terminal MCP proposal, not agent control of the DOM or Core state.
+The artifact is Git-ignored and scrubbed: it contains only opaque slots, event ordering
+and outcome categories—never raw audio, transcript, identifiers, cookies or secrets.
 
 ## What it does not prove
 

@@ -16,16 +16,20 @@ supported by the resulting artifacts.
 ## Success criteria
 
 - [ ] Targeted and shared-module deterministic tests pass.
-- [ ] Chromium acceptance reruns pass when local credentials/services are available.
+- [x] One Chromium one-turn acceptance passes with the locally configured hosted
+  provider; the scrubbed artifact is
+  `tests/.artifacts/ideal-composed/result.json` (Git-ignored).
+- [ ] Repeat composition and run the separate three-turn/manual-Market gates.
 - [ ] Docs distinguish fixture composition, manual ideal proof, and room validation.
 - [ ] The checked-in environment template names every ideal-hosted preflight
   variable without providing a credential or silently opting a developer into
   raw-transcript mode.
 
-## Current operational blocker
+## Current evidence boundary
 
-The local runtime dependencies are present, but the live proof is deliberately
-blocked until a developer supplies the hosted-Hermes credential and explicit
-`hosted_ephemeral_transcript` acknowledgement. The template is part of this
-phase so the next operator can configure that profile intentionally; it is not
-evidence that the live gate passed.
+The one-turn gate was run with the locally configured hosted provider and explicit
+`hosted_ephemeral_transcript` acknowledgement. It is evidence only for a synthetic
+adult fake-microphone turn across the real browser, speech, Core and Hermes boundaries;
+it is not evidence for a physical room, children, the full Market lesson or a 20–40
+learner autonomous class. The environment template remains a preflight aid, not an
+opt-in to raw transcript handling.

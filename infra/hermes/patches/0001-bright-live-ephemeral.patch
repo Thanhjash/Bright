@@ -20,7 +20,7 @@ new file mode 100644
 index 000000000..98fc71281
 --- /dev/null
 +++ b/agent/bright_live.py
-@@ -0,0 +1,157 @@
+@@ -0,0 +1,178 @@
 +"""Narrow, auditable policy for Bright's ephemeral live-teacher profile.
 +
 +This module deliberately has no provider, gateway or persistence imports so
@@ -36,11 +36,23 @@ index 000000000..98fc71281
 +BRIGHT_PATCH_VERSION = "0.20.0+bright.1"
 +
 +
++def _truthy(value: Any) -> bool:
++    """Parse the profile's explicitly opt-in string/boolean switches."""
++
++    if isinstance(value, bool):
++        return value
++    return str(value or "").strip().lower() in {"1", "true", "yes", "on"}
++
++
 +@dataclass(frozen=True)
 +class BrightLiveProfile:
 +    enabled: bool = False
 +    terminal_tool: str = "classroom_propose_move"
 +    system_prompt: str = ""
++    # MiMo's OpenAI-compatible endpoint requires this non-standard field at
++    # the top-level JSON body. It is opt-in so alternative providers keep
++    # their native request contract.
++    mimo_disable_thinking: bool = False
 +
 +    @classmethod
 +    def from_extra(cls, extra: Mapping[str, Any] | None) -> "BrightLiveProfile":
@@ -58,6 +70,7 @@ index 000000000..98fc71281
 +            enabled=enabled,
 +            terminal_tool=terminal_tool,
 +            system_prompt=system_prompt,
++            mimo_disable_thinking=_truthy(raw.get("mimo_disable_thinking")),
 +        )
 +
 +
@@ -133,6 +146,14 @@ index 000000000..98fc71281
 +    if isinstance(profile, BrightLiveProfile) and profile.enabled:
 +        request_overrides = dict(getattr(agent, "request_overrides", {}) or {})
 +        request_overrides["tool_choice"] = "required"
++        if profile.mimo_disable_thinking:
++            # ``extra_body`` is the OpenAI SDK escape hatch: it serializes
++            # its entries into the JSON body at the top level. Nesting this
++            # under a literal ``extra_body`` JSON field would not disable
++            # MiMo reasoning and would consume the classroom deadline.
++            provider_extra = dict(request_overrides.get("extra_body", {}) or {})
++            provider_extra["thinking"] = {"type": "disabled"}
++            request_overrides["extra_body"] = provider_extra
 +        agent.request_overrides = request_overrides
 +    return agent
 +
@@ -479,7 +500,7 @@ new file mode 100644
 index 000000000..615d917bb
 --- /dev/null
 +++ b/tests/agent/test_bright_live_profile.py
-@@ -0,0 +1,115 @@
+@@ -0,0 +1,161 @@
 +"""Bright live-classroom invariants for the pinned Hermes build."""
 +
 +from types import SimpleNamespace
@@ -492,6 +513,7 @@ index 000000000..615d917bb
 +    BrightLiveProfile,
 +    bounded_retry_ceiling,
 +    configure_bright_live_agent,
++    enforce_bright_live_wire_policy,
 +    finalizer_inference_allowed,
 +    select_terminal_tool_calls,
 +    validate_responses_request,
@@ -511,6 +533,51 @@ index 000000000..615d917bb
 +
 +def test_patch_has_a_distinct_local_version():
 +    assert BRIGHT_PATCH_VERSION == "0.20.0+bright.1"
++
++
++def test_mimo_thinking_switch_is_profile_scoped_and_uses_sdk_extra_body():
++    enabled = BrightLiveProfile.from_extra(
++        {
++            "bright_live": {
++                "enabled": True,
++                "terminal_tool": "classroom_propose_move",
++                "system_prompt": PROMPT,
++                "mimo_disable_thinking": "true",
++            }
++        }
++    )
++    agent = SimpleNamespace(
++        _bright_live_profile=enabled,
++        request_overrides={"extra_body": {"provider_hint": "keep"}},
++    )
++    enforce_bright_live_wire_policy(agent)
++    assert agent.request_overrides == {
++        "tool_choice": "required",
++        "extra_body": {
++            "provider_hint": "keep",
++            "thinking": {"type": "disabled"},
++        },
++    }
++
++    disabled = BrightLiveProfile.from_extra(
++        {
++            "bright_live": {
++                "enabled": True,
++                "terminal_tool": "classroom_propose_move",
++                "system_prompt": PROMPT,
++                "mimo_disable_thinking": "false",
++            }
++        }
++    )
++    other_provider = SimpleNamespace(
++        _bright_live_profile=disabled,
++        request_overrides={"extra_body": {"native_option": "keep"}},
++    )
++    enforce_bright_live_wire_policy(other_provider)
++    assert other_provider.request_overrides == {
++        "tool_choice": "required",
++        "extra_body": {"native_option": "keep"},
++    }
 +
 +
 +@pytest.mark.parametrize(
