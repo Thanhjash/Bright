@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import time
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -239,6 +240,313 @@ async def test_capture_watchdog_pauses_if_capture_never_starts(core):
     assert controller.pause_reason == "capture_start_deadline_expired"
     assert core.runner.paused is True
     assert core.runner.index == 4
+
+
+async def test_selected_oral_turn_waits_for_exact_core_callout_playback(core):
+    """Fair selection alone must never open a physical answer station."""
+    controller = core.session_controller
+    controller.configure_roster(
+        [
+            {"id": "learner-a", "displayName": "Blue Fox"},
+            {"id": "learner-b", "displayName": "Green Owl"},
+        ],
+        ["learner-a", "learner-b"],
+    )
+    core.session_id = core.db.start_session(lesson_id="tiny-01")
+    await controller.start(4)
+
+    assignment = controller.assignments.current_for_activity(
+        core.session_id, core.runner.current.id, core.runner._generation
+    )
+    assert assignment is not None
+    assert assignment.target_display_name in {"Blue Fox", "Green Owl"}
+    assert assignment.callout_speech_turn_id is not None
+    assert assignment.state.name == "CREATED"
+    assert not [f for f in core.bus.history if f["type"] == "response.capture.requested"]
+    callout = assignment.callout_speech_turn_id
+    callout_text = next(
+        f["payload"]["delta"]
+        for f in core.bus.history
+        if f["type"] == "speech.text.delta"
+        and f["payload"]["speechTurnId"] == callout
+    )
+    assert callout_text == f"{assignment.target_display_name}, it's your turn. Please answer now."
+
+    # An ACK for another speech turn cannot arm this learner's microphone.
+    assert controller.note_callout_playback_finished("stale-turn") is False
+    assert assignment.state.name == "CREATED"
+    assert not [f for f in core.bus.history if f["type"] == "response.capture.requested"]
+
+    assert controller.note_callout_playback_finished(callout) is True
+    assert assignment.state.name == "OPEN"
+    requests = [f for f in core.bus.history if f["type"] == "response.capture.requested"]
+    assert len(requests) == 1
+    assert requests[0]["payload"]["assignmentId"] == assignment.assignment_id
+    await core.runner.stop()
+
+
+async def test_callout_queue_time_cannot_consume_capture_ready_window(core):
+    controller = core.session_controller
+    controller.capture_ready_timeout_s = 0.05
+    controller.configure_roster(
+        [{"id": "learner-a", "displayName": "Blue Fox"}], ["learner-a"]
+    )
+    core.session_id = core.db.start_session(lesson_id="tiny-01")
+    await controller.start(4)
+    assignment = controller.assignments.current_for_activity(
+        core.session_id, core.runner.current.id, core.runner._generation
+    )
+    assert assignment is not None and assignment.callout_speech_turn_id is not None
+    assert assignment.capture_id is None
+    assert assignment.ready_deadline_at is None
+
+    # Simulate a callout that waited longer than an entire Ready window.  The
+    # physical capability must begin only after that callout is actually heard.
+    await __import__("asyncio").sleep(0.06)
+    acknowledged_at = int(time.time() * 1000)
+    assert controller.note_callout_playback_finished(assignment.callout_speech_turn_id)
+    assert assignment.capture_id is not None
+    assert assignment.ready_deadline_at is not None
+    assert assignment.ready_deadline_at > acknowledged_at
+    visible_assignments = [
+        frame["payload"]
+        for frame in core.bus.history
+        if frame["type"] == "class.turn.assigned"
+        and frame["payload"]["assignmentId"] == assignment.assignment_id
+    ]
+    assert len(visible_assignments) == 2
+    assert visible_assignments[-1]["expiresAt"] > acknowledged_at
+    capture_index = next(
+        index
+        for index, frame in enumerate(core.bus.history)
+        if frame["type"] == "response.capture.requested"
+        and frame["payload"]["assignmentId"] == assignment.assignment_id
+    )
+    refresh_index = max(
+        index
+        for index, frame in enumerate(core.bus.history)
+        if frame["type"] == "class.turn.assigned"
+        and frame["payload"]["assignmentId"] == assignment.assignment_id
+    )
+    assert refresh_index < capture_index
+    await core.runner.stop()
+
+
+async def test_selected_callout_strips_markup_and_bounds_roster_name(core):
+    controller = core.session_controller
+    controller.configure_roster(
+        [{"id": "learner-a", "displayName": "  Minh <|system|> @angry !!!  "}],
+        ["learner-a"],
+    )
+    core.session_id = core.db.start_session(lesson_id="tiny-01")
+    await controller.start(4)
+    assignment = controller.assignments.current_for_activity(
+        core.session_id, core.runner.current.id, core.runner._generation
+    )
+    assert assignment is not None and assignment.callout_speech_turn_id is not None
+    callout_text = next(
+        frame["payload"]["delta"]
+        for frame in core.bus.history
+        if frame["type"] == "speech.text.delta"
+        and frame["payload"]["speechTurnId"] == assignment.callout_speech_turn_id
+    )
+    assert callout_text == "Minh, it's your turn. Please answer now."
+    assert "<" not in callout_text and "@" not in callout_text
+    await core.runner.stop()
+
+
+async def test_failed_or_cancelled_selected_callout_fails_closed(core):
+    controller = core.session_controller
+    controller.configure_roster(
+        [{"id": "learner-a", "displayName": "Blue Fox"}], ["learner-a"]
+    )
+    core.session_id = core.db.start_session(lesson_id="tiny-01")
+    await controller.start(4)
+    assignment = controller.assignments.current_for_activity(
+        core.session_id, core.runner.current.id, core.runner._generation
+    )
+    assert assignment is not None and assignment.callout_speech_turn_id is not None
+
+    assert controller.note_callout_playback_failed(
+        assignment.callout_speech_turn_id, "cancelled"
+    )
+    assert controller.session_state == SessionState.PAUSED
+    assert controller.pause_reason == "callout_playback_cancelled"
+    assert assignment.state.name == "CANCELLED"
+    assert not [f for f in core.bus.history if f["type"] == "response.capture.requested"]
+    # A late completion remains harmless after cancellation.
+    assert controller.note_callout_playback_finished(assignment.callout_speech_turn_id) is False
+    await core.runner.stop()
+
+
+async def test_failed_callout_resume_retries_same_target_without_spending_turn(core):
+    controller = core.session_controller
+    controller.configure_roster(
+        [
+            {"id": "learner-a", "displayName": "Blue Fox"},
+            {"id": "learner-b", "displayName": "Green Owl"},
+        ],
+        ["learner-a", "learner-b"],
+    )
+    core.session_id = core.db.start_session(lesson_id="tiny-01")
+    await controller.start(4)
+    first = controller.assignments.current_for_activity(
+        core.session_id, core.runner.current.id, core.runner._generation
+    )
+    assert first is not None and first.callout_speech_turn_id is not None
+    target = first.target
+    history = list(controller.target_history)
+    turns_used = controller.named_turns_used
+    scheduled = controller.roster[target].scheduled
+
+    assert controller.note_callout_playback_failed(first.callout_speech_turn_id, "failed")
+    assert (await controller.control("resume"))["ok"] is True
+    retried = controller.assignments.current_for_activity(
+        core.session_id, core.runner.current.id, core.runner._generation
+    )
+    assert retried is not None and retried is not first
+    assert retried.target == target
+    assert controller.target_history == history
+    assert controller.named_turns_used == turns_used
+    assert controller.roster[target].scheduled == scheduled
+    await core.runner.stop()
+
+
+async def test_callout_ack_watchdog_fails_closed(core):
+    controller = core.session_controller
+    core.runner.playback_ack_timeout_s = 0.02
+    controller.configure_roster(
+        [{"id": "learner-a", "displayName": "Blue Fox"}], ["learner-a"]
+    )
+    core.session_id = core.db.start_session(lesson_id="tiny-01")
+    await controller.start(4)
+    await __import__("asyncio").sleep(0.04)
+    assert controller.session_state == SessionState.PAUSED
+    assert controller.pause_reason == "callout_playback_ack_timeout"
+    assert not [f for f in core.bus.history if f["type"] == "response.capture.requested"]
+    await core.runner.stop()
+
+
+async def test_stage_lease_loss_during_callout_fails_closed(core):
+    controller = core.session_controller
+    controller.configure_roster(
+        [{"id": "learner-a", "displayName": "Blue Fox"}], ["learner-a"]
+    )
+    core.session_id = core.db.start_session(lesson_id="tiny-01")
+    leases = CapabilityLeaseRegistry(core, ttl_s=30)
+    stage = SimpleNamespace(id=71, role="stage")
+    report = SimpleNamespace(
+        role="stage",
+        client_instance_id="stage-a",
+        connection_epoch=1,
+        capabilities={"audioPlayback": True},
+    )
+    assert leases.report(stage, report) is not None
+    await controller.start(4)
+    assert controller._callout_assignment_id is not None
+
+    leases.disconnect(stage)
+    assert controller.session_state == SessionState.PAUSED
+    assert controller.pause_reason == "stage_audio_owner_disconnected"
+    assert not [f for f in core.bus.history if f["type"] == "response.capture.requested"]
+    await core.runner.stop()
+
+
+async def test_market_lesson_executes_all_eight_fair_callout_capture_turns(tmp_path):
+    """Prove the authored count and physical turn protocol compose together."""
+    from app import build_core
+    from config import Settings
+
+    lesson_path = (
+        Path(__file__).resolve().parents[3]
+        / "content/lessons/market-food/market-food-01.run.json"
+    )
+    settings = Settings(
+        data_dir=tmp_path,
+        db_path=tmp_path / "market.db",
+        lesson_run_path=lesson_path,
+        silence_timeout_s=1.0,
+        reveal_hold_s=0.0,
+        playback_ack_timeout_s=1.0,
+        mode_override="OFFLINE",
+        probe_interval_s=3600,
+    )
+    market = build_core(settings)
+    roster = [
+        {"id": f"learner-{index:02d}", "displayName": f"Learner {index:02d}"}
+        for index in range(1, 9)
+    ]
+    station_ids = [f"answer_station_{index:02d}_{food}" for index, food in enumerate(
+        ("apple", "banana", "bread", "egg", "rice", "water", "apple", "bread"),
+        start=1,
+    )]
+
+    try:
+        first_index = market.runner.index_of(station_ids[0])
+        await market.start_lesson(
+            first_index,
+            roster=roster,
+            attendance_ids=[item["id"] for item in roster],
+        )
+        targets: list[str] = []
+        for station_id in station_ids:
+            assert market.runner.current.id == station_id
+            while market.runner._pending_playback_turns:
+                narration_turn = market.runner._pending_playback_turns[0]
+                market.runner.on_playback_started(narration_turn)
+                assert market.runner.on_playback_finished(narration_turn)
+
+            assignment = market.session_controller.assignments.current_for_activity(
+                market.session_id, station_id, market.runner._generation
+            )
+            assert assignment is not None and assignment.callout_speech_turn_id is not None
+            assert not [
+                frame
+                for frame in market.bus.history
+                if frame["type"] == "response.capture.requested"
+                and frame["payload"]["assignmentId"] == assignment.assignment_id
+            ]
+            assert market.session_controller.note_callout_playback_finished(
+                assignment.callout_speech_turn_id
+            )
+            request = next(
+                frame["payload"]
+                for frame in reversed(market.bus.history)
+                if frame["type"] == "response.capture.requested"
+                and frame["payload"]["assignmentId"] == assignment.assignment_id
+            )
+            capability = {
+                "assignmentId": assignment.assignment_id,
+                "responseTurnId": assignment.response_turn_id,
+                "captureId": request["captureId"],
+            }
+            market.session_controller.note_capture_ready({**capability, "status": "ready"})
+            market.session_controller.note_capture_started(capability)
+            claimed = await market.session_controller.claim_response(capability)
+            targets.append(str(claimed.target))
+
+            correct = market.runner.current.expect.correct[0]
+            payload = {
+                "text": correct,
+                "confidence": 1.0,
+                "_coreStudentId": claimed.target,
+                "_responseTurnId": claimed.response_turn_id,
+                "_evidencePolicy": claimed.evidence_policy,
+            }
+            outcome = await market.runner.handle_interaction("speech", payload)
+            assert outcome == "correct"
+            market.session_controller.close_response(claimed, outcome)
+            await market.runner.drain()
+
+        assert len(targets) == len(set(targets)) == 8
+        assert market.session_controller.named_turns_used == 8
+        assert market.session_controller.target_history == targets
+        assert market.runner.current.id == "explore_transfer"
+        assert market.session_controller._next_fair_target() is None
+    finally:
+        await market.runner.stop()
+        market.jobs.shutdown()
+        market.db.close()
 
 
 async def test_speech_claim_requires_ready_and_started_capture(core):

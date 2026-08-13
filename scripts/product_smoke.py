@@ -158,6 +158,27 @@ class WireClient:
         self.task = asyncio.create_task(self._pump())
         await self.send("client.hello", {"role": self.role})
         await self.wait_for("scene.snapshot", timeout=5)
+        # v3 makes the physical owners explicit.  This wire harness is a
+        # virtual Stage/Control, so it must declare the capability it is about
+        # to exercise before it can acknowledge audio.  Do this after hello +
+        # snapshot to preserve the mandatory first-frame ordering.
+        capabilities = (
+            {"stage_link": True, "audio_output": True, "display": True}
+            if self.role == "stage"
+            else {"control_link": True, "microphone": True}
+        )
+        await self.send(
+            "capability.report",
+            {
+                "clientInstanceId": f"product-smoke-{self.role}",
+                "connectionEpoch": 1,
+                "role": self.role,
+                "capabilities": capabilities,
+                "reportedAt": int(time.time() * 1000),
+            },
+        )
+        if self.role == "stage":
+            await self.wait_for("stage.lease.granted", timeout=5)
 
     async def close(self) -> None:
         if self.ws is not None:
@@ -227,7 +248,9 @@ class WireClient:
         raise SmokeFailure(f"{self.role} did not receive {event_type} in {timeout:.1f}s; saw {seen}")
 
 
-async def _exercise_bus(ws_url: str, timeout: float) -> dict[str, Any]:
+async def _exercise_bus(
+    ws_url: str, timeout: float, *, require_agent_proposal: bool = False
+) -> dict[str, Any]:
     stage = WireClient(ws_url, "stage")
     control = WireClient(ws_url, "control")
     started_at = time.perf_counter()
@@ -235,6 +258,7 @@ async def _exercise_bus(ws_url: str, timeout: float) -> dict[str, Any]:
     choice_at: float | None = None
     choice_advanced_at: float | None = None
     speech_turns: set[str] = set()
+    agent_speech_turns: set[str] = set()
     acked_turns: set[str] = set()
     answer_sent = False
 
@@ -291,12 +315,20 @@ async def _exercise_bus(ws_url: str, timeout: float) -> dict[str, Any]:
                     turn_id = str(payload.get("speechTurnId") or "")
                     if turn_id:
                         speech_turns.add(turn_id)
+                        if payload.get("source") == "agent":
+                            agent_speech_turns.add(turn_id)
                         if first_speech_at is None:
                             first_speech_at = time.perf_counter()
                 elif event_type == "speech.turn.ended" and payload.get("status") == "completed":
                     turn_id = str(payload.get("speechTurnId") or "")
                     if turn_id and turn_id not in acked_turns:
                         await stage.send("speech.playback.started", {"speechTurnId": turn_id})
+                        # The real Stage only reports completion after audio has
+                        # begun.  Keep the virtual Stage faithful to that ordering:
+                        # the Core processes websocket frames concurrently, so a
+                        # back-to-back synthetic completion can otherwise race the
+                        # started transition and be (correctly) rejected.
+                        await asyncio.sleep(0.02)
                         await stage.send(
                             "speech.playback.finished",
                             {
@@ -316,6 +348,11 @@ async def _exercise_bus(ws_url: str, timeout: float) -> dict[str, Any]:
                 elif event_type == "lesson.position" and payload.get("stage") == "DONE":
                     if not answer_sent:
                         raise SmokeFailure("lesson reached DONE without exercising the authored answer")
+                    if require_agent_proposal and not agent_speech_turns:
+                        raise SmokeFailure(
+                            "Hermes proposal rehearsal reached DONE without an agent speech turn; "
+                            "the configured sidecar did not complete an MCP proposal"
+                        )
                     for client in (stage, control):
                         if client.gaps:
                             raise SmokeFailure(f"{client.role} observed seq gaps: {client.gaps}")
@@ -342,6 +379,7 @@ async def _exercise_bus(ws_url: str, timeout: float) -> dict[str, Any]:
                         ),
                         "lessonCompleteMs": round((time.perf_counter() - start_sent) * 1000, 1),
                         "speechTurns": len(speech_turns),
+                        "agentSpeechTurns": len(agent_speech_turns),
                         "playbackAcks": len(acked_turns),
                         "authoredText": "".join(spoken),
                         "stageEvents": len(stage.events),
@@ -367,6 +405,12 @@ def _validate_args(args: argparse.Namespace) -> None:
             raise SmokeFailure(
                 "--agent hermes needs an already-running pinned sidecar and "
                 f"{', '.join(missing)}; values are never printed"
+            )
+        key = os.environ["HERMES_API_KEY"].strip().lower()
+        if key.startswith(("change-me", "changeme", "placeholder")):
+            raise SmokeFailure(
+                "--agent hermes refuses a placeholder HERMES_API_KEY; "
+                "run the authored --agent off path until a real sidecar credential exists"
             )
     if args.core_url and args.agent != "off":
         raise SmokeFailure("--agent only controls a managed Core; omit it when targeting a stack")
@@ -497,7 +541,11 @@ def run(args: argparse.Namespace) -> int:
             raise SmokeFailure("UI /control route is not available")
 
         ws_url = core_url.replace("http://", "ws://").replace("https://", "wss://") + "/ws"
-        result["runtime"] = asyncio.run(_exercise_bus(ws_url, args.timeout))
+        result["runtime"] = asyncio.run(
+            _exercise_bus(
+                ws_url, args.timeout, require_agent_proposal=args.require_agent_proposal
+            )
+        )
         result.update(
             {
                 "status": "passed",
@@ -552,6 +600,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="managed Core agent mode; off is the required no-Hermes release path",
     )
     parser.add_argument("--timeout", type=float, default=20.0, help="lesson completion timeout")
+    parser.add_argument(
+        "--require-agent-proposal",
+        action="store_true",
+        help="fail unless the target stack emits an agent speech turn after the authored answer",
+    )
     parser.add_argument("--startup-timeout", type=float, default=45.0)
     parser.add_argument(
         "--artifacts",

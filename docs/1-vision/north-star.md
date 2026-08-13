@@ -89,8 +89,8 @@ contracts, but does not yet prove a whole autonomous classroom:
 
 | Requirement | Where we are |
 |---|---|
-| **Runs a whole session unattended** — paces 35–45 minutes and closes it | A 37–39 minute compiled lesson and session controller exist. Stage budgets/checkpoints are metadata, but full pacing policy is not yet executed or soak-proven |
-| **Handles what is not in the script** — questions, noise, confusion | `uncertain`/`unhandled` branches and safe defaults exist. Only one sampled speech turn is wired; conversational recovery is not composed or room-proven |
+| **Runs a whole session unattended** — paces 35–45 minutes and closes it | A 41.0–44.7 minute compiled lesson and session controller exist. Stage budgets/checkpoints are metadata, but full pacing policy is not yet executed or soak-proven |
+| **Handles what is not in the script** — questions, noise, confusion | `uncertain`/`unhandled` branches and safe defaults exist. Eight authored selected-individual oral turns now have bounded recovery and Core will not open capture before its exact spoken callout is ACKed. Conversational recovery is not composed or room-proven |
 | **Manages a class, not a student** — calls learners fairly and attributes evidence | Roster, attendance, deterministic fairness/cooldown, assignments and participation ledger exist. Longitudinal class-aware memory is incomplete |
 | **Recovers on its own** — wrong branch, failed activity, lost capability | Capability loss and playback failure enter explicit recovery/safe pause. Recovery metadata is not yet fully executed, and a saved checkpoint is not restored after Core restart |
 

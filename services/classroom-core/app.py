@@ -1067,6 +1067,16 @@ def create_app(settings: Settings | None = None, core: Core | None = None) -> Fa
             if event == "started" and changed and core_.runner is not None:
                 core_.runner.on_playback_started(speech_turn_id)
             if event == "finished" and changed and core_.runner is not None:
+                controller = core_.session_controller
+                if controller is not None:
+                    if status == "completed" and controller.note_callout_playback_finished(
+                        speech_turn_id
+                    ):
+                        return
+                    if status != "completed" and controller.note_callout_playback_failed(
+                        speech_turn_id, status
+                    ):
+                        return
                 driver = getattr(core_, "agent_driver", None)
                 if driver is not None and driver.note_playback_result(speech_turn_id, status):
                     return

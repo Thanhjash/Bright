@@ -104,18 +104,74 @@ def test_every_graded_autonomous_activity_has_uncertain_and_unhandled_recovery()
         assert {"uncertain", "unhandled"} <= branches, activity.id
 
 
-def test_answer_station_accepts_every_taught_food_request() -> None:
+def test_named_turn_budget_equals_explicit_selected_individual_speech_stations() -> None:
     run = LessonRun.model_validate_json(MARKET_RUN.read_text(encoding="utf-8"))
-    station = next(activity for activity in run.activities if activity.id == "answer_station")
-    assert station.expect is not None
-    assert set(station.expect.correct or []) == {
+    assert run.session_plan is not None
+    stations = [
+        activity
+        for activity in run.activities
+        if activity.expect is not None
+        and activity.expect.kind == "speech"
+        and activity.teaching is not None
+        and activity.teaching.response_scope == "selected_individual"
+        and activity.teaching.participation_mode == "selected_individual"
+    ]
+    assert len(stations) == run.session_plan.named_turn_budget == 8
+    assert [station.id for station in stations] == [
+        "answer_station_01_apple",
+        "answer_station_02_banana",
+        "answer_station_03_bread",
+        "answer_station_04_egg",
+        "answer_station_05_rice",
+        "answer_station_06_water",
+        "answer_station_07_apple",
+        "answer_station_08_bread",
+    ]
+    asserted_requests = {
+        answer
+        for station in stations
+        for answer in (station.expect.correct or [])
+    }
+    assert {
         "i would like an apple please",
         "i would like a banana please",
         "i would like bread please",
         "i would like an egg please",
         "i would like rice please",
         "i would like water please",
-    }
+    } <= asserted_requests
+    assert all(activity.duration_s == 30 for activity in stations)
+
+    recoveries = [
+        activity
+        for activity in run.activities
+        if activity.id.startswith("answer_station_help_")
+    ]
+    assert len(recoveries) == len(stations)
+    assert all(activity.duration_s == 20 for activity in recoveries)
+    assert all(
+        activity.teaching is not None
+        and activity.teaching.response_scope == "choral"
+        and activity.teaching.participation_mode == "whole_class"
+        for activity in recoveries
+    )
+
+
+def test_lint_rejects_named_turn_budget_that_does_not_match_authored_stations(tmp_path: Path) -> None:
+    bad_lesson = tmp_path / MARKET_SOURCE.name
+    bad_lesson.write_text(
+        MARKET_SOURCE.read_text(encoding="utf-8").replace("namedTurnBudget: 8", "namedTurnBudget: 7", 1),
+        encoding="utf-8",
+    )
+    lint = subprocess.run(
+        [sys.executable, "tools/lesson-lint/lesson_lint.py", str(bad_lesson), "--strict"],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert lint.returncode == 1
+    assert "namedTurnBudget does not match authored selected-individual speech stations" in lint.stdout
 
 
 def test_autonomous_schema_fails_closed_on_missing_teaching_or_unknown_fields() -> None:

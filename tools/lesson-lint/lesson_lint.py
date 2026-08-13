@@ -191,6 +191,36 @@ def check_meta(lesson: LessonSrc, report: Report, *, release: bool = False) -> N
                          "a playable lesson is not automatically safe or pedagogically valid",
                          "name the curriculum approver, complete review, then set approvalStatus: approved")
 
+        # A named turn is a scarce classroom promise: the roster controller will
+        # select this many children, so the authored graph must contain exactly
+        # this many places where a selected child can actually speak.  Counting
+        # only speech activities with both selected-individual declarations
+        # prevents an invite card or a whole-class recovery from inflating it.
+        session_plan = lesson.meta.get("session_plan") or {}
+        named_turn_budget = session_plan.get("namedTurnBudget")
+        if not isinstance(named_turn_budget, int) or isinstance(named_turn_budget, bool):
+            report.error(2, "", "session_plan.namedTurnBudget must be a whole number",
+                         "the class controller needs a finite, auditable number of named turns",
+                         "set namedTurnBudget: <number of selected-individual speech activities>")
+        else:
+            authored_named_speech = sum(
+                1
+                for activity in lesson.activities
+                if activity.expect is not None
+                and activity.expect.get("kind") == "speech"
+                and (activity.teaching or {}).get("responseScope") == "selected_individual"
+                and (activity.teaching or {}).get("participationMode") == "selected_individual"
+            )
+            if named_turn_budget != authored_named_speech:
+                report.error(
+                    2,
+                    "",
+                    "session_plan.namedTurnBudget does not match authored selected-individual speech stations "
+                    f"({named_turn_budget} declared, {authored_named_speech} authored)",
+                    "the roster may promise children turns that the lesson never provides, or skip authored checks",
+                    f"set namedTurnBudget: {authored_named_speech}, or add/remove selected-individual speech activities",
+                )
+
 
 def check_activity(activity: ActivitySrc, lesson: LessonSrc, report: Report,
                    asset_roots: tuple[Path, ...]) -> None:

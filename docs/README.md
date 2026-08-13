@@ -129,9 +129,9 @@ docs/
 ```
 ✅  protocol/runtime floor Protocol v3, class sessions, leases, capture correlation
 ✅  Option B live boundary one terminal Hermes proposal tool; Core commits after playback
-✅  product lesson draft   37–39 minute Market Food path; all headless paths terminate
-✅  mechanical evidence   Core 224; agent 82; AIRI 165; Chromium v3 2; content gates green
-⚠️  release verification  one sampled speech turn only; no real composed room/provider proof
+✅  product lesson draft   41.0–44.7 minute Market Food paths; eight authored individual oral turns and recovery paths terminate headlessly
+✅  mechanical evidence   Core 232; agent 82; AIRI 165; Chromium v3 2; content contract 8 + harnesses 10 green
+⚠️  release verification  Chromium synthetic-mic → real local ASR/Piper probe exists; full AIRI/physical-room/provider proof does not
 🔴  approval/governance    curriculum approver, child-room evidence and ship rights remain
 ```
 

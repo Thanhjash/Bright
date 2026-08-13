@@ -12,9 +12,9 @@ Research and rationale: [CTO autonomous-classroom audit](../5-research/2026-08-1
 
 ## Implementation checkpoint — 2026-08-12
 
-The first v3 vertical slice is mechanically green: Core 224 tests; agent 82 non-live
+The current v3 vertical slice is mechanically green: Core 232 tests; agent 82 non-live
 tests with four live-provider cases deselected; AIRI 165 tests; two mocked Chromium v3
-flows; content 7 tests plus the lesson self-test. The Market Food candidate runs 37–39
+flows; content contract 8 tests plus the lesson self-test. The Market Food candidate runs 41.0–44.7
 minutes in headless simulation. This is implementation evidence, not a release claim.
 
 | Gate | Current state |
@@ -22,9 +22,9 @@ minutes in headless simulation. This is implementation evidence, not a release c
 | G0 product truth | **Mostly implemented:** Protocol v3/toolchain/CI/capability states; provenance and legal decisions remain |
 | G1 real teaching product | **Candidate implemented:** full executable draft; curriculum approver unassigned |
 | G2 classroom teacher spine | **Partial:** roster/fairness/assignments/checkpoint writes; memory, restore and pacing execution incomplete |
-| G3 oral interaction | **Partial:** one answer-station sampled turn; full recovery and room evidence absent |
+| G3 oral interaction | **Partial:** eight authored, individually assigned answer-station turns with bounded recovery; no room-safety evidence |
 | G4 product UX | **Partial:** setup/status/emergency redesign and mocked Chromium gate; first-time facilitator proof absent |
-| G5–G8 | **Open:** no real composed provider/room/hardware, local Gemma, appliance or governance proof |
+| G5–G8 | **Open:** local speech/browser composition probe exists, but no full real Stage/AIRI/provider/room/hardware proof, local Gemma, appliance or governance proof |
 
 ## Competition-ready definition
 
@@ -128,7 +128,7 @@ legal actions. It never receives or owns the whole roster.
   and participation state from the checkpoint;
 - the lesson can complete with Hermes/model/network absent.
 
-### G3 — Autonomous oral interaction and recovery *(one sampled turn implemented)*
+### G3 — Autonomous oral interaction and recovery *(eight authored individual turns implemented; room proof open)*
 
 Use the minimum honest classroom topology:
 
@@ -145,6 +145,14 @@ Implement `unhandled_utterance` and bounded recovery:
 - unsafe/unrelated/ambiguous → neutral boundary and return to lesson;
 - agent/TTS/ASR failure → immediate authored fallback and self-restart;
 - correctness and conversational helpfulness remain separate.
+
+The Market Food candidate now authors eight separate selected-individual turns,
+each with an exact target phrase and an authored whole-class recovery before the
+next selected learner. For a named turn, Core first publishes its deterministic
+spoken roster-name callout and only issues the capture request after Stage acknowledges that
+exact callout's completed playback. A failed or missing ACK safe-pauses; an old
+ACK cannot arm a newer learner's microphone. This closes a protocol hole, not
+the ecological safety gate below.
 
 **Exit gate**
 
@@ -187,7 +195,7 @@ Required UX changes:
 - one physical voice per turn; no overlapping Stage/Control output;
 - keyboard, touch and projector viewport E2E pass in Chromium.
 
-### G5 — Real composed product evidence
+### G5 — Real composed product evidence *(speech/browser probe implemented; full composition open)*
 
 Replace the Core-wire smoke as release proof with a composed harness:
 
@@ -199,6 +207,13 @@ Replace the Core-wire smoke as release proof with a composed harness:
 - 35–45 minute soak and target audio hardware.
 
 Keep the existing Core-wire smoke, but label it correctly as a protocol smoke.
+
+The current `composed-smoke` is an early, deliberately narrower probe: Chromium
+records a synthetic browser microphone stream to the real local ASR endpoint and
+plays real local Piper WAV through the browser audio pipeline. It can optionally
+check authenticated Hermes health and rehearse Hermes → Core MCP through the
+separate wire smoke. It does not run AIRI lifecycle ACKs or physical acoustics;
+the rehearsal still uses virtual playback ACKs.
 
 **Exit gate**
 
@@ -322,8 +337,11 @@ delayed and transfer measures.
    licences/provenance and reproducible evidence artifact.
 2. Complete G2 execution: stage budgets/pacing/recovery, class-aware memory and Core
    checkpoint restore; prove a simulated 40-learner full session.
-3. Expand G3 from one sampled answer-station turn to all authored oral/recovery paths.
-4. Run real composed Chromium + Stage/Control + AIRI + Piper + ASR + pinned hosted
+3. Execute G3 in a real room: exercise the eight authored callout/capture/recovery
+   paths with correct, wrong, silent, noisy and two-speaker inputs; build the
+   consented zero-false-accept corpus.
+4. Extend the composed Chromium probe to real Stage/Control + AIRI playback ACKs +
+   Piper + ASR + pinned hosted
    Hermes tests, then repeated full-session and room gates (G4/G5).
 5. Run local Gemma/OpenVINO conformance and appliance hardening in parallel once
    the real workload exists (G6/G7).

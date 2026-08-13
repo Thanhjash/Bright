@@ -38,10 +38,11 @@ and [classroom UI README](apps/classroom-ui/README.md) for detailed setup.
 
 ## Verification status
 
-Focused Core, Hermes, AIRI, UI, speech, room-gate, and wire-smoke suites are in
-place. This repository does not yet claim classroom release readiness: a real
-browser/audio/Hermes composition on target hardware and a consented child/noisy-
-room zero-false-accept corpus remain mandatory gates. Current evidence and
+Focused Core, Hermes, AIRI, UI, speech, room-gate, a virtual-ACK wire smoke, and a
+synthetic-browser-mic-to-real-local-speech probe are in place. This repository does
+not yet claim classroom release readiness: a full real Stage/AIRI/browser/audio/Hermes
+composition on target hardware and a consented child/noisy-room zero-false-accept
+corpus remain mandatory gates. Current evidence and
 blockers are maintained in [Option B implementation status](docs/4-build/option-b-implementation-status.md).
 
 ## Data and models

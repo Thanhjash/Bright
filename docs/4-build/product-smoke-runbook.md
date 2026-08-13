@@ -21,7 +21,7 @@ The command starts isolated processes on fresh loopback ports:
   those isolated Core and speech endpoints;
 - a fake speech HTTP service that returns valid silence WAV. This exercises
   the HTTP/audio boundary without claiming to test Piper or Whisper quality;
-- two independent Python protocol-v2 WebSocket clients acting as Stage and
+- two independent Python Protocol v3 WebSocket clients acting as Stage and
   Control. The Stage client fabricates playback ACKs; AIRI is not executed.
 
 The virtual Stage performs exact playback ACKs and answers the authored
@@ -47,8 +47,12 @@ Start the local speech service, then replace the fake endpoint:
 ./scripts/product-smoke.sh --speech-url http://127.0.0.1:8001
 ```
 
-This checks service health and composition. It still does not establish ASR
-quality; `tests/room/room_test.py` owns the zero-false-accept room gate.
+This makes the wire harness call the supplied speech service's health endpoint, but
+the harness remains a virtual Stage and sends fabricated playback ACKs. It does not
+drive browser media, AIRI, or physical Piper playback and does not establish ASR
+quality; `tests/room/room_test.py` owns the zero-false-accept room gate. Use
+[`composed-smoke`](composed-smoke-runbook.md) for the separate synthetic-browser-mic
+to real-local-speech endpoint probe.
 
 ## Deterministic agent-seam rehearsal
 

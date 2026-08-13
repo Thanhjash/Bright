@@ -920,7 +920,7 @@
       "branches": [
         {
           "on": "always",
-          "goto": "answer_station"
+          "goto": "answer_station_01_apple"
         }
       ],
       "teaching": {
@@ -934,58 +934,48 @@
         "evidencePolicy": "participation",
         "recovery": {
           "easierActivityId": "request_frame",
-          "safeDefaultActivityId": "answer_station"
+          "safeDefaultActivityId": "answer_station_01_apple"
         }
       }
     },
     {
-      "id": "answer_station",
+      "id": "answer_station_01_apple",
       "scene": "roleplay",
       "props": {
         "environment": "answer station market",
         "aiRole": "shopkeeper",
         "studentRole": "selected customer",
         "targetPhrases": [
-          "I would like an apple, please.",
-          "I would like a banana, please.",
-          "I would like bread, please.",
-          "I would like an egg, please.",
-          "I would like rice, please.",
-          "I would like water, please."
+          "I would like an apple, please."
         ]
       },
       "narration": [
         {
-          "text": "Welcome to the market. What would you like? Press Ready, then speak.",
+          "text": "Customer one, welcome to the market. Ask for an apple. Press Ready, then speak.",
           "act": {
             "emotion": "question",
             "motion": "Question"
           }
         }
       ],
+      "durationS": 30,
       "expect": {
         "kind": "speech",
         "correct": [
-          "i would like an apple please",
-          "i would like a banana please",
-          "i would like bread please",
-          "i would like an egg please",
-          "i would like rice please",
-          "i would like water please"
+          "i would like an apple please"
         ],
         "acceptFuzzy": [
           "i like an apple please",
-          "i would like apple please",
-          "i would like water"
+          "i would like apple please"
         ]
       },
       "branches": [
         {
           "on": "correct",
-          "goto": "explore_transfer",
+          "goto": "answer_station_02_banana",
           "narration": [
             {
-              "text": "Thank you. Here you are.",
+              "text": "Thank you. Here is your apple.",
               "act": {
                 "emotion": "happy",
                 "motion": "Happy"
@@ -995,7 +985,7 @@
         },
         {
           "on": "near",
-          "goto": "answer_station_help",
+          "goto": "answer_station_help_01_apple",
           "narration": [
             {
               "text": "I heard your request. Let us add the missing words together.",
@@ -1008,7 +998,7 @@
         },
         {
           "on": "wrong",
-          "goto": "answer_station_help",
+          "goto": "answer_station_help_01_apple",
           "narration": [
             {
               "text": "Let us build the request together.",
@@ -1021,7 +1011,7 @@
         },
         {
           "on": "uncertain",
-          "goto": "answer_station_help",
+          "goto": "answer_station_help_01_apple",
           "narration": [
             {
               "text": "I could not hear one clear voice. We will use the sentence frame.",
@@ -1034,10 +1024,10 @@
         },
         {
           "on": "unhandled",
-          "goto": "answer_station_help",
+          "goto": "answer_station_help_01_apple",
           "narration": [
             {
-              "text": "That is an interesting thought. For this turn, let us practise our market request.",
+              "text": "For this turn, let us practise our market request.",
               "act": {
                 "emotion": "neutral",
                 "motion": "Idle"
@@ -1047,7 +1037,7 @@
         },
         {
           "on": "silence",
-          "goto": "answer_station_help",
+          "goto": "answer_station_help_01_apple",
           "narration": [
             {
               "text": "No problem. Look at the sentence frame.",
@@ -1060,7 +1050,7 @@
         },
         {
           "on": "timeout",
-          "goto": "answer_station_help",
+          "goto": "answer_station_help_01_apple",
           "narration": [
             {
               "text": "We will use the sentence frame together.",
@@ -1074,7 +1064,7 @@
       ],
       "teaching": {
         "stage": "SAMPLED_RETRIEVAL",
-        "stageBudgetS": 360,
+        "stageBudgetS": 30,
         "responseScope": "selected_individual",
         "participationMode": "selected_individual",
         "skillIds": [
@@ -1082,13 +1072,13 @@
         ],
         "evidencePolicy": "individual",
         "recovery": {
-          "easierActivityId": "answer_station_help",
-          "safeDefaultActivityId": "explore_transfer"
+          "easierActivityId": "answer_station_help_01_apple",
+          "safeDefaultActivityId": "answer_station_02_banana"
         }
       }
     },
     {
-      "id": "answer_station_help",
+      "id": "answer_station_help_01_apple",
       "scene": "sentence_builder",
       "props": {
         "tokens": [
@@ -1114,14 +1104,1379 @@
       },
       "narration": [
         {
-          "text": "Read the three chunks with me: I would like — an apple — please.",
+          "text": "Everyone, read the three chunks together: I would like — an apple — please.",
           "act": {
             "emotion": "neutral",
             "motion": "Idle"
           }
         }
       ],
-      "durationS": 60,
+      "durationS": 20,
+      "branches": [
+        {
+          "on": "always",
+          "goto": "answer_station_02_banana"
+        }
+      ],
+      "teaching": {
+        "stage": "RECOVERY",
+        "stageBudgetS": 20,
+        "responseScope": "choral",
+        "participationMode": "whole_class",
+        "skillIds": [
+          "polite_request"
+        ],
+        "evidencePolicy": "participation",
+        "recovery": {
+          "easierActivityId": "request_frame",
+          "safeDefaultActivityId": "answer_station_02_banana"
+        }
+      }
+    },
+    {
+      "id": "answer_station_02_banana",
+      "scene": "roleplay",
+      "props": {
+        "environment": "answer station market",
+        "aiRole": "shopkeeper",
+        "studentRole": "selected customer",
+        "targetPhrases": [
+          "I would like a banana, please."
+        ]
+      },
+      "narration": [
+        {
+          "text": "Next customer, ask for a banana. Press Ready, then speak.",
+          "act": {
+            "emotion": "question",
+            "motion": "Question"
+          }
+        }
+      ],
+      "durationS": 30,
+      "expect": {
+        "kind": "speech",
+        "correct": [
+          "i would like a banana please"
+        ],
+        "acceptFuzzy": [
+          "i like a banana please",
+          "i would like banana please"
+        ]
+      },
+      "branches": [
+        {
+          "on": "correct",
+          "goto": "answer_station_03_bread",
+          "narration": [
+            {
+              "text": "Thank you. Here is your banana.",
+              "act": {
+                "emotion": "happy",
+                "motion": "Happy"
+              }
+            }
+          ]
+        },
+        {
+          "on": "near",
+          "goto": "answer_station_help_02_banana",
+          "narration": [
+            {
+              "text": "Let us add the missing words together.",
+              "act": {
+                "emotion": "curious",
+                "motion": "Curious"
+              }
+            }
+          ]
+        },
+        {
+          "on": "wrong",
+          "goto": "answer_station_help_02_banana",
+          "narration": [
+            {
+              "text": "Let us build the request together.",
+              "act": {
+                "emotion": "neutral",
+                "motion": "Idle"
+              }
+            }
+          ]
+        },
+        {
+          "on": "uncertain",
+          "goto": "answer_station_help_02_banana",
+          "narration": [
+            {
+              "text": "We will use the sentence frame together.",
+              "act": {
+                "emotion": "neutral",
+                "motion": "Idle"
+              }
+            }
+          ]
+        },
+        {
+          "on": "unhandled",
+          "goto": "answer_station_help_02_banana",
+          "narration": [
+            {
+              "text": "For this turn, let us practise our market request.",
+              "act": {
+                "emotion": "neutral",
+                "motion": "Idle"
+              }
+            }
+          ]
+        },
+        {
+          "on": "silence",
+          "goto": "answer_station_help_02_banana",
+          "narration": [
+            {
+              "text": "No problem. Look at the sentence frame.",
+              "act": {
+                "emotion": "neutral",
+                "motion": "Idle"
+              }
+            }
+          ]
+        },
+        {
+          "on": "timeout",
+          "goto": "answer_station_help_02_banana",
+          "narration": [
+            {
+              "text": "We will use the sentence frame together.",
+              "act": {
+                "emotion": "neutral",
+                "motion": "Idle"
+              }
+            }
+          ]
+        }
+      ],
+      "teaching": {
+        "stage": "SAMPLED_RETRIEVAL",
+        "stageBudgetS": 30,
+        "responseScope": "selected_individual",
+        "participationMode": "selected_individual",
+        "skillIds": [
+          "polite_request"
+        ],
+        "evidencePolicy": "individual",
+        "recovery": {
+          "easierActivityId": "answer_station_help_02_banana",
+          "safeDefaultActivityId": "answer_station_03_bread"
+        }
+      }
+    },
+    {
+      "id": "answer_station_help_02_banana",
+      "scene": "sentence_builder",
+      "props": {
+        "tokens": [
+          {
+            "id": "i_would_like",
+            "text": "I would like"
+          },
+          {
+            "id": "food",
+            "text": "a banana"
+          },
+          {
+            "id": "please",
+            "text": "please."
+          }
+        ],
+        "placed": [
+          "i_would_like",
+          "food",
+          "please"
+        ],
+        "target": "I would like a banana, please."
+      },
+      "narration": [
+        {
+          "text": "Everyone, read together: I would like — a banana — please.",
+          "act": {
+            "emotion": "neutral",
+            "motion": "Idle"
+          }
+        }
+      ],
+      "durationS": 20,
+      "branches": [
+        {
+          "on": "always",
+          "goto": "answer_station_03_bread"
+        }
+      ],
+      "teaching": {
+        "stage": "RECOVERY",
+        "stageBudgetS": 20,
+        "responseScope": "choral",
+        "participationMode": "whole_class",
+        "skillIds": [
+          "polite_request"
+        ],
+        "evidencePolicy": "participation",
+        "recovery": {
+          "easierActivityId": "request_frame",
+          "safeDefaultActivityId": "answer_station_03_bread"
+        }
+      }
+    },
+    {
+      "id": "answer_station_03_bread",
+      "scene": "roleplay",
+      "props": {
+        "environment": "answer station market",
+        "aiRole": "shopkeeper",
+        "studentRole": "selected customer",
+        "targetPhrases": [
+          "I would like bread, please."
+        ]
+      },
+      "narration": [
+        {
+          "text": "Next customer, ask for bread. Press Ready, then speak.",
+          "act": {
+            "emotion": "question",
+            "motion": "Question"
+          }
+        }
+      ],
+      "durationS": 30,
+      "expect": {
+        "kind": "speech",
+        "correct": [
+          "i would like bread please"
+        ],
+        "acceptFuzzy": [
+          "i like bread please",
+          "i would like the bread please"
+        ]
+      },
+      "branches": [
+        {
+          "on": "correct",
+          "goto": "answer_station_04_egg",
+          "narration": [
+            {
+              "text": "Thank you. Here is your bread.",
+              "act": {
+                "emotion": "happy",
+                "motion": "Happy"
+              }
+            }
+          ]
+        },
+        {
+          "on": "near",
+          "goto": "answer_station_help_03_bread",
+          "narration": [
+            {
+              "text": "Let us add the missing words together.",
+              "act": {
+                "emotion": "curious",
+                "motion": "Curious"
+              }
+            }
+          ]
+        },
+        {
+          "on": "wrong",
+          "goto": "answer_station_help_03_bread",
+          "narration": [
+            {
+              "text": "Let us build the request together.",
+              "act": {
+                "emotion": "neutral",
+                "motion": "Idle"
+              }
+            }
+          ]
+        },
+        {
+          "on": "uncertain",
+          "goto": "answer_station_help_03_bread",
+          "narration": [
+            {
+              "text": "We will use the sentence frame together.",
+              "act": {
+                "emotion": "neutral",
+                "motion": "Idle"
+              }
+            }
+          ]
+        },
+        {
+          "on": "unhandled",
+          "goto": "answer_station_help_03_bread",
+          "narration": [
+            {
+              "text": "For this turn, let us practise our market request.",
+              "act": {
+                "emotion": "neutral",
+                "motion": "Idle"
+              }
+            }
+          ]
+        },
+        {
+          "on": "silence",
+          "goto": "answer_station_help_03_bread",
+          "narration": [
+            {
+              "text": "No problem. Look at the sentence frame.",
+              "act": {
+                "emotion": "neutral",
+                "motion": "Idle"
+              }
+            }
+          ]
+        },
+        {
+          "on": "timeout",
+          "goto": "answer_station_help_03_bread",
+          "narration": [
+            {
+              "text": "We will use the sentence frame together.",
+              "act": {
+                "emotion": "neutral",
+                "motion": "Idle"
+              }
+            }
+          ]
+        }
+      ],
+      "teaching": {
+        "stage": "SAMPLED_RETRIEVAL",
+        "stageBudgetS": 30,
+        "responseScope": "selected_individual",
+        "participationMode": "selected_individual",
+        "skillIds": [
+          "polite_request"
+        ],
+        "evidencePolicy": "individual",
+        "recovery": {
+          "easierActivityId": "answer_station_help_03_bread",
+          "safeDefaultActivityId": "answer_station_04_egg"
+        }
+      }
+    },
+    {
+      "id": "answer_station_help_03_bread",
+      "scene": "sentence_builder",
+      "props": {
+        "tokens": [
+          {
+            "id": "i_would_like",
+            "text": "I would like"
+          },
+          {
+            "id": "food",
+            "text": "bread"
+          },
+          {
+            "id": "please",
+            "text": "please."
+          }
+        ],
+        "placed": [
+          "i_would_like",
+          "food",
+          "please"
+        ],
+        "target": "I would like bread, please."
+      },
+      "narration": [
+        {
+          "text": "Everyone, read together: I would like — bread — please.",
+          "act": {
+            "emotion": "neutral",
+            "motion": "Idle"
+          }
+        }
+      ],
+      "durationS": 20,
+      "branches": [
+        {
+          "on": "always",
+          "goto": "answer_station_04_egg"
+        }
+      ],
+      "teaching": {
+        "stage": "RECOVERY",
+        "stageBudgetS": 20,
+        "responseScope": "choral",
+        "participationMode": "whole_class",
+        "skillIds": [
+          "polite_request"
+        ],
+        "evidencePolicy": "participation",
+        "recovery": {
+          "easierActivityId": "request_frame",
+          "safeDefaultActivityId": "answer_station_04_egg"
+        }
+      }
+    },
+    {
+      "id": "answer_station_04_egg",
+      "scene": "roleplay",
+      "props": {
+        "environment": "answer station market",
+        "aiRole": "shopkeeper",
+        "studentRole": "selected customer",
+        "targetPhrases": [
+          "I would like an egg, please."
+        ]
+      },
+      "narration": [
+        {
+          "text": "Next customer, ask for an egg. Press Ready, then speak.",
+          "act": {
+            "emotion": "question",
+            "motion": "Question"
+          }
+        }
+      ],
+      "durationS": 30,
+      "expect": {
+        "kind": "speech",
+        "correct": [
+          "i would like an egg please"
+        ],
+        "acceptFuzzy": [
+          "i like an egg please",
+          "i would like egg please"
+        ]
+      },
+      "branches": [
+        {
+          "on": "correct",
+          "goto": "answer_station_05_rice",
+          "narration": [
+            {
+              "text": "Thank you. Here is your egg.",
+              "act": {
+                "emotion": "happy",
+                "motion": "Happy"
+              }
+            }
+          ]
+        },
+        {
+          "on": "near",
+          "goto": "answer_station_help_04_egg",
+          "narration": [
+            {
+              "text": "Let us add the missing words together.",
+              "act": {
+                "emotion": "curious",
+                "motion": "Curious"
+              }
+            }
+          ]
+        },
+        {
+          "on": "wrong",
+          "goto": "answer_station_help_04_egg",
+          "narration": [
+            {
+              "text": "Let us build the request together.",
+              "act": {
+                "emotion": "neutral",
+                "motion": "Idle"
+              }
+            }
+          ]
+        },
+        {
+          "on": "uncertain",
+          "goto": "answer_station_help_04_egg",
+          "narration": [
+            {
+              "text": "We will use the sentence frame together.",
+              "act": {
+                "emotion": "neutral",
+                "motion": "Idle"
+              }
+            }
+          ]
+        },
+        {
+          "on": "unhandled",
+          "goto": "answer_station_help_04_egg",
+          "narration": [
+            {
+              "text": "For this turn, let us practise our market request.",
+              "act": {
+                "emotion": "neutral",
+                "motion": "Idle"
+              }
+            }
+          ]
+        },
+        {
+          "on": "silence",
+          "goto": "answer_station_help_04_egg",
+          "narration": [
+            {
+              "text": "No problem. Look at the sentence frame.",
+              "act": {
+                "emotion": "neutral",
+                "motion": "Idle"
+              }
+            }
+          ]
+        },
+        {
+          "on": "timeout",
+          "goto": "answer_station_help_04_egg",
+          "narration": [
+            {
+              "text": "We will use the sentence frame together.",
+              "act": {
+                "emotion": "neutral",
+                "motion": "Idle"
+              }
+            }
+          ]
+        }
+      ],
+      "teaching": {
+        "stage": "SAMPLED_RETRIEVAL",
+        "stageBudgetS": 30,
+        "responseScope": "selected_individual",
+        "participationMode": "selected_individual",
+        "skillIds": [
+          "polite_request"
+        ],
+        "evidencePolicy": "individual",
+        "recovery": {
+          "easierActivityId": "answer_station_help_04_egg",
+          "safeDefaultActivityId": "answer_station_05_rice"
+        }
+      }
+    },
+    {
+      "id": "answer_station_help_04_egg",
+      "scene": "sentence_builder",
+      "props": {
+        "tokens": [
+          {
+            "id": "i_would_like",
+            "text": "I would like"
+          },
+          {
+            "id": "food",
+            "text": "an egg"
+          },
+          {
+            "id": "please",
+            "text": "please."
+          }
+        ],
+        "placed": [
+          "i_would_like",
+          "food",
+          "please"
+        ],
+        "target": "I would like an egg, please."
+      },
+      "narration": [
+        {
+          "text": "Everyone, read together: I would like — an egg — please.",
+          "act": {
+            "emotion": "neutral",
+            "motion": "Idle"
+          }
+        }
+      ],
+      "durationS": 20,
+      "branches": [
+        {
+          "on": "always",
+          "goto": "answer_station_05_rice"
+        }
+      ],
+      "teaching": {
+        "stage": "RECOVERY",
+        "stageBudgetS": 20,
+        "responseScope": "choral",
+        "participationMode": "whole_class",
+        "skillIds": [
+          "polite_request"
+        ],
+        "evidencePolicy": "participation",
+        "recovery": {
+          "easierActivityId": "request_frame",
+          "safeDefaultActivityId": "answer_station_05_rice"
+        }
+      }
+    },
+    {
+      "id": "answer_station_05_rice",
+      "scene": "roleplay",
+      "props": {
+        "environment": "answer station market",
+        "aiRole": "shopkeeper",
+        "studentRole": "selected customer",
+        "targetPhrases": [
+          "I would like rice, please."
+        ]
+      },
+      "narration": [
+        {
+          "text": "Next customer, ask for rice. Press Ready, then speak.",
+          "act": {
+            "emotion": "question",
+            "motion": "Question"
+          }
+        }
+      ],
+      "durationS": 30,
+      "expect": {
+        "kind": "speech",
+        "correct": [
+          "i would like rice please"
+        ],
+        "acceptFuzzy": [
+          "i like rice please",
+          "i would like the rice please"
+        ]
+      },
+      "branches": [
+        {
+          "on": "correct",
+          "goto": "answer_station_06_water",
+          "narration": [
+            {
+              "text": "Thank you. Here is your rice.",
+              "act": {
+                "emotion": "happy",
+                "motion": "Happy"
+              }
+            }
+          ]
+        },
+        {
+          "on": "near",
+          "goto": "answer_station_help_05_rice",
+          "narration": [
+            {
+              "text": "Let us add the missing words together.",
+              "act": {
+                "emotion": "curious",
+                "motion": "Curious"
+              }
+            }
+          ]
+        },
+        {
+          "on": "wrong",
+          "goto": "answer_station_help_05_rice",
+          "narration": [
+            {
+              "text": "Let us build the request together.",
+              "act": {
+                "emotion": "neutral",
+                "motion": "Idle"
+              }
+            }
+          ]
+        },
+        {
+          "on": "uncertain",
+          "goto": "answer_station_help_05_rice",
+          "narration": [
+            {
+              "text": "We will use the sentence frame together.",
+              "act": {
+                "emotion": "neutral",
+                "motion": "Idle"
+              }
+            }
+          ]
+        },
+        {
+          "on": "unhandled",
+          "goto": "answer_station_help_05_rice",
+          "narration": [
+            {
+              "text": "For this turn, let us practise our market request.",
+              "act": {
+                "emotion": "neutral",
+                "motion": "Idle"
+              }
+            }
+          ]
+        },
+        {
+          "on": "silence",
+          "goto": "answer_station_help_05_rice",
+          "narration": [
+            {
+              "text": "No problem. Look at the sentence frame.",
+              "act": {
+                "emotion": "neutral",
+                "motion": "Idle"
+              }
+            }
+          ]
+        },
+        {
+          "on": "timeout",
+          "goto": "answer_station_help_05_rice",
+          "narration": [
+            {
+              "text": "We will use the sentence frame together.",
+              "act": {
+                "emotion": "neutral",
+                "motion": "Idle"
+              }
+            }
+          ]
+        }
+      ],
+      "teaching": {
+        "stage": "SAMPLED_RETRIEVAL",
+        "stageBudgetS": 30,
+        "responseScope": "selected_individual",
+        "participationMode": "selected_individual",
+        "skillIds": [
+          "polite_request"
+        ],
+        "evidencePolicy": "individual",
+        "recovery": {
+          "easierActivityId": "answer_station_help_05_rice",
+          "safeDefaultActivityId": "answer_station_06_water"
+        }
+      }
+    },
+    {
+      "id": "answer_station_help_05_rice",
+      "scene": "sentence_builder",
+      "props": {
+        "tokens": [
+          {
+            "id": "i_would_like",
+            "text": "I would like"
+          },
+          {
+            "id": "food",
+            "text": "rice"
+          },
+          {
+            "id": "please",
+            "text": "please."
+          }
+        ],
+        "placed": [
+          "i_would_like",
+          "food",
+          "please"
+        ],
+        "target": "I would like rice, please."
+      },
+      "narration": [
+        {
+          "text": "Everyone, read together: I would like — rice — please.",
+          "act": {
+            "emotion": "neutral",
+            "motion": "Idle"
+          }
+        }
+      ],
+      "durationS": 20,
+      "branches": [
+        {
+          "on": "always",
+          "goto": "answer_station_06_water"
+        }
+      ],
+      "teaching": {
+        "stage": "RECOVERY",
+        "stageBudgetS": 20,
+        "responseScope": "choral",
+        "participationMode": "whole_class",
+        "skillIds": [
+          "polite_request"
+        ],
+        "evidencePolicy": "participation",
+        "recovery": {
+          "easierActivityId": "request_frame",
+          "safeDefaultActivityId": "answer_station_06_water"
+        }
+      }
+    },
+    {
+      "id": "answer_station_06_water",
+      "scene": "roleplay",
+      "props": {
+        "environment": "answer station market",
+        "aiRole": "shopkeeper",
+        "studentRole": "selected customer",
+        "targetPhrases": [
+          "I would like water, please."
+        ]
+      },
+      "narration": [
+        {
+          "text": "Next customer, ask for water. Press Ready, then speak.",
+          "act": {
+            "emotion": "question",
+            "motion": "Question"
+          }
+        }
+      ],
+      "durationS": 30,
+      "expect": {
+        "kind": "speech",
+        "correct": [
+          "i would like water please"
+        ],
+        "acceptFuzzy": [
+          "i like water please",
+          "i would like the water please"
+        ]
+      },
+      "branches": [
+        {
+          "on": "correct",
+          "goto": "answer_station_07_apple",
+          "narration": [
+            {
+              "text": "Thank you. Here is your water.",
+              "act": {
+                "emotion": "happy",
+                "motion": "Happy"
+              }
+            }
+          ]
+        },
+        {
+          "on": "near",
+          "goto": "answer_station_help_06_water",
+          "narration": [
+            {
+              "text": "Let us add the missing words together.",
+              "act": {
+                "emotion": "curious",
+                "motion": "Curious"
+              }
+            }
+          ]
+        },
+        {
+          "on": "wrong",
+          "goto": "answer_station_help_06_water",
+          "narration": [
+            {
+              "text": "Let us build the request together.",
+              "act": {
+                "emotion": "neutral",
+                "motion": "Idle"
+              }
+            }
+          ]
+        },
+        {
+          "on": "uncertain",
+          "goto": "answer_station_help_06_water",
+          "narration": [
+            {
+              "text": "We will use the sentence frame together.",
+              "act": {
+                "emotion": "neutral",
+                "motion": "Idle"
+              }
+            }
+          ]
+        },
+        {
+          "on": "unhandled",
+          "goto": "answer_station_help_06_water",
+          "narration": [
+            {
+              "text": "For this turn, let us practise our market request.",
+              "act": {
+                "emotion": "neutral",
+                "motion": "Idle"
+              }
+            }
+          ]
+        },
+        {
+          "on": "silence",
+          "goto": "answer_station_help_06_water",
+          "narration": [
+            {
+              "text": "No problem. Look at the sentence frame.",
+              "act": {
+                "emotion": "neutral",
+                "motion": "Idle"
+              }
+            }
+          ]
+        },
+        {
+          "on": "timeout",
+          "goto": "answer_station_help_06_water",
+          "narration": [
+            {
+              "text": "We will use the sentence frame together.",
+              "act": {
+                "emotion": "neutral",
+                "motion": "Idle"
+              }
+            }
+          ]
+        }
+      ],
+      "teaching": {
+        "stage": "SAMPLED_RETRIEVAL",
+        "stageBudgetS": 30,
+        "responseScope": "selected_individual",
+        "participationMode": "selected_individual",
+        "skillIds": [
+          "polite_request"
+        ],
+        "evidencePolicy": "individual",
+        "recovery": {
+          "easierActivityId": "answer_station_help_06_water",
+          "safeDefaultActivityId": "answer_station_07_apple"
+        }
+      }
+    },
+    {
+      "id": "answer_station_help_06_water",
+      "scene": "sentence_builder",
+      "props": {
+        "tokens": [
+          {
+            "id": "i_would_like",
+            "text": "I would like"
+          },
+          {
+            "id": "food",
+            "text": "water"
+          },
+          {
+            "id": "please",
+            "text": "please."
+          }
+        ],
+        "placed": [
+          "i_would_like",
+          "food",
+          "please"
+        ],
+        "target": "I would like water, please."
+      },
+      "narration": [
+        {
+          "text": "Everyone, read together: I would like — water — please.",
+          "act": {
+            "emotion": "neutral",
+            "motion": "Idle"
+          }
+        }
+      ],
+      "durationS": 20,
+      "branches": [
+        {
+          "on": "always",
+          "goto": "answer_station_07_apple"
+        }
+      ],
+      "teaching": {
+        "stage": "RECOVERY",
+        "stageBudgetS": 20,
+        "responseScope": "choral",
+        "participationMode": "whole_class",
+        "skillIds": [
+          "polite_request"
+        ],
+        "evidencePolicy": "participation",
+        "recovery": {
+          "easierActivityId": "request_frame",
+          "safeDefaultActivityId": "answer_station_07_apple"
+        }
+      }
+    },
+    {
+      "id": "answer_station_07_apple",
+      "scene": "roleplay",
+      "props": {
+        "environment": "answer station market",
+        "aiRole": "shopkeeper",
+        "studentRole": "selected customer",
+        "targetPhrases": [
+          "I would like an apple, please."
+        ]
+      },
+      "narration": [
+        {
+          "text": "Next customer, ask for an apple again. Press Ready, then speak.",
+          "act": {
+            "emotion": "question",
+            "motion": "Question"
+          }
+        }
+      ],
+      "durationS": 30,
+      "expect": {
+        "kind": "speech",
+        "correct": [
+          "i would like an apple please"
+        ],
+        "acceptFuzzy": [
+          "i like an apple please",
+          "i would like apple please"
+        ]
+      },
+      "branches": [
+        {
+          "on": "correct",
+          "goto": "answer_station_08_bread",
+          "narration": [
+            {
+              "text": "Thank you. Here is your apple.",
+              "act": {
+                "emotion": "happy",
+                "motion": "Happy"
+              }
+            }
+          ]
+        },
+        {
+          "on": "near",
+          "goto": "answer_station_help_07_apple",
+          "narration": [
+            {
+              "text": "Let us add the missing words together.",
+              "act": {
+                "emotion": "curious",
+                "motion": "Curious"
+              }
+            }
+          ]
+        },
+        {
+          "on": "wrong",
+          "goto": "answer_station_help_07_apple",
+          "narration": [
+            {
+              "text": "Let us build the request together.",
+              "act": {
+                "emotion": "neutral",
+                "motion": "Idle"
+              }
+            }
+          ]
+        },
+        {
+          "on": "uncertain",
+          "goto": "answer_station_help_07_apple",
+          "narration": [
+            {
+              "text": "We will use the sentence frame together.",
+              "act": {
+                "emotion": "neutral",
+                "motion": "Idle"
+              }
+            }
+          ]
+        },
+        {
+          "on": "unhandled",
+          "goto": "answer_station_help_07_apple",
+          "narration": [
+            {
+              "text": "For this turn, let us practise our market request.",
+              "act": {
+                "emotion": "neutral",
+                "motion": "Idle"
+              }
+            }
+          ]
+        },
+        {
+          "on": "silence",
+          "goto": "answer_station_help_07_apple",
+          "narration": [
+            {
+              "text": "No problem. Look at the sentence frame.",
+              "act": {
+                "emotion": "neutral",
+                "motion": "Idle"
+              }
+            }
+          ]
+        },
+        {
+          "on": "timeout",
+          "goto": "answer_station_help_07_apple",
+          "narration": [
+            {
+              "text": "We will use the sentence frame together.",
+              "act": {
+                "emotion": "neutral",
+                "motion": "Idle"
+              }
+            }
+          ]
+        }
+      ],
+      "teaching": {
+        "stage": "SAMPLED_RETRIEVAL",
+        "stageBudgetS": 30,
+        "responseScope": "selected_individual",
+        "participationMode": "selected_individual",
+        "skillIds": [
+          "polite_request"
+        ],
+        "evidencePolicy": "individual",
+        "recovery": {
+          "easierActivityId": "answer_station_help_07_apple",
+          "safeDefaultActivityId": "answer_station_08_bread"
+        }
+      }
+    },
+    {
+      "id": "answer_station_help_07_apple",
+      "scene": "sentence_builder",
+      "props": {
+        "tokens": [
+          {
+            "id": "i_would_like",
+            "text": "I would like"
+          },
+          {
+            "id": "food",
+            "text": "an apple"
+          },
+          {
+            "id": "please",
+            "text": "please."
+          }
+        ],
+        "placed": [
+          "i_would_like",
+          "food",
+          "please"
+        ],
+        "target": "I would like an apple, please."
+      },
+      "narration": [
+        {
+          "text": "Everyone, read together: I would like — an apple — please.",
+          "act": {
+            "emotion": "neutral",
+            "motion": "Idle"
+          }
+        }
+      ],
+      "durationS": 20,
+      "branches": [
+        {
+          "on": "always",
+          "goto": "answer_station_08_bread"
+        }
+      ],
+      "teaching": {
+        "stage": "RECOVERY",
+        "stageBudgetS": 20,
+        "responseScope": "choral",
+        "participationMode": "whole_class",
+        "skillIds": [
+          "polite_request"
+        ],
+        "evidencePolicy": "participation",
+        "recovery": {
+          "easierActivityId": "request_frame",
+          "safeDefaultActivityId": "answer_station_08_bread"
+        }
+      }
+    },
+    {
+      "id": "answer_station_08_bread",
+      "scene": "roleplay",
+      "props": {
+        "environment": "answer station market",
+        "aiRole": "shopkeeper",
+        "studentRole": "selected customer",
+        "targetPhrases": [
+          "I would like bread, please."
+        ]
+      },
+      "narration": [
+        {
+          "text": "Last customer, ask for bread. Press Ready, then speak.",
+          "act": {
+            "emotion": "question",
+            "motion": "Question"
+          }
+        }
+      ],
+      "durationS": 30,
+      "expect": {
+        "kind": "speech",
+        "correct": [
+          "i would like bread please"
+        ],
+        "acceptFuzzy": [
+          "i like bread please",
+          "i would like the bread please"
+        ]
+      },
+      "branches": [
+        {
+          "on": "correct",
+          "goto": "explore_transfer",
+          "narration": [
+            {
+              "text": "Thank you. Here is your bread.",
+              "act": {
+                "emotion": "happy",
+                "motion": "Happy"
+              }
+            }
+          ]
+        },
+        {
+          "on": "near",
+          "goto": "answer_station_help_08_bread",
+          "narration": [
+            {
+              "text": "Let us add the missing words together.",
+              "act": {
+                "emotion": "curious",
+                "motion": "Curious"
+              }
+            }
+          ]
+        },
+        {
+          "on": "wrong",
+          "goto": "answer_station_help_08_bread",
+          "narration": [
+            {
+              "text": "Let us build the request together.",
+              "act": {
+                "emotion": "neutral",
+                "motion": "Idle"
+              }
+            }
+          ]
+        },
+        {
+          "on": "uncertain",
+          "goto": "answer_station_help_08_bread",
+          "narration": [
+            {
+              "text": "We will use the sentence frame together.",
+              "act": {
+                "emotion": "neutral",
+                "motion": "Idle"
+              }
+            }
+          ]
+        },
+        {
+          "on": "unhandled",
+          "goto": "answer_station_help_08_bread",
+          "narration": [
+            {
+              "text": "For this turn, let us practise our market request.",
+              "act": {
+                "emotion": "neutral",
+                "motion": "Idle"
+              }
+            }
+          ]
+        },
+        {
+          "on": "silence",
+          "goto": "answer_station_help_08_bread",
+          "narration": [
+            {
+              "text": "No problem. Look at the sentence frame.",
+              "act": {
+                "emotion": "neutral",
+                "motion": "Idle"
+              }
+            }
+          ]
+        },
+        {
+          "on": "timeout",
+          "goto": "answer_station_help_08_bread",
+          "narration": [
+            {
+              "text": "We will use the sentence frame together.",
+              "act": {
+                "emotion": "neutral",
+                "motion": "Idle"
+              }
+            }
+          ]
+        }
+      ],
+      "teaching": {
+        "stage": "SAMPLED_RETRIEVAL",
+        "stageBudgetS": 30,
+        "responseScope": "selected_individual",
+        "participationMode": "selected_individual",
+        "skillIds": [
+          "polite_request"
+        ],
+        "evidencePolicy": "individual",
+        "recovery": {
+          "easierActivityId": "answer_station_help_08_bread",
+          "safeDefaultActivityId": "explore_transfer"
+        }
+      }
+    },
+    {
+      "id": "answer_station_help_08_bread",
+      "scene": "sentence_builder",
+      "props": {
+        "tokens": [
+          {
+            "id": "i_would_like",
+            "text": "I would like"
+          },
+          {
+            "id": "food",
+            "text": "bread"
+          },
+          {
+            "id": "please",
+            "text": "please."
+          }
+        ],
+        "placed": [
+          "i_would_like",
+          "food",
+          "please"
+        ],
+        "target": "I would like bread, please."
+      },
+      "narration": [
+        {
+          "text": "Everyone, read together: I would like — bread — please.",
+          "act": {
+            "emotion": "neutral",
+            "motion": "Idle"
+          }
+        }
+      ],
+      "durationS": 20,
       "branches": [
         {
           "on": "always",
@@ -1130,15 +2485,15 @@
       ],
       "teaching": {
         "stage": "RECOVERY",
-        "stageBudgetS": 60,
-        "responseScope": "selected_individual",
-        "participationMode": "selected_individual",
+        "stageBudgetS": 20,
+        "responseScope": "choral",
+        "participationMode": "whole_class",
         "skillIds": [
           "polite_request"
         ],
         "evidencePolicy": "participation",
         "recovery": {
-          "easierActivityId": "answer_station_help",
+          "easierActivityId": "request_frame",
           "safeDefaultActivityId": "explore_transfer"
         }
       }

@@ -20,6 +20,7 @@ It implements I1–I10 from [the integration test plan](../docs/4-build/tracker.
 
 ```bash
 ./scripts/product-smoke.sh             # process/socket Core wire path; no browser audio
+./scripts/composed-smoke.sh            # opt-in real Piper/ASR + Chromium media composition
 python3 tests/run.py                  # everything, ~9 min
 python3 tests/run.py I1 I6            # just those
 python3 tests/run.py --fast           # skip tests that play a lesson in real time

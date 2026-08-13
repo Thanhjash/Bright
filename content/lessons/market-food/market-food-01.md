@@ -350,7 +350,7 @@ props:
 duration_s: 60
 say:
   - "Now selected customers will visit the answer station. Wait for your name, walk to the microphone, then press Ready. @neutral"
-goto: answer_station
+goto: answer_station_01_apple
 teaching:
   stage: SAMPLED_RETRIEVAL
   stageBudgetS: 60
@@ -358,10 +358,10 @@ teaching:
   participationMode: selected_individual
   skillIds: [polite_request]
   evidencePolicy: participation
-  recovery: { easierActivityId: request_frame, safeDefaultActivityId: answer_station }
+  recovery: { easierActivityId: request_frame, safeDefaultActivityId: answer_station_01_apple }
 ```
 
-## answer_station — SAMPLED_RETRIEVAL
+## answer_station_01_apple — SAMPLED_RETRIEVAL
 
 ```yaml
 scene: roleplay
@@ -369,54 +369,395 @@ props:
   environment: answer station market
   aiRole: shopkeeper
   studentRole: selected customer
-  targetPhrases: ["I would like an apple, please.", "I would like a banana, please.", "I would like bread, please.", "I would like an egg, please.", "I would like rice, please.", "I would like water, please."]
+  targetPhrases: ["I would like an apple, please."]
+duration_s: 30
 say:
-  - "Welcome to the market. What would you like? Press Ready, then speak. @question"
+  - "Customer one, welcome to the market. Ask for an apple. Press Ready, then speak. @question"
 expect:
   kind: speech
-  correct: ["i would like an apple please", "i would like a banana please", "i would like bread please", "i would like an egg please", "i would like rice please", "i would like water please"]
-  fuzzy: ["i like an apple please", "i would like apple please", "i would like water"]
+  correct: ["i would like an apple please"]
+  fuzzy: ["i like an apple please", "i would like apple please"]
 on:
-  correct: { goto: explore_transfer, say: ["Thank you. Here you are. @happy"] }
-  near: { goto: answer_station_help, say: ["I heard your request. Let us add the missing words together. @curious"] }
-  wrong: { goto: answer_station_help, say: ["Let us build the request together. @neutral"] }
-  uncertain: { goto: answer_station_help, say: ["I could not hear one clear voice. We will use the sentence frame. @neutral"] }
-  unhandled: { goto: answer_station_help, say: ["That is an interesting thought. For this turn, let us practise our market request. @neutral"] }
-  silence: { goto: answer_station_help, say: ["No problem. Look at the sentence frame. @neutral"] }
-  timeout: { goto: answer_station_help, say: ["We will use the sentence frame together. @neutral"] }
+  correct: { goto: answer_station_02_banana, say: ["Thank you. Here is your apple. @happy"] }
+  near: { goto: answer_station_help_01_apple, say: ["I heard your request. Let us add the missing words together. @curious"] }
+  wrong: { goto: answer_station_help_01_apple, say: ["Let us build the request together. @neutral"] }
+  uncertain: { goto: answer_station_help_01_apple, say: ["I could not hear one clear voice. We will use the sentence frame. @neutral"] }
+  unhandled: { goto: answer_station_help_01_apple, say: ["For this turn, let us practise our market request. @neutral"] }
+  silence: { goto: answer_station_help_01_apple, say: ["No problem. Look at the sentence frame. @neutral"] }
+  timeout: { goto: answer_station_help_01_apple, say: ["We will use the sentence frame together. @neutral"] }
 teaching:
   stage: SAMPLED_RETRIEVAL
-  stageBudgetS: 360
+  stageBudgetS: 30
   responseScope: selected_individual
   participationMode: selected_individual
   skillIds: [polite_request]
   evidencePolicy: individual
-  recovery: { easierActivityId: answer_station_help, safeDefaultActivityId: explore_transfer }
+  recovery: { easierActivityId: answer_station_help_01_apple, safeDefaultActivityId: answer_station_02_banana }
 ```
 
-## answer_station_help — RECOVERY
+## answer_station_help_01_apple — RECOVERY
 
 ```yaml
 scene: sentence_builder
 props:
-  tokens:
-    - { id: i_would_like, text: I would like }
-    - { id: food, text: an apple }
-    - { id: please, text: please. }
+  tokens: [{ id: i_would_like, text: I would like }, { id: food, text: an apple }, { id: please, text: please. }]
   placed: [i_would_like, food, please]
   target: "I would like an apple, please."
-duration_s: 60
+duration_s: 20
 say:
-  - "Read the three chunks with me: I would like — an apple — please. @neutral"
-goto: explore_transfer
+  - "Everyone, read the three chunks together: I would like — an apple — please. @neutral"
+goto: answer_station_02_banana
 teaching:
   stage: RECOVERY
-  stageBudgetS: 60
+  stageBudgetS: 20
+  responseScope: choral
+  participationMode: whole_class
+  skillIds: [polite_request]
+  evidencePolicy: participation
+  recovery: { easierActivityId: request_frame, safeDefaultActivityId: answer_station_02_banana }
+```
+
+## answer_station_02_banana — SAMPLED_RETRIEVAL
+
+```yaml
+scene: roleplay
+props: { environment: answer station market, aiRole: shopkeeper, studentRole: selected customer, targetPhrases: ["I would like a banana, please."] }
+duration_s: 30
+say:
+  - "Next customer, ask for a banana. Press Ready, then speak. @question"
+expect:
+  kind: speech
+  correct: ["i would like a banana please"]
+  fuzzy: ["i like a banana please", "i would like banana please"]
+on:
+  correct: { goto: answer_station_03_bread, say: ["Thank you. Here is your banana. @happy"] }
+  near: { goto: answer_station_help_02_banana, say: ["Let us add the missing words together. @curious"] }
+  wrong: { goto: answer_station_help_02_banana, say: ["Let us build the request together. @neutral"] }
+  uncertain: { goto: answer_station_help_02_banana, say: ["We will use the sentence frame together. @neutral"] }
+  unhandled: { goto: answer_station_help_02_banana, say: ["For this turn, let us practise our market request. @neutral"] }
+  silence: { goto: answer_station_help_02_banana, say: ["No problem. Look at the sentence frame. @neutral"] }
+  timeout: { goto: answer_station_help_02_banana, say: ["We will use the sentence frame together. @neutral"] }
+teaching:
+  stage: SAMPLED_RETRIEVAL
+  stageBudgetS: 30
   responseScope: selected_individual
   participationMode: selected_individual
   skillIds: [polite_request]
+  evidencePolicy: individual
+  recovery: { easierActivityId: answer_station_help_02_banana, safeDefaultActivityId: answer_station_03_bread }
+```
+
+## answer_station_help_02_banana — RECOVERY
+
+```yaml
+scene: sentence_builder
+props: { tokens: [{ id: i_would_like, text: I would like }, { id: food, text: a banana }, { id: please, text: please. }], placed: [i_would_like, food, please], target: "I would like a banana, please." }
+duration_s: 20
+say:
+  - "Everyone, read together: I would like — a banana — please. @neutral"
+goto: answer_station_03_bread
+teaching:
+  stage: RECOVERY
+  stageBudgetS: 20
+  responseScope: choral
+  participationMode: whole_class
+  skillIds: [polite_request]
   evidencePolicy: participation
-  recovery: { easierActivityId: answer_station_help, safeDefaultActivityId: explore_transfer }
+  recovery: { easierActivityId: request_frame, safeDefaultActivityId: answer_station_03_bread }
+```
+
+## answer_station_03_bread — SAMPLED_RETRIEVAL
+
+```yaml
+scene: roleplay
+props: { environment: answer station market, aiRole: shopkeeper, studentRole: selected customer, targetPhrases: ["I would like bread, please."] }
+duration_s: 30
+say:
+  - "Next customer, ask for bread. Press Ready, then speak. @question"
+expect:
+  kind: speech
+  correct: ["i would like bread please"]
+  fuzzy: ["i like bread please", "i would like the bread please"]
+on:
+  correct: { goto: answer_station_04_egg, say: ["Thank you. Here is your bread. @happy"] }
+  near: { goto: answer_station_help_03_bread, say: ["Let us add the missing words together. @curious"] }
+  wrong: { goto: answer_station_help_03_bread, say: ["Let us build the request together. @neutral"] }
+  uncertain: { goto: answer_station_help_03_bread, say: ["We will use the sentence frame together. @neutral"] }
+  unhandled: { goto: answer_station_help_03_bread, say: ["For this turn, let us practise our market request. @neutral"] }
+  silence: { goto: answer_station_help_03_bread, say: ["No problem. Look at the sentence frame. @neutral"] }
+  timeout: { goto: answer_station_help_03_bread, say: ["We will use the sentence frame together. @neutral"] }
+teaching:
+  stage: SAMPLED_RETRIEVAL
+  stageBudgetS: 30
+  responseScope: selected_individual
+  participationMode: selected_individual
+  skillIds: [polite_request]
+  evidencePolicy: individual
+  recovery: { easierActivityId: answer_station_help_03_bread, safeDefaultActivityId: answer_station_04_egg }
+```
+
+## answer_station_help_03_bread — RECOVERY
+
+```yaml
+scene: sentence_builder
+props: { tokens: [{ id: i_would_like, text: I would like }, { id: food, text: bread }, { id: please, text: please. }], placed: [i_would_like, food, please], target: "I would like bread, please." }
+duration_s: 20
+say:
+  - "Everyone, read together: I would like — bread — please. @neutral"
+goto: answer_station_04_egg
+teaching:
+  stage: RECOVERY
+  stageBudgetS: 20
+  responseScope: choral
+  participationMode: whole_class
+  skillIds: [polite_request]
+  evidencePolicy: participation
+  recovery: { easierActivityId: request_frame, safeDefaultActivityId: answer_station_04_egg }
+```
+
+## answer_station_04_egg — SAMPLED_RETRIEVAL
+
+```yaml
+scene: roleplay
+props: { environment: answer station market, aiRole: shopkeeper, studentRole: selected customer, targetPhrases: ["I would like an egg, please."] }
+duration_s: 30
+say:
+  - "Next customer, ask for an egg. Press Ready, then speak. @question"
+expect:
+  kind: speech
+  correct: ["i would like an egg please"]
+  fuzzy: ["i like an egg please", "i would like egg please"]
+on:
+  correct: { goto: answer_station_05_rice, say: ["Thank you. Here is your egg. @happy"] }
+  near: { goto: answer_station_help_04_egg, say: ["Let us add the missing words together. @curious"] }
+  wrong: { goto: answer_station_help_04_egg, say: ["Let us build the request together. @neutral"] }
+  uncertain: { goto: answer_station_help_04_egg, say: ["We will use the sentence frame together. @neutral"] }
+  unhandled: { goto: answer_station_help_04_egg, say: ["For this turn, let us practise our market request. @neutral"] }
+  silence: { goto: answer_station_help_04_egg, say: ["No problem. Look at the sentence frame. @neutral"] }
+  timeout: { goto: answer_station_help_04_egg, say: ["We will use the sentence frame together. @neutral"] }
+teaching:
+  stage: SAMPLED_RETRIEVAL
+  stageBudgetS: 30
+  responseScope: selected_individual
+  participationMode: selected_individual
+  skillIds: [polite_request]
+  evidencePolicy: individual
+  recovery: { easierActivityId: answer_station_help_04_egg, safeDefaultActivityId: answer_station_05_rice }
+```
+
+## answer_station_help_04_egg — RECOVERY
+
+```yaml
+scene: sentence_builder
+props: { tokens: [{ id: i_would_like, text: I would like }, { id: food, text: an egg }, { id: please, text: please. }], placed: [i_would_like, food, please], target: "I would like an egg, please." }
+duration_s: 20
+say:
+  - "Everyone, read together: I would like — an egg — please. @neutral"
+goto: answer_station_05_rice
+teaching:
+  stage: RECOVERY
+  stageBudgetS: 20
+  responseScope: choral
+  participationMode: whole_class
+  skillIds: [polite_request]
+  evidencePolicy: participation
+  recovery: { easierActivityId: request_frame, safeDefaultActivityId: answer_station_05_rice }
+```
+
+## answer_station_05_rice — SAMPLED_RETRIEVAL
+
+```yaml
+scene: roleplay
+props: { environment: answer station market, aiRole: shopkeeper, studentRole: selected customer, targetPhrases: ["I would like rice, please."] }
+duration_s: 30
+say:
+  - "Next customer, ask for rice. Press Ready, then speak. @question"
+expect:
+  kind: speech
+  correct: ["i would like rice please"]
+  fuzzy: ["i like rice please", "i would like the rice please"]
+on:
+  correct: { goto: answer_station_06_water, say: ["Thank you. Here is your rice. @happy"] }
+  near: { goto: answer_station_help_05_rice, say: ["Let us add the missing words together. @curious"] }
+  wrong: { goto: answer_station_help_05_rice, say: ["Let us build the request together. @neutral"] }
+  uncertain: { goto: answer_station_help_05_rice, say: ["We will use the sentence frame together. @neutral"] }
+  unhandled: { goto: answer_station_help_05_rice, say: ["For this turn, let us practise our market request. @neutral"] }
+  silence: { goto: answer_station_help_05_rice, say: ["No problem. Look at the sentence frame. @neutral"] }
+  timeout: { goto: answer_station_help_05_rice, say: ["We will use the sentence frame together. @neutral"] }
+teaching:
+  stage: SAMPLED_RETRIEVAL
+  stageBudgetS: 30
+  responseScope: selected_individual
+  participationMode: selected_individual
+  skillIds: [polite_request]
+  evidencePolicy: individual
+  recovery: { easierActivityId: answer_station_help_05_rice, safeDefaultActivityId: answer_station_06_water }
+```
+
+## answer_station_help_05_rice — RECOVERY
+
+```yaml
+scene: sentence_builder
+props: { tokens: [{ id: i_would_like, text: I would like }, { id: food, text: rice }, { id: please, text: please. }], placed: [i_would_like, food, please], target: "I would like rice, please." }
+duration_s: 20
+say:
+  - "Everyone, read together: I would like — rice — please. @neutral"
+goto: answer_station_06_water
+teaching:
+  stage: RECOVERY
+  stageBudgetS: 20
+  responseScope: choral
+  participationMode: whole_class
+  skillIds: [polite_request]
+  evidencePolicy: participation
+  recovery: { easierActivityId: request_frame, safeDefaultActivityId: answer_station_06_water }
+```
+
+## answer_station_06_water — SAMPLED_RETRIEVAL
+
+```yaml
+scene: roleplay
+props: { environment: answer station market, aiRole: shopkeeper, studentRole: selected customer, targetPhrases: ["I would like water, please."] }
+duration_s: 30
+say:
+  - "Next customer, ask for water. Press Ready, then speak. @question"
+expect:
+  kind: speech
+  correct: ["i would like water please"]
+  fuzzy: ["i like water please", "i would like the water please"]
+on:
+  correct: { goto: answer_station_07_apple, say: ["Thank you. Here is your water. @happy"] }
+  near: { goto: answer_station_help_06_water, say: ["Let us add the missing words together. @curious"] }
+  wrong: { goto: answer_station_help_06_water, say: ["Let us build the request together. @neutral"] }
+  uncertain: { goto: answer_station_help_06_water, say: ["We will use the sentence frame together. @neutral"] }
+  unhandled: { goto: answer_station_help_06_water, say: ["For this turn, let us practise our market request. @neutral"] }
+  silence: { goto: answer_station_help_06_water, say: ["No problem. Look at the sentence frame. @neutral"] }
+  timeout: { goto: answer_station_help_06_water, say: ["We will use the sentence frame together. @neutral"] }
+teaching:
+  stage: SAMPLED_RETRIEVAL
+  stageBudgetS: 30
+  responseScope: selected_individual
+  participationMode: selected_individual
+  skillIds: [polite_request]
+  evidencePolicy: individual
+  recovery: { easierActivityId: answer_station_help_06_water, safeDefaultActivityId: answer_station_07_apple }
+```
+
+## answer_station_help_06_water — RECOVERY
+
+```yaml
+scene: sentence_builder
+props: { tokens: [{ id: i_would_like, text: I would like }, { id: food, text: water }, { id: please, text: please. }], placed: [i_would_like, food, please], target: "I would like water, please." }
+duration_s: 20
+say:
+  - "Everyone, read together: I would like — water — please. @neutral"
+goto: answer_station_07_apple
+teaching:
+  stage: RECOVERY
+  stageBudgetS: 20
+  responseScope: choral
+  participationMode: whole_class
+  skillIds: [polite_request]
+  evidencePolicy: participation
+  recovery: { easierActivityId: request_frame, safeDefaultActivityId: answer_station_07_apple }
+```
+
+## answer_station_07_apple — SAMPLED_RETRIEVAL
+
+```yaml
+scene: roleplay
+props: { environment: answer station market, aiRole: shopkeeper, studentRole: selected customer, targetPhrases: ["I would like an apple, please."] }
+duration_s: 30
+say:
+  - "Next customer, ask for an apple again. Press Ready, then speak. @question"
+expect:
+  kind: speech
+  correct: ["i would like an apple please"]
+  fuzzy: ["i like an apple please", "i would like apple please"]
+on:
+  correct: { goto: answer_station_08_bread, say: ["Thank you. Here is your apple. @happy"] }
+  near: { goto: answer_station_help_07_apple, say: ["Let us add the missing words together. @curious"] }
+  wrong: { goto: answer_station_help_07_apple, say: ["Let us build the request together. @neutral"] }
+  uncertain: { goto: answer_station_help_07_apple, say: ["We will use the sentence frame together. @neutral"] }
+  unhandled: { goto: answer_station_help_07_apple, say: ["For this turn, let us practise our market request. @neutral"] }
+  silence: { goto: answer_station_help_07_apple, say: ["No problem. Look at the sentence frame. @neutral"] }
+  timeout: { goto: answer_station_help_07_apple, say: ["We will use the sentence frame together. @neutral"] }
+teaching:
+  stage: SAMPLED_RETRIEVAL
+  stageBudgetS: 30
+  responseScope: selected_individual
+  participationMode: selected_individual
+  skillIds: [polite_request]
+  evidencePolicy: individual
+  recovery: { easierActivityId: answer_station_help_07_apple, safeDefaultActivityId: answer_station_08_bread }
+```
+
+## answer_station_help_07_apple — RECOVERY
+
+```yaml
+scene: sentence_builder
+props: { tokens: [{ id: i_would_like, text: I would like }, { id: food, text: an apple }, { id: please, text: please. }], placed: [i_would_like, food, please], target: "I would like an apple, please." }
+duration_s: 20
+say:
+  - "Everyone, read together: I would like — an apple — please. @neutral"
+goto: answer_station_08_bread
+teaching:
+  stage: RECOVERY
+  stageBudgetS: 20
+  responseScope: choral
+  participationMode: whole_class
+  skillIds: [polite_request]
+  evidencePolicy: participation
+  recovery: { easierActivityId: request_frame, safeDefaultActivityId: answer_station_08_bread }
+```
+
+## answer_station_08_bread — SAMPLED_RETRIEVAL
+
+```yaml
+scene: roleplay
+props: { environment: answer station market, aiRole: shopkeeper, studentRole: selected customer, targetPhrases: ["I would like bread, please."] }
+duration_s: 30
+say:
+  - "Last customer, ask for bread. Press Ready, then speak. @question"
+expect:
+  kind: speech
+  correct: ["i would like bread please"]
+  fuzzy: ["i like bread please", "i would like the bread please"]
+on:
+  correct: { goto: explore_transfer, say: ["Thank you. Here is your bread. @happy"] }
+  near: { goto: answer_station_help_08_bread, say: ["Let us add the missing words together. @curious"] }
+  wrong: { goto: answer_station_help_08_bread, say: ["Let us build the request together. @neutral"] }
+  uncertain: { goto: answer_station_help_08_bread, say: ["We will use the sentence frame together. @neutral"] }
+  unhandled: { goto: answer_station_help_08_bread, say: ["For this turn, let us practise our market request. @neutral"] }
+  silence: { goto: answer_station_help_08_bread, say: ["No problem. Look at the sentence frame. @neutral"] }
+  timeout: { goto: answer_station_help_08_bread, say: ["We will use the sentence frame together. @neutral"] }
+teaching:
+  stage: SAMPLED_RETRIEVAL
+  stageBudgetS: 30
+  responseScope: selected_individual
+  participationMode: selected_individual
+  skillIds: [polite_request]
+  evidencePolicy: individual
+  recovery: { easierActivityId: answer_station_help_08_bread, safeDefaultActivityId: explore_transfer }
+```
+
+## answer_station_help_08_bread — RECOVERY
+
+```yaml
+scene: sentence_builder
+props: { tokens: [{ id: i_would_like, text: I would like }, { id: food, text: bread }, { id: please, text: please. }], placed: [i_would_like, food, please], target: "I would like bread, please." }
+duration_s: 20
+say:
+  - "Everyone, read together: I would like — bread — please. @neutral"
+goto: explore_transfer
+teaching:
+  stage: RECOVERY
+  stageBudgetS: 20
+  responseScope: choral
+  participationMode: whole_class
+  skillIds: [polite_request]
+  evidencePolicy: participation
+  recovery: { easierActivityId: request_frame, safeDefaultActivityId: explore_transfer }
 ```
 
 ## explore_transfer — EXPLORE_TRANSFER

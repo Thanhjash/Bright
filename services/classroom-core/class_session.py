@@ -11,13 +11,28 @@ from __future__ import annotations
 import asyncio
 import logging
 import hashlib
+import re
 import secrets
 import time
+import unicodedata
 from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any, Literal
 
 log = logging.getLogger("core.class_session")
+
+
+def _spoken_display_name(value: str) -> str:
+    """Return a short TTS-safe roster label without AIRI/control markup."""
+    normalized = unicodedata.normalize("NFKC", value)
+    normalized = re.sub(r"<\|.*?\|>|<[^>]*>|@[A-Za-z0-9_-]+", " ", normalized)
+    safe = "".join(
+        char
+        for char in normalized
+        if char in {" ", "-", "'"}
+        or unicodedata.category(char)[0] in {"L", "M", "N"}
+    )
+    return " ".join(safe.split())[:40].strip() or "Learner"
 
 
 class SessionState(StrEnum):
@@ -108,6 +123,10 @@ class ResponseAssignment:
     ready_deadline_at: int | None = None
     capture_ready: bool = False
     capture_started: bool = False
+    # A selected learner is called by Core, never by an agent or browser.  The
+    # response capability remains CREATED until this exact physical speech turn
+    # has completed successfully.
+    callout_speech_turn_id: str | None = None
     state: ResponseState = ResponseState.CREATED
     claimed_outcome: str | None = None
 
@@ -256,7 +275,11 @@ class CapabilityLeaseRegistry:
     def _lost_owner(self, reason: str) -> None:
         runner = getattr(self.core, "runner", None)
         controller = getattr(self.core, "session_controller", None)
-        if runner is not None and runner._pending_playback_turns and controller is not None:
+        if (
+            runner is not None
+            and controller is not None
+            and (runner._pending_playback_turns or controller._callout_assignment_id)
+        ):
             controller.session_state = SessionState.RECOVERING
             controller.publish_status(reason)
             controller.safe_pause(reason)
@@ -337,6 +360,33 @@ class ResponseAssignmentRegistry:
         if capture_id:
             self._capture_ids[capture_id] = assignment_id
         self.prune()
+        return assignment
+
+    def arm_capture(
+        self,
+        assignment_id: str,
+        *,
+        ttl_s: float | None = None,
+        ready_timeout_s: float = 20.0,
+    ) -> ResponseAssignment:
+        """Mint the physical-mic capability only once its callout is audible.
+
+        A selected learner must not lose setup time while Piper/AIRI is still
+        queuing the callout.  The assignment identity remains stable, but the
+        opaque capture id, response expiry and Ready deadline begin here.
+        """
+        assignment = self._resolve(assignment_id)
+        if assignment.state != ResponseState.CREATED:
+            raise AssignmentRejected(f"assignment is {assignment.state.lower()}")
+        if assignment.capture_id is None:
+            assignment.capture_id = "capture-" + secrets.token_urlsafe(18)
+            self._capture_ids[assignment.capture_id] = assignment_id
+        assignment.expires_at = time.monotonic() + (ttl_s or self.default_ttl_s)
+        assignment.ready_deadline_at = int(time.time() * 1000) + int(
+            max(0.1, ready_timeout_s) * 1000
+        )
+        assignment.capture_ready = False
+        assignment.capture_started = False
         return assignment
 
     def open(self, assignment_id: str) -> ResponseAssignment:
@@ -458,6 +508,10 @@ class ClassSessionController:
     _lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     _capture_watchdog: asyncio.Task[None] | None = None
     _capture_watchdog_id: str | None = None
+    _callout_watchdog: asyncio.Task[None] | None = None
+    _callout_assignment_id: str | None = None
+    _retry_target: str | None = None
+    _retry_activity_id: str | None = None
 
     def __post_init__(self) -> None:
         self.runner.session_controller = self
@@ -568,6 +622,9 @@ class ClassSessionController:
                 return None
 
             self._cancel_capture_watchdog()
+            self._cancel_callout_watchdog()
+            self._retry_target = None
+            self._retry_activity_id = None
             self.assignments.cancel_open(reason="transition")
             self.response_state = ResponseState.CANCELLED
             self.activity_state = ActivityState.TRANSITIONING
@@ -615,7 +672,12 @@ class ClassSessionController:
         )
         target = None
         if scope == "selected_individual" and participation == "selected_individual":
-            target = self._next_fair_target() if self.roster else getattr(self.core, "student_id", None)
+            if self._retry_activity_id == activity.id and self._retry_target in self.roster:
+                target = self._retry_target
+                self._retry_target = None
+                self._retry_activity_id = None
+            else:
+                target = self._next_fair_target() if self.roster else getattr(self.core, "student_id", None)
             if target is None:
                 scope = "uncertain"
         target_display_name = (
@@ -638,12 +700,15 @@ class ClassSessionController:
             skill_ids=skill_ids,
             evidence_policy=evidence_policy,
             capture_scope=capture_scope,
-            capture=capture,
-            ttl_s=max(float(getattr(self.runner, "silence_timeout_s", 15.0)) + 5.0, 10.0),
+            # Named speech uses a two-phase capability.  Its physical capture
+            # token and timer are minted after exact callout playback, so TTS
+            # queueing cannot consume the learner's Ready window.
+            capture=capture and not (target is not None and target_display_name is not None),
+            ttl_s=max(float(getattr(self.runner, "playback_ack_timeout_s", 10.0)) + 1.0, 2.0)
+            if capture and target is not None and target_display_name is not None
+            else max(float(getattr(self.runner, "silence_timeout_s", 15.0)) + 5.0, 10.0),
             ready_timeout_s=self.capture_ready_timeout_s,
         )
-        self.assignments.open(assignment.assignment_id)
-        self.response_state = ResponseState.OPEN
         self.core.store.update_lesson(
             decision_revision=self.decision_revision,
             response_turn_id=assignment.response_turn_id,
@@ -653,6 +718,27 @@ class ClassSessionController:
         self.runner._publish_position()
         payload = assignment.public()
         self.core.bus.publish("class.turn.assigned", payload)
+        # A named oral response is a two-step physical protocol.  Fairness
+        # selects the child first, then Core speaks a fixed pseudonymous
+        # callout.  The mic is deliberately not requested until Stage proves
+        # that *this* callout completed.  Hermes cannot bypass this gate.
+        if capture and target is not None and target_display_name:
+            spoken_name = _spoken_display_name(target_display_name)
+            assignment.callout_speech_turn_id = self.core.publish_speech(
+                f"{spoken_name}, it's your turn. Please answer now.",
+                source="core",
+                behavior="queue",
+                activity_id=activity.id,
+                activity_generation=generation,
+            )
+            self.response_state = ResponseState.CREATED
+            self.activity_state = ActivityState.NARRATING
+            self._watch_callout_playback(assignment)
+            self.publish_update("callout_pending")
+            return assignment
+
+        self.assignments.open(assignment.assignment_id)
+        self.response_state = ResponseState.OPEN
         if capture:
             self.core.bus.publish("response.capture.requested", assignment.capture_request())
             self._watch_capture_start(assignment)
@@ -660,6 +746,106 @@ class ClassSessionController:
             # Stage must explicitly prove readiness/start before Core arms VAD.
             self.activity_state = ActivityState.ARMING
         return assignment
+
+    def note_callout_playback_finished(self, speech_turn_id: str) -> bool:
+        """Open a selected oral turn only after its exact callout is audible.
+
+        The caller has already validated the Stage playback state machine.  We
+        still validate assignment/session/activity scope here because an old
+        ACK must never arm a newer learner's microphone.
+        """
+        assignment = self._pending_callout(speech_turn_id)
+        if assignment is None:
+            return False
+        if (
+            self.session_state != SessionState.RUNNING
+            or self.runner.current is None
+            or self.runner.current.id != assignment.activity_id
+            or self.runner._generation != assignment.activity_generation
+            or not self.runner.running
+            or self.runner.paused
+        ):
+            return False
+        self._cancel_callout_watchdog(assignment.assignment_id)
+        if assignment.capture_scope == "answer_station":
+            assignment = self.assignments.arm_capture(
+                assignment.assignment_id,
+                ttl_s=max(float(getattr(self.runner, "silence_timeout_s", 15.0)) + 5.0, 10.0),
+                ready_timeout_s=self.capture_ready_timeout_s,
+            )
+        self.assignments.open(assignment.assignment_id)
+        self.response_state = ResponseState.OPEN
+        # Refresh the browser-visible capability before capture.requested.
+        # Control correctly rejects expired assignments; without this update it
+        # would still see the short pre-callout expiry even though Core minted a
+        # fresh physical window above.
+        self.core.bus.publish("class.turn.assigned", assignment.public())
+        request = assignment.capture_request()
+        if request is not None:
+            self.core.bus.publish("response.capture.requested", request)
+            self._watch_capture_start(assignment)
+        self.activity_state = ActivityState.ARMING
+        self.publish_update("callout_completed")
+        return True
+
+    def note_callout_playback_failed(self, speech_turn_id: str, status: str) -> bool:
+        """Fail closed if a selected learner did not hear their callout."""
+        assignment = self._pending_callout(speech_turn_id)
+        if assignment is None:
+            return False
+        self._cancel_callout_watchdog(assignment.assignment_id)
+        self.safe_pause(f"callout_playback_{status}")
+        return True
+
+    def _pending_callout(self, speech_turn_id: str) -> ResponseAssignment | None:
+        assignment_id = self._callout_assignment_id
+        if assignment_id is None:
+            return None
+        assignment = self.assignments.get(assignment_id)
+        if (
+            assignment is None
+            or assignment.state != ResponseState.CREATED
+            or assignment.callout_speech_turn_id != speech_turn_id
+        ):
+            return None
+        return assignment
+
+    def _watch_callout_playback(self, assignment: ResponseAssignment) -> None:
+        self._cancel_callout_watchdog()
+        if assignment.callout_speech_turn_id is None:
+            return
+        self._callout_assignment_id = assignment.assignment_id
+        self._callout_watchdog = asyncio.ensure_future(
+            self._callout_playback_deadline(
+                assignment.assignment_id, assignment.callout_speech_turn_id
+            )
+        )
+
+    def _cancel_callout_watchdog(self, assignment_id: str | None = None) -> None:
+        if assignment_id is not None and assignment_id != self._callout_assignment_id:
+            return
+        task = self._callout_watchdog
+        if task is not None and not task.done() and task is not asyncio.current_task():
+            task.cancel()
+        self._callout_watchdog = None
+        self._callout_assignment_id = None
+
+    async def _callout_playback_deadline(
+        self, assignment_id: str, speech_turn_id: str
+    ) -> None:
+        try:
+            await asyncio.sleep(max(0.001, float(self.runner.playback_ack_timeout_s)))
+        except asyncio.CancelledError:
+            return
+        assignment = self.assignments.get(assignment_id)
+        if (
+            assignment is not None
+            and assignment.state == ResponseState.CREATED
+            and assignment.callout_speech_turn_id == speech_turn_id
+        ):
+            self._callout_watchdog = None
+            self._callout_assignment_id = None
+            self.safe_pause("callout_playback_ack_timeout")
 
     def note_capture_ready(self, payload: dict[str, Any]) -> ResponseAssignment:
         assignment = self._capture_assignment(payload)
@@ -746,7 +932,24 @@ class ClassSessionController:
         )
 
     def safe_pause(self, reason: str) -> None:
+        current = self.runner.current
+        pending = (
+            self.assignments.current_for_activity(
+                str(getattr(self.core, "session_id", None) or "unsessioned"),
+                getattr(current, "id", ""),
+                self.runner._generation,
+            )
+            if current is not None
+            else None
+        )
+        # A failed callout is not a completed turn.  Keep the Core-selected
+        # target across pause/resume, without incrementing the fairness budget
+        # or pretending that a child was called when they were not.
+        if pending is not None and pending.target and pending.state == ResponseState.CREATED:
+            self._retry_target = pending.target
+            self._retry_activity_id = pending.activity_id
         self._cancel_capture_watchdog()
+        self._cancel_callout_watchdog()
         self.session_state = SessionState.PAUSED
         self.pause_reason = reason
         self.activity_state = ActivityState.CANCELLED

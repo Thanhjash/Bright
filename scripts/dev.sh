@@ -30,6 +30,16 @@ HERMES_PORT="${HERMES_PORT:-8642}"
 c() { printf '\033[%sm%s\033[0m\n' "$1" "$2"; }
 pid_on() { ss -lptn "sport = :$1" 2>/dev/null | grep -oP 'pid=\K[0-9]+' | head -1; }
 
+# A checked-in sample value is not a credential.  Treating it as one used to
+# wire Core to a sidecar that could not authenticate, then spend its per-turn
+# timeout in front of children. Keep this deliberately small and explicit so
+# an operator can see why the authored path was selected.
+has_hermes_credential() {
+  local value="${HERMES_API_KEY:-}"
+  local lowered="${value,,}"
+  [[ -n "$value" && "$lowered" != change-me* && "$lowered" != changeme* && "$lowered" != placeholder* ]]
+}
+
 # NOTE: never use `pkill -f` here. The pattern matches this script's own command
 # line and kills the shell running it. Two separate agents hit that during
 # development. Always resolve the PID from the listening port instead.
@@ -112,7 +122,7 @@ start_hermes_if_ready() {
     c '0;33' "Hermes requested but HERMES_HOME/config.yaml is absent — skipped"
     return
   fi
-  if [[ -z "${HERMES_API_KEY:-}" || "${HERMES_API_KEY:-}" == CHANGE-ME* ]]; then
+  if ! has_hermes_credential; then
     c '0;33' "Hermes requested but HERMES_API_KEY is unset/placeholder — skipped"
     return
   fi
@@ -128,9 +138,9 @@ start_all() {
 
   # Missing hosted credentials must select the working authored path, not a
   # six-second network timeout on every answer.
-  if [[ "${BRIGHT_AGENT:-off}" == "hermes" && -z "${HERMES_API_KEY:-}" ]]; then
+  if [[ "${BRIGHT_AGENT:-off}" == "hermes" ]] && ! has_hermes_credential; then
     export BRIGHT_AGENT=off
-    c '0;33' "Hermes has no local API credential — BRIGHT_AGENT=off for this run"
+    c '0;33' "Hermes has no usable local API credential — BRIGHT_AGENT=off for this run"
   fi
 
   start_speech_if_ready

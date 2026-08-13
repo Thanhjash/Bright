@@ -44,6 +44,7 @@ def test_default_mode_is_secret_free_and_agent_off() -> None:
     assert args.core_url is None
     assert args.speech_url is None
     assert args.ui_url is None
+    assert args.require_agent_proposal is False
     smoke._validate_args(args)
 
 
@@ -52,6 +53,14 @@ def test_managed_hermes_refuses_missing_sidecar_credentials(monkeypatch: pytest.
     monkeypatch.delenv("HERMES_API_KEY", raising=False)
     args = smoke.build_parser().parse_args(["--agent", "hermes"])
     with pytest.raises(smoke.SmokeFailure, match="already-running pinned sidecar"):
+        smoke._validate_args(args)
+
+
+def test_managed_hermes_refuses_placeholder_credential(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("HERMES_API_URL", "http://127.0.0.1:8642")
+    monkeypatch.setenv("HERMES_API_KEY", "CHANGE-ME")
+    args = smoke.build_parser().parse_args(["--agent", "hermes"])
+    with pytest.raises(smoke.SmokeFailure, match="placeholder HERMES_API_KEY"):
         smoke._validate_args(args)
 
 
