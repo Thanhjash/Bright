@@ -221,6 +221,20 @@ def check_meta(lesson: LessonSrc, report: Report, *, release: bool = False) -> N
                     f"set namedTurnBudget: {authored_named_speech}, or add/remove selected-individual speech activities",
                 )
 
+        closure_ids = [
+            activity.id
+            for activity in lesson.activities
+            if (activity.teaching or {}).get("stage") == "CLOSURE"
+        ]
+        if len(closure_ids) != 1:
+            report.error(
+                2,
+                "",
+                f"autonomous lesson must declare exactly one CLOSURE activity ({len(closure_ids)} found)",
+                "Core needs one deterministic target when the closure reserve begins",
+                "mark exactly one activity teaching.stage: CLOSURE",
+            )
+
 
 def check_activity(activity: ActivitySrc, lesson: LessonSrc, report: Report,
                    asset_roots: tuple[Path, ...]) -> None:

@@ -37,12 +37,13 @@ function createFakeBackend(playDurationMs = 1): FakeBackend {
     async decode(bytes) {
       return { text: new TextDecoder().decode(bytes) } satisfies FakeAudio
     },
-    async play(audio, signal) {
+    async play(audio, signal, options) {
       // A muted backend MUST still take the full duration. Short-circuiting here is
       // exactly the bug PROTOCOL.md §6.4 forbids.
       if (signal.aborted)
         return
       played.push((audio as FakeAudio).text)
+      options?.onStarted?.({})
       await new Promise(resolve => setTimeout(resolve, playDurationMs))
     },
     getMouthOpen: () => backend.mouthOpen,
@@ -73,6 +74,80 @@ async function until(predicate: () => boolean, label: string, timeoutMs = 3000) 
 }
 
 describe('createSpeechPlayer — playback order (PROTOCOL.md §6.2)', () => {
+  it('reports segment start only after the backend confirms its source started', async () => {
+    const timeline: string[] = []
+    const backend: AudioBackend<unknown> = {
+      async decode(bytes) {
+        return bytes
+      },
+      async play(_audio, _signal, options) {
+        timeline.push('source.start')
+        options?.onStarted?.({ audioContextTime: 42.25 })
+        timeline.push('source.onended')
+      },
+      getMouthOpen: () => 0,
+      setMuted: () => {},
+      isMuted: () => false,
+      dispose: () => {},
+    }
+    const player = createSpeechPlayer({
+      audio: backend,
+      tts: async text => encode(text),
+      onSegmentStart: ({ text, audioContextTime }) => {
+        timeline.push(`segment.started:${text.trim()}:${audioContextTime}`)
+      },
+      onTurnEnd: () => timeline.push('turn.ended'),
+    })
+
+    const turn = player.speak({ turnId: 'speech-ack-order' })
+    await turn.push('Ready.')
+    await turn.end()
+
+    await until(() => timeline.includes('turn.ended'), 'turn ended')
+    expect(timeline).toEqual([
+      'source.start',
+      'segment.started:Ready.:42.25',
+      'source.onended',
+      'turn.ended',
+    ])
+  })
+
+  it('does not report segment start when cancellation wins before source start', async () => {
+    const onSegmentStart = vi.fn()
+    const onTurnCancel = vi.fn()
+    let enteredPlay!: () => void
+    const entered = new Promise<void>(resolve => { enteredPlay = resolve })
+    const backend: AudioBackend<unknown> = {
+      async decode(bytes) {
+        return bytes
+      },
+      async play(_audio, signal) {
+        enteredPlay()
+        await new Promise<void>(resolve => signal.addEventListener('abort', () => resolve(), { once: true }))
+      },
+      getMouthOpen: () => 0,
+      setMuted: () => {},
+      isMuted: () => false,
+      dispose: () => {},
+    }
+    const player = createSpeechPlayer({
+      audio: backend,
+      tts: async text => encode(text),
+      onSegmentStart,
+      onTurnCancel,
+    })
+
+    const turn = player.speak({ turnId: 'speech-cancel-before-start' })
+    await turn.push('Wait.')
+    await turn.end()
+    await entered
+    turn.cancel('superseded')
+
+    await until(() => onTurnCancel.mock.calls.length === 1, 'turn cancellation reported')
+    expect(onSegmentStart).not.toHaveBeenCalled()
+    expect(onTurnCancel).toHaveBeenCalledWith('speech-cancel-before-start', 'superseded')
+  })
+
   it('plays segments in TEXT order even when TTS finishes out of order', async () => {
     const backend = createFakeBackend()
     // Deliberately invert latency: later segments finish first.

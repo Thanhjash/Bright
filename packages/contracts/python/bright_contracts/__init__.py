@@ -30,6 +30,7 @@ EventType = Literal[
     "speech.turn.ended",
     "speech.cancel",
     "speech.barge_in.ack",
+    "speech.playback.observed",
     "avatar.act",
     "lesson.position",
     "lesson.started",
@@ -263,6 +264,7 @@ class SpeechBargeInAckPayload(BaseModel):
 
 class SpeechPlaybackStartedPayload(BaseModel):
     speech_turn_id: str = Field(alias="speechTurnId")
+    metrics: dict[str, float] | None = None
 
     model_config = {"populate_by_name": True}
 
@@ -274,6 +276,13 @@ class SpeechPlaybackFinishedPayload(BaseModel):
     metrics: dict[str, float] | None = None
 
     model_config = {"populate_by_name": True}
+
+
+class SpeechPlaybackObservedPayload(BaseModel):
+    speech_turn_id: str = Field(alias="speechTurnId")
+    status: Literal["completed", "cancelled", "failed"]
+
+    model_config = {"populate_by_name": True, "extra": "forbid"}
 
 
 SessionStatus = Literal[
@@ -660,7 +669,7 @@ __all__ = [
     "ClassroomStatusPayload", "SessionStatus", "ResponseScope",
     "SpeechBehavior", "SpeechSource", "SpeechTurnStartedPayload", "SpeechTextDeltaPayload",
     "SpeechTurnEndedPayload", "SpeechCancelPayload",
-    "SpeechPlaybackStartedPayload", "SpeechPlaybackFinishedPayload",
+    "SpeechPlaybackStartedPayload", "SpeechPlaybackFinishedPayload", "SpeechPlaybackObservedPayload",
     "SceneKind", "MediaItem", "SceneOverlay", "Scene",
     "LessonPosition", "Emotion", "EMOTION_MOTION_GROUP", "EmotionSpec", "ActPayload",
     "Narration", "Expect", "Branch", "Activity", "TeachingSpec", "RecoverySpec",

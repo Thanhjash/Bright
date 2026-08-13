@@ -418,8 +418,12 @@ def make_tool_executor(
             )
             if unsafe:
                 return {"ok": False, "reason": "teacher_line must be non-evaluative"}
-            if len(re.findall(r"[.!?](?:\s|$)", teacher_line)) > 2:
-                return {"ok": False, "reason": "teacher_line must be at most two sentences"}
+            sentence_marks = re.findall(r"[.!?]", teacher_line)
+            if sentence_marks != ["."] or not teacher_line.endswith(".") or ";" in teacher_line:
+                return {
+                    "ok": False,
+                    "reason": "teacher_line must be exactly one period-terminated sentence",
+                }
             if re.search(r"https?://|www\.|<[^>]+>|<\||\|>", teacher_line, re.IGNORECASE):
                 return {"ok": False, "reason": "teacher_line contains URL, markup or control token"}
             roster = getattr(getattr(core, "session_controller", None), "roster", {})

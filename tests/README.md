@@ -21,6 +21,7 @@ It implements I1–I10 from [the integration test plan](../docs/4-build/tracker.
 ```bash
 ./scripts/product-smoke.sh             # process/socket Core wire path; no browser audio
 ./scripts/composed-smoke.sh            # opt-in real Piper/ASR + Chromium media composition
+./scripts/ideal-composed-acceptance.sh --mode manual-physical-mic
 python3 tests/run.py                  # everything, ~9 min
 python3 tests/run.py I1 I6            # just those
 python3 tests/run.py --fast           # skip tests that play a lesson in real time
@@ -37,6 +38,23 @@ protocol-v2 Stage + Control clients with fabricated playback ACKs. It does not
 execute browser/AIRI/TTS/ASR and is not release proof. See the
 [product smoke runbook](../docs/4-build/product-smoke-runbook.md). The I1-I10
 suite remains the deeper seam/browser suite.
+
+### Operator-only ideal composition lane
+
+`ideal-composed-acceptance.sh` is deliberately not part of `tests/run.py` and
+does not start a fake service. Start the installed ideal stack first, then it
+opens two persistent Chromium contexts: `/classroom` (Stage) and `/control`
+(answer station). It begins through visible UI controls, lets the normal Stage
+publish its own playback acknowledgements, and passively records only scrubbed
+WebSocket event order.
+
+Use `--mode manual-physical-mic` for the real acceptance run: an adult speaks
+into the selected host microphone. Use `--mode fake-audio-file
+--fake-audio-file /absolute/path/known-answer.wav` only as a repeatable wiring
+diagnostic; the file still travels through browser MediaRecorder and the real
+ASR/Core path. Neither mode fabricates a learner answer, Stage lease, or
+playback ACK. Profiles are deleted and only scrubbed `result.json` remains
+under `tests/.artifacts/ideal-composed/`.
 
 Output ends with:
 

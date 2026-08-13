@@ -1,4 +1,10 @@
-export type { AudioBackend, OpaqueAudioBackend, WebAudioBackendOptions } from './audio-backend'
+export type {
+  AudioBackend,
+  AudioPlaybackOptions,
+  AudioPlaybackStart,
+  OpaqueAudioBackend,
+  WebAudioBackendOptions,
+} from './audio-backend'
 export { asOpaqueBackend, createWebAudioBackend } from './audio-backend'
 
 export type {

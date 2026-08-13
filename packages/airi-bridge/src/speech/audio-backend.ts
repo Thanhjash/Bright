@@ -37,7 +37,7 @@ export interface AudioBackend<TAudio = AudioBuffer> {
    * MUST play for its full duration even when muted. Muting means gain 0, never
    * "skip"; see PROTOCOL.md §6.4.
    */
-  play: (audio: TAudio, signal: AbortSignal) => Promise<void>
+  play: (audio: TAudio, signal: AbortSignal, options?: AudioPlaybackOptions) => Promise<void>
   /** Current mouth openness, 0…0.7. Written RAW to the model. Never rescale. */
   getMouthOpen: () => number
   /** 0 silences output without changing playback timing. */
@@ -45,6 +45,23 @@ export interface AudioBackend<TAudio = AudioBuffer> {
   isMuted: () => boolean
   /** Stops everything immediately. Safe to call twice. */
   dispose: () => void
+}
+
+/** Metadata captured at the instant an audio backend has submitted a source to output. */
+export interface AudioPlaybackStart {
+  /** `AudioContext.currentTime` at source start, when the backend has one. */
+  audioContextTime?: number
+}
+
+/** Hooks for the lifecycle of one concrete audio play operation. */
+export interface AudioPlaybackOptions {
+  /**
+   * Fires immediately after the backend has actually started output.
+   *
+   * A backend must not call this merely because work was queued or decoded. It may
+   * remain absent for legacy backends that cannot observe a physical start.
+   */
+  onStarted?: (start: AudioPlaybackStart) => void
 }
 
 /**
@@ -151,7 +168,7 @@ export function createWebAudioBackend(
       return await ctx.decodeAudioData(bytes.slice(0))
     },
 
-    async play(audio, signal) {
+    async play(audio, signal, playbackOptions) {
       if (disposed || signal.aborted)
         return
 
@@ -172,11 +189,11 @@ export function createWebAudioBackend(
 
       activeSources.add(source)
 
-      await new Promise<void>((resolve) => {
+      await new Promise<void>((resolve, reject) => {
         let settled = false
-        const finish = () => {
+        const cleanup = () => {
           if (settled)
-            return
+            return false
           settled = true
           signal.removeEventListener('abort', onAbort)
           activeSources.delete(source)
@@ -186,6 +203,11 @@ export function createWebAudioBackend(
           catch {
             // already torn down
           }
+          return true
+        }
+        const finish = () => {
+          if (!cleanup())
+            return
           resolve()
         }
         const onAbort = () => {
@@ -200,7 +222,25 @@ export function createWebAudioBackend(
 
         source.onended = finish
         signal.addEventListener('abort', onAbort, { once: true })
-        source.start()
+        try {
+          source.start()
+        }
+        catch (error) {
+          if (cleanup())
+            reject(error)
+          return
+        }
+
+        // This is deliberately after `source.start()`, rather than before graph
+        // construction or scheduling. Callers use it as their causal "audio has
+        // reached WebAudio" acknowledgement.
+        try {
+          playbackOptions?.onStarted?.({ audioContextTime: ctx.currentTime })
+        }
+        catch (error) {
+          // Observer failures must never turn a real utterance into a failed one.
+          options.onError?.(error instanceof Error ? error : new Error(String(error)))
+        }
       })
     },
 

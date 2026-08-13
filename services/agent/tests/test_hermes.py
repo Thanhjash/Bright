@@ -279,6 +279,51 @@ async def test_completed_response_status_cannot_override_rejected_inner_mcp_resu
     assert events[-1].reason == "error"
 
 
+async def test_completed_envelope_recovers_fast_terminal_tool_callback_race():
+    arguments = {
+        "turn_id": "turn-envelope",
+        "move_id": "advance",
+        "teacher_line": "Let us continue.",
+    }
+    output = [
+        {
+            "type": "function_call",
+            "name": "mcp__bright_classroom__classroom_propose_move",
+            "call_id": "call-envelope",
+            "arguments": json.dumps(arguments),
+        },
+        {
+            "type": "function_call_output",
+            "call_id": "call-envelope",
+            "output": [
+                {
+                    "type": "input_text",
+                    "text": json.dumps(
+                        {"structuredContent": {"ok": True, "applied": False}}
+                    ),
+                }
+            ],
+        },
+    ]
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        terminal = completed()[1]
+        terminal["response"]["output"] = output
+        return httpx.Response(
+            200,
+            content=stream_body(created(), ("response.completed", terminal)),
+            headers={"content-type": "text/event-stream"},
+        )
+
+    agent = make_agent(handler)
+    agent.prepare_turn("turn-envelope")
+    events = await collect(agent)
+    assert [event.text for event in events if isinstance(event, TextDelta)] == [
+        "Let us continue."
+    ]
+    assert isinstance(events[-1], Done) and events[-1].reason == "complete"
+
+
 async def test_response_without_exactly_one_proposal_fails_closed():
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(

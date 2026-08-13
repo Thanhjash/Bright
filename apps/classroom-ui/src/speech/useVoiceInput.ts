@@ -244,15 +244,11 @@ export function useVoiceInput(bus: Bus): VoiceInput {
       return
     }
     if (isMicrophoneSuppressed()) {
-      bus.send('response.capture.ready', {
-        assignmentId: assigned.assignmentId,
-        responseTurnId: assigned.responseTurnId,
-        captureId: requested.captureId,
-        status: 'failed',
-        reason: 'teacher_audio_active',
-      })
-      setError({ kind: 'output_active', message: 'Wait for Bright to finish speaking, then press Ready.' })
-      setPhase('error')
+      // The Stage intentionally keeps the microphone suppressed for a short
+      // acoustic echo tail after its playback ACK. That is a normal transient,
+      // not an endpoint failure: reporting `failed` here would make Core
+      // safe-pause an otherwise healthy class. VoicePanel disables Ready until
+      // this guard becomes false; retain the guard for stale/rapid clicks.
       return
     }
 

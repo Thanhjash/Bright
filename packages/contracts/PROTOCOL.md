@@ -55,6 +55,7 @@ Direction: `↑` client→server, `↓` server→client, `↕` both.
 | `speech.turn.ended` | ↓ | `{ speechTurnId, status: 'completed'|'cancelled'|'error', reason? }`; producer terminal, not playback proof |
 | `speech.cancel` | ↓ | `{ speechTurnId, reason? }`; exact and idempotent |
 | `speech.barge_in.ack` | ↓ | `{ requestId, speechTurnId, accepted, reason? }`; correlated terminal reply to one Control request |
+| `speech.playback.observed` | ↓ | `{ speechTurnId, status: 'completed'|'cancelled'|'failed' }`; Core-authorized terminal observation used by non-Stage clients for half-duplex gating |
 | `avatar.act` | ↓ | `ActPayload` — out-of-band emotion (prefer inline `<\|ACT\|>`) |
 | `lesson.position` | ↓ | `LessonPosition` |
 | `lesson.started` | ↓ | `{ requestId, sessionId, conversationId, lessonId, studentId?, index, stateVersion }` |

@@ -34,10 +34,11 @@ function createFakeBackend() {
     async decode(bytes) {
       return { text: new TextDecoder().decode(bytes) } satisfies FakeAudio
     },
-    async play(audio, signal) {
+    async play(audio, signal, options) {
       if (signal.aborted)
         return
       played.push((audio as FakeAudio).text)
+      options?.onStarted?.({})
       await new Promise(resolve => setTimeout(resolve, 1))
     },
     getMouthOpen: () => mouthOpen,

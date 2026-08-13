@@ -118,7 +118,7 @@ function ensurePlayer(): SpeechPlayer {
   player = createSpeechPlayer({
     tts,
     audio: createWebAudioBackend({ lipSyncProfile: wlipsyncProfile as unknown as LipSyncProfile }),
-    onSegmentStart: ({ turnId }) => {
+    onSegmentStart: ({ turnId, audioContextTime }) => {
       if (!turnId)
         return
       const managed = turns.get(turnId)
@@ -128,6 +128,7 @@ function ensurePlayer(): SpeechPlayer {
       managed.playbackStartedAt = performance.now()
       callbacks.onPlaybackStarted?.(turnId, {
         firstAudioMs: Math.round(managed.playbackStartedAt - managed.openedAt),
+        ...(audioContextTime === undefined ? {} : { audioContextTime }),
       })
     },
     onTurnEnd: (turnId) => {

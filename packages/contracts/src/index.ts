@@ -33,6 +33,7 @@ export type EventType =
   | 'speech.turn.ended'
   | 'speech.cancel'
   | 'speech.barge_in.ack'
+  | 'speech.playback.observed'
   | 'avatar.act'
   | 'lesson.position'
   | 'lesson.started'
@@ -106,12 +107,19 @@ export interface SpeechBargeInAckPayload {
   accepted: boolean
   reason?: string
 }
-export interface SpeechPlaybackStartedPayload { speechTurnId: string }
+export interface SpeechPlaybackStartedPayload {
+  speechTurnId: string
+  metrics?: Record<string, number>
+}
 export interface SpeechPlaybackFinishedPayload {
   speechTurnId: string
   status: 'completed' | 'cancelled' | 'failed'
   reason?: string
   metrics?: Record<string, number>
+}
+export interface SpeechPlaybackObservedPayload {
+  speechTurnId: string
+  status: 'completed' | 'cancelled' | 'failed'
 }
 export interface ModeChangedPayload { mode: Mode; reason: string }
 export interface ErrorPayload { code: string; message: string }

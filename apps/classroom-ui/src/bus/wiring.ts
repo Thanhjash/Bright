@@ -50,8 +50,10 @@ export function connectBusToStore(bus: Bus): Unsubscribe {
           publishOutputActivity('playback-started', speechTurnId)
           store().startSpeech(speechTurnId)
           store().updateSpeechText(speechTurnId, textByTurn.get(speechTurnId) ?? '')
-          bus.send('speech.playback.started', { speechTurnId })
-          void metrics
+          bus.send('speech.playback.started', {
+            speechTurnId,
+            ...(metrics ? { metrics } : {}),
+          })
         },
         onPlaybackFinished: (speechTurnId, status, reason, reportToCore = true, metrics) => {
           publishOutputActivity('finished', speechTurnId, status)
@@ -164,6 +166,14 @@ export function connectBusToStore(bus: Bus): Unsubscribe {
         failSpeech(speechTurnId, reason ?? status)
       else
         cancelSpeech(speechTurnId, reason ?? status)
+    }),
+
+    bus.on('speech.playback.observed', ({ speechTurnId }) => {
+      // Core relays this only after accepting the active Stage lease owner's
+      // terminal ACK. BroadcastChannel cannot cross browser profiles/devices,
+      // so Control needs this authoritative observation to end half-duplex
+      // suppression. Stage already owns the local physical callback.
+      if (!ownsAudio()) observeOutputActivity('finished', speechTurnId)
     }),
 
     bus.on('speech.cancel', ({ speechTurnId, reason }) => {

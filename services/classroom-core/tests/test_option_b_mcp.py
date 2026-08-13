@@ -272,7 +272,16 @@ async def test_inference_budget_ends_before_independent_playback_ack_budget():
 
 @pytest.mark.parametrize(
     "line",
-    ["Correct!", "Well done.", "https://bad.example", "<|ACT {}|>", "Mai, continue."],
+    [
+        "Correct!",
+        "Well done.",
+        "https://bad.example",
+        "<|ACT {}|>",
+        "Mai, continue.",
+        "Let us continue. Please look here.",
+        "Let us continue; please look here.",
+        "Let us continue",
+    ],
 )
 async def test_truth_identity_and_markup_teacher_lines_are_rejected(line):
     core = minimal_core()

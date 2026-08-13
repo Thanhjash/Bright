@@ -337,6 +337,8 @@ class Core:
     async def end_session(self) -> None:
         if self.session_id is None:
             return
+        if self.session_controller is not None:
+            self.session_controller.cancel_session_clock()
         self.db.end_session(self.session_id, mode=self.store.mode)
         self.jobs.schedule_session_summary(self.session_id)
         self.session_id = None
@@ -498,6 +500,10 @@ def build_core(settings: Settings | None = None) -> Core:
         raise RuntimeError(
             "synthetic_dev requires CORE_DEV=1 and BRIGHT_SYNTHETIC_DEV_ACK=1"
         )
+    if policy == DataPolicy.HOSTED_EPHEMERAL_TRANSCRIPT and not settings.hosted_raw_confirmed:
+        raise RuntimeError(
+            "hosted_ephemeral_transcript requires BRIGHT_HOSTED_RAW_ACK=1"
+        )
     store = StateStore(mode=settings.mode_override or "OFFLINE")  # type: ignore[arg-type]
     bus = EventBus(lambda: store.state_version, queue_maxsize=settings.queue_maxsize)
     database = open_database(settings.db_path)
@@ -615,6 +621,11 @@ def create_app(settings: Settings | None = None, core: Core | None = None) -> Fa
         agent_mode = os.environ.get("BRIGHT_AGENT", "off").strip().lower()
         if agent_mode in {"1", "true", "yes", "on"}:
             agent_mode = "direct"  # compatibility with the original switch
+        strict_ideal = settings.run_profile == "ideal_hosted"
+        if strict_ideal and agent_mode != "hermes":
+            raise RuntimeError(
+                "ideal_hosted requires BRIGHT_AGENT=hermes; authored fallback is not acceptance evidence"
+            )
         if agent_mode not in {"", "0", "false", "no", "off", "none"}:
             try:
                 from agent_bridge import AgentDriver, build_agent_seam
@@ -650,6 +661,10 @@ def create_app(settings: Settings | None = None, core: Core | None = None) -> Fa
                     settings.agent_greeting_timeout_s,
                 )
             except Exception as exc:  # noqa: BLE001
+                if strict_ideal:
+                    raise RuntimeError(
+                        "ideal_hosted could not wire the pinned Hermes agent"
+                    ) from exc
                 log.warning("[agent] not wired (%s) -- lessons will run unadapted", exc)
         if settings.autostart_lesson and app.state.core.runner is not None:
             await app.state.core.start_lesson()
@@ -664,6 +679,8 @@ def create_app(settings: Settings | None = None, core: Core | None = None) -> Fa
             yield
         finally:
             current: Core = app.state.core
+            if current.session_controller is not None:
+                current.session_controller.cancel_session_clock()
             if current.runner is not None:
                 await current.runner.stop()
             current.jobs.shutdown()
@@ -695,6 +712,43 @@ def create_app(settings: Settings | None = None, core: Core | None = None) -> Fa
             "mode": core_.store.mode,
             "stateVersion": core_.store.state_version,
         }
+
+    def readiness() -> tuple[dict[str, Any], bool]:
+        """Return the product-facing readiness snapshot and verdict."""
+        core_ = get_core()
+        leases = core_.capability_leases
+        if leases is not None:
+            leases.expire()
+        checks = {
+            "lesson": core_.lesson is not None and core_.runner is not None,
+            "stageAudioOwner": bool(leases and leases.stage_owner),
+            "controlInputOwner": bool(leases and leases.control_input_owner),
+            "agentConfigured": os.environ.get("BRIGHT_AGENT", "off").strip().lower()
+            == "hermes",
+            "agentFull": core_.store.mode == "FULL",
+        }
+        required = ("lesson", "stageAudioOwner", "controlInputOwner")
+        if settings.run_profile == "ideal_hosted":
+            required += ("agentConfigured", "agentFull")
+        ready_now = all(checks[name] for name in required)
+        return {
+            "status": "ready" if ready_now else "not_ready",
+            "profile": settings.run_profile,
+            "mode": core_.store.mode,
+            "checks": checks,
+        }, ready_now
+
+    @app.get("/ready")
+    async def ready() -> JSONResponse:
+        """Core-local readiness; the launcher composes Speech/Hermes health.
+
+        This endpoint never performs a model completion.  In the strict
+        ``ideal_hosted`` profile it requires both real browser capability
+        owners and a healthy Hermes-derived FULL mode before declaring the
+        classroom ready to start.
+        """
+        body, ready_now = readiness()
+        return JSONResponse(body, status_code=200 if ready_now else 503)
 
     # ------------------------------------------------------------- assets
     @app.get("/assets/{path:path}")
@@ -972,6 +1026,21 @@ def create_app(settings: Settings | None = None, core: Core | None = None) -> Fa
             if core_.runner is None or core_.lesson is None:
                 core_.bus.send(sub, "error", {"code": "no_lesson", "message": "no lesson_run loaded"})
                 return
+            if settings.run_profile == "ideal_hosted":
+                ready_body, ready_now = readiness()
+                if not ready_now:
+                    missing = [
+                        name for name, value in ready_body["checks"].items() if not value
+                    ]
+                    core_.bus.send(
+                        sub,
+                        "error",
+                        {
+                            "code": "classroom_not_ready",
+                            "message": "ideal classroom is missing: " + ", ".join(missing),
+                        },
+                    )
+                    return
             if core_.runner.running or core_.session_id is not None:
                 core_.bus.send(
                     sub,
@@ -1067,6 +1136,14 @@ def create_app(settings: Settings | None = None, core: Core | None = None) -> Fa
             if event == "started" and changed and core_.runner is not None:
                 core_.runner.on_playback_started(speech_turn_id)
             if event == "finished" and changed and core_.runner is not None:
+                # Relay only the sanitized terminal state after role, lease,
+                # schema, turn and playback-transition validation. This lets a
+                # Control browser on another machine/profile open its mic
+                # without trusting or fabricating a Stage ACK.
+                core_.bus.publish(
+                    "speech.playback.observed",
+                    {"speechTurnId": speech_turn_id, "status": status},
+                )
                 controller = core_.session_controller
                 if controller is not None:
                     if status == "completed" and controller.note_callout_playback_finished(

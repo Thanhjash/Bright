@@ -155,6 +155,11 @@ def test_named_turn_budget_equals_explicit_selected_individual_speech_stations()
         and activity.teaching.participation_mode == "whole_class"
         for activity in recoveries
     )
+    assert [
+        activity.id
+        for activity in run.activities
+        if activity.teaching is not None and activity.teaching.stage == "CLOSURE"
+    ] == ["closure"]
 
 
 def test_lint_rejects_named_turn_budget_that_does_not_match_authored_stations(tmp_path: Path) -> None:

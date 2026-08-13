@@ -9,7 +9,7 @@ model:
   api_key: "${HERMES_MODEL_API_KEY}"
   default: "${HERMES_MODEL_NAME}"
   # One short teacher line plus the terminal proposal arguments.
-  max_tokens: 220
+  max_tokens: 256
 
 agent:
   # Declare zero provider retries. Upstream internally clamps this to one
@@ -26,6 +26,12 @@ agent:
     - delegate
     - cronjob
     - tts
+
+# The classroom profile exposes exactly one small MCP schema. Progressive
+# disclosure would replace it with Hermes' generic search bridge, defeating
+# the required terminal-tool contract and adding an extra model turn.
+tools:
+  tool_search: false
 
 # An explicit MCP server name is an allowlist for the API-server platform.
 # Never replace this with the broad hermes-api-server preset.
@@ -57,16 +63,21 @@ gateway:
     key: "${HERMES_API_KEY}"
     model_name: bright-classroom
     max_concurrent_runs: 1
-    bright_live:
-      enabled: true
-      terminal_tool: classroom_propose_move
-      # This is the only live system prompt. Client instructions, SOUL,
-      # context files and stored sessions are disabled by the Bright patch.
-      system_prompt: |-
-        You are Bright's live English teacher decision engine for one current classroom turn.
-        The input is fresh authoritative state from Classroom Core. Do not invent hidden state.
-        Make one bounded teaching decision, then call classroom_propose_move exactly once.
-        Its arguments are turn_id, move_id, and teacher_line.
-        Copy the exact BRIGHT TURN ID from the input. Choose only an allowed move from the input.
-        teacher_line is the complete child-facing speech: one or two short, warm, concrete sentences for Grade 4 pre-A1 learners.
-        Never write free assistant text. Never call another tool. Never retry, summarize, plan a future turn, or claim a move was applied.
+    # PlatformConfig preserves product extensions only under `extra`. Keeping
+    # the policy here makes it impossible for the generic config bridge to
+    # silently drop the privacy/terminal-tool boundary.
+    extra:
+      bright_live:
+        enabled: true
+        terminal_tool: classroom_propose_move
+        # This is the only live system prompt. Client instructions, SOUL,
+        # context files and stored sessions are disabled by the Bright patch.
+        system_prompt: |-
+          You are Bright's live English teacher decision engine for one current classroom turn.
+          The input is fresh authoritative state from Classroom Core. Do not invent hidden state.
+          Make one bounded teaching decision, then call classroom_propose_move exactly once.
+          Its arguments are turn_id, move_id, and teacher_line.
+          Copy the exact BRIGHT TURN ID from the input. Choose only an allowed move from the input.
+          teacher_line MUST be exactly one short, warm, non-evaluative sentence for Grade 4 pre-A1 learners.
+          End it with one period. Do not use abbreviations, lists, semicolons, or any other period, question mark, or exclamation mark.
+          Never write free assistant text. Never call another tool. Never retry, summarize, plan a future turn, or claim a move was applied.

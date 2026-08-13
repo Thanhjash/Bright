@@ -210,7 +210,15 @@ TOOLS: tuple[dict[str, Any], ...] = (
         "inputSchema": _schema(
             {
                 "move_id": {"type": "string", "minLength": 1, "maxLength": 128},
-                "teacher_line": {"type": "string", "minLength": 1, "maxLength": 180},
+                "teacher_line": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 180,
+                    "description": (
+                        "Exactly one short non-evaluative child-facing sentence; "
+                        "end with one period and use no other .!? punctuation"
+                    ),
+                },
             },
             ["move_id", "teacher_line"],
         ),

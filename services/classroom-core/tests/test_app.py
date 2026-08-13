@@ -50,6 +50,16 @@ def test_health(client: TestClient):
     assert isinstance(body["stateVersion"], int)
 
 
+def test_ready_is_not_a_false_positive_without_browser_capability_owners(client: TestClient):
+    response = client.get("/ready")
+    assert response.status_code == 503
+    body = response.json()
+    assert body["status"] == "not_ready"
+    assert body["checks"]["lesson"] is True
+    assert body["checks"]["stageAudioOwner"] is False
+    assert body["checks"]["controlInputOwner"] is False
+
+
 def test_playback_ack_state_machine_allows_pre_audio_failure_once():
     coordinator = ConversationCoordinator()
     coordinator.register_speech("turn-1")
@@ -193,6 +203,14 @@ def handshake(ws) -> tuple[dict, dict]:
     return snapshot, mode
 
 
+def receive_until(ws, event_type: str, *, limit: int = 20) -> dict:
+    for _ in range(limit):
+        frame = ws.receive_json()
+        if frame["type"] == event_type:
+            return frame
+    raise AssertionError(f"did not receive {event_type!r} within {limit} frames")
+
+
 def test_hello_gets_a_snapshot_then_a_stream(client: TestClient):
     with client.websocket_connect("/ws") as ws:
         ws.send_text(json.dumps(HELLO))
@@ -212,6 +230,60 @@ def test_hello_gets_a_snapshot_then_a_stream(client: TestClient):
         assert update["payload"]["kind"] == "text"
         assert update["payload"]["props"]["text"] == "pushed"
         assert update["stateVersion"] > snapshot["stateVersion"]
+
+
+def test_only_validated_stage_terminal_ack_is_relayed_to_control(client: TestClient):
+    with client.websocket_connect("/ws") as stage, client.websocket_connect("/ws") as control:
+        stage.send_text(json.dumps(HELLO))
+        handshake(stage)
+        control.send_text(json.dumps({"v": 3, "type": "client.hello", "payload": {"role": "control"}}))
+        handshake(control)
+        stage.send_text(json.dumps({
+            "v": 3,
+            "type": "capability.report",
+            "payload": {
+                "clientInstanceId": "stage-relay-test",
+                "connectionEpoch": 1,
+                "role": "stage",
+                "capabilities": {"audioPlayback": True},
+                "reportedAt": 1,
+            },
+        }))
+        receive_until(stage, "stage.lease.granted")
+
+        core = client.app.state.core
+        turn_id = core.publish_speech("Hello", source="authored")
+        receive_until(stage, "speech.turn.ended")
+        receive_until(control, "speech.turn.ended")
+
+        # A Control socket knows the public turn ID but cannot forge physical
+        # completion or cause the authoritative relay.
+        control.send_text(json.dumps({
+            "v": 3,
+            "type": "speech.playback.finished",
+            "payload": {"speechTurnId": turn_id, "status": "completed"},
+        }))
+        assert receive_until(control, "error")["payload"]["code"] == "forbidden"
+        assert not any(
+            frame["type"] == "speech.playback.observed"
+            for frame in core.bus.history
+        )
+
+        stage.send_text(json.dumps({
+            "v": 3,
+            "type": "speech.playback.started",
+            "payload": {"speechTurnId": turn_id},
+        }))
+        stage.send_text(json.dumps({
+            "v": 3,
+            "type": "speech.playback.finished",
+            "payload": {"speechTurnId": turn_id, "status": "completed"},
+        }))
+        observed = receive_until(control, "speech.playback.observed")
+        assert observed["payload"] == {
+            "speechTurnId": turn_id,
+            "status": "completed",
+        }
 
 
 def test_dev_say_is_broadcast(client: TestClient):

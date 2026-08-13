@@ -32,6 +32,7 @@ import type {
   SpeechBargeInPayload,
   SpeechPlaybackFinishedPayload,
   SpeechPlaybackStartedPayload,
+  SpeechPlaybackObservedPayload,
   SpeechSayPayload,
   SpeechTextDeltaPayload,
   SpeechTurnEndedPayload,
@@ -60,6 +61,7 @@ export interface ServerEventMap {
   'student.response.accepted': StudentResponseAcceptedPayload
   'speech.cancel': SpeechCancelPayload
   'speech.barge_in.ack': SpeechBargeInAckPayload
+  'speech.playback.observed': SpeechPlaybackObservedPayload
   'avatar.act': ActPayload
   'lesson.position': LessonPosition
   'lesson.started': LessonStartedPayload

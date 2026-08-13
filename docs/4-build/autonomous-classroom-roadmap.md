@@ -1,6 +1,6 @@
 # Autonomous Classroom Product — competition roadmap
 
-**Updated:** 2026-08-12  
+**Updated:** 2026-08-13
 **Authority:** current execution roadmap  
 **North Star:** one autonomous AI teacher for 20–40 children on a shared board
 
@@ -12,8 +12,8 @@ Research and rationale: [CTO autonomous-classroom audit](../5-research/2026-08-1
 
 ## Implementation checkpoint — 2026-08-12
 
-The current v3 vertical slice is mechanically green: Core 232 tests; agent 82 non-live
-tests with four live-provider cases deselected; AIRI 165 tests; two mocked Chromium v3
+The current v3 vertical slice is mechanically green: Core 240 tests; agent 83 non-live
+tests with four live-provider cases deselected; AIRI 169 tests; two mocked Chromium v3
 flows; content contract 8 tests plus the lesson self-test. The Market Food candidate runs 41.0–44.7
 minutes in headless simulation. This is implementation evidence, not a release claim.
 
@@ -195,7 +195,7 @@ Required UX changes:
 - one physical voice per turn; no overlapping Stage/Control output;
 - keyboard, touch and projector viewport E2E pass in Chromium.
 
-### G5 — Real composed product evidence *(speech/browser probe implemented; full composition open)*
+### G5 — Real composed product evidence *(one hosted synthetic turn evidenced; full composition open)*
 
 Replace the Core-wire smoke as release proof with a composed harness:
 
@@ -208,12 +208,20 @@ Replace the Core-wire smoke as release proof with a composed harness:
 
 Keep the existing Core-wire smoke, but label it correctly as a protocol smoke.
 
-The current `composed-smoke` is an early, deliberately narrower probe: Chromium
-records a synthetic browser microphone stream to the real local ASR endpoint and
-plays real local Piper WAV through the browser audio pipeline. It can optionally
-check authenticated Hermes health and rehearse Hermes → Core MCP through the
-separate wire smoke. It does not run AIRI lifecycle ACKs or physical acoustics;
-the rehearsal still uses virtual playback ACKs.
+The current `composed-smoke` remains an early, deliberately narrower probe: Chromium
+records a synthetic browser microphone stream to the real local ASR endpoint and plays
+real local Piper WAV through the browser audio pipeline. It can optionally check
+authenticated Hermes health and rehearse Hermes → Core MCP through the separate wire
+smoke.
+
+The separate `ideal-composed-acceptance` lane has one successful `fake-audio-file` run:
+two persistent real Chromium contexts entered through visible UI controls; the adult
+Piper fixture traversed MediaRecorder → Whisper → Core → hosted Hermes/MCP → Piper →
+AIRI; and Stage's causal WebAudio ACK preceded the Core commit (events 368 then 370).
+The ACK was not fabricated. This promotes G5 from “uncomposed” to a one-turn ideal
+composition proof only. It uses a 90-second cold-provider allowance and a 0.65
+fixture-only speech threshold; the product remains 6 seconds and 0.75. It is not a
+physical-room, child-speech, full-Market, or 20–40 learner proof.
 
 **Exit gate**
 
@@ -340,9 +348,10 @@ delayed and transfer measures.
 3. Execute G3 in a real room: exercise the eight authored callout/capture/recovery
    paths with correct, wrong, silent, noisy and two-speaker inputs; build the
    consented zero-false-accept corpus.
-4. Extend the composed Chromium probe to real Stage/Control + AIRI playback ACKs +
-   Piper + ASR + pinned hosted
-   Hermes tests, then repeated full-session and room gates (G4/G5).
+4. Keep the one-turn ideal composition lane green, then extend it from the synthetic
+   fixture to manual physical-mic, all Market oral paths, repeated full sessions and
+   the room gates (G4/G5). Do not relax production latency or grading thresholds from
+   the fixture result.
 5. Run local Gemma/OpenVINO conformance and appliance hardening in parallel once
    the real workload exists (G6/G7).
 6. Governance is continuous, with a hard gate before child recordings or shipping (G8).

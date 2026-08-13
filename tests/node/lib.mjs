@@ -20,6 +20,7 @@
 // tests/. `NODE_PATH` does not apply to ESM resolution, so the package is
 // imported by absolute file URL instead of adding a node_modules tree here.
 const { chromium } = await import(process.env.PLAYWRIGHT_CORE)
+export { chromium }
 
 export const LAUNCH_ARGS = [
   '--no-sandbox',

@@ -27,7 +27,7 @@
 
 import type { ActSignal } from '../act'
 import type { Emotion } from '../contracts'
-import type { AudioBackend } from './audio-backend'
+import type { AudioBackend, AudioPlaybackStart } from './audio-backend'
 import type {
   IntentOptions,
   TextSegment,
@@ -47,8 +47,13 @@ export interface SpeechPlayerEvents {
   onDelay?: (seconds: number, segment: TextSegment) => void
   /** Every segment as it is chunked, before TTS. Useful for subtitles. */
   onSegment?: (segment: TextSegment) => void
-  /** Segment audio started. */
-  onSegmentStart?: (segment: { text: string, segmentId: string, turnId?: string }) => void
+  /** Segment audio started at the output backend. */
+  onSegmentStart?: (segment: {
+    text: string
+    segmentId: string
+    turnId?: string
+    audioContextTime?: number
+  }) => void
   /** Speaking / not speaking. Drives the lip-sync release tail. */
   onSpeakingChange?: (speaking: boolean) => void
   onTurnStart?: (turnId: string) => void
@@ -155,15 +160,28 @@ export function createSpeechPlayer<TAudio>(options: SpeechPlayerOptions<TAudio>)
     // Muting never short-circuits this. The audio plays for its full duration at
     // gain 0, so the special token attached to the segment still fires on time.
     play: async (item, signal) => {
-      options.onSegmentStart?.({ text: item.text, segmentId: item.segmentId, turnId: item.turnId })
-      activeCount += 1
-      setSpeaking(true)
+      let started = false
+      const onStarted = (start: AudioPlaybackStart) => {
+        if (started)
+          return
+        started = true
+        activeCount += 1
+        setSpeaking(true)
+        options.onSegmentStart?.({
+          text: item.text,
+          segmentId: item.segmentId,
+          turnId: item.turnId,
+          ...start,
+        })
+      }
       try {
-        await backend.play(item.audio, signal)
+        await backend.play(item.audio, signal, { onStarted })
       }
       finally {
-        activeCount -= 1
-        stopSpeakingIfIdle()
+        if (started) {
+          activeCount -= 1
+          stopSpeakingIfIdle()
+        }
       }
     },
   })

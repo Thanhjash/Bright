@@ -406,7 +406,47 @@ class HermesAgent:
                         usage = _usage(envelope)
                         response_id = str(envelope.get("id") or response_id or "") or None
                         self.last_response_id = response_id
+                        # The gateway's tool callbacks originate on a worker
+                        # thread. Under a fast terminal-tool exit, its final
+                        # envelope can reach the stream after task completion
+                        # even if an incremental callback was not observed by
+                        # this client. The completed envelope is canonical and
+                        # contains the same call/result correlation, so use it
+                        # only to fill missing records (never to create a
+                        # second proposal).
+                        for item in envelope.get("output") or []:
+                            if not isinstance(item, dict):
+                                continue
+                            item_type = item.get("type")
+                            call_id = str(item.get("call_id") or item.get("id") or "")
+                            if item_type == "function_call" and call_id and call_id not in calls:
+                                name = _raw_tool_name(str(item.get("name") or ""))
+                                args = _arguments(item)
+                                if name != PROPOSE_MOVE_TOOL:
+                                    raise HermesProtocolError(
+                                        f"live Hermes called forbidden tool {name!r}"
+                                    )
+                                if calls:
+                                    raise HermesProtocolError(
+                                        "live Hermes must call exactly one proposal tool"
+                                    )
+                                if args.get("turn_id") != turn_id:
+                                    raise HermesProtocolError(
+                                        "proposal turn_id does not match Core turn"
+                                    )
+                                calls[call_id] = (name, args)
+                            elif (
+                                item_type == "function_call_output"
+                                and call_id in calls
+                                and call_id not in results
+                            ):
+                                results[call_id] = _validated_mcp_result(item)
                         if len(calls) != 1 or len(results) != 1:
+                            log.warning(
+                                "Hermes terminal contract incomplete: calls=%d results=%d",
+                                len(calls),
+                                len(results),
+                            )
                             yield self._done(
                                 "error",
                                 "live Hermes must produce exactly one committed proposal",

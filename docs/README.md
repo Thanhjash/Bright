@@ -106,6 +106,7 @@ docs/
 | | |
 |---|---|
 | [260812-autonomous-classroom-roadmap.md](journals/260812-autonomous-classroom-roadmap.md) | Decision record: autonomous classroom as release unit, Option B retained, evidence-gated execution |
+| [260813-ideal-composed-evidence.md](journals/260813-ideal-composed-evidence.md) | One hosted synthetic adult composed turn: exact evidence, privacy observation and remaining room gates |
 
 ### Outside `docs/`
 | | |
@@ -130,8 +131,8 @@ docs/
 ✅  protocol/runtime floor Protocol v3, class sessions, leases, capture correlation
 ✅  Option B live boundary one terminal Hermes proposal tool; Core commits after playback
 ✅  product lesson draft   41.0–44.7 minute Market Food paths; eight authored individual oral turns and recovery paths terminate headlessly
-✅  mechanical evidence   Core 232; agent 82; AIRI 165; Chromium v3 2; content contract 8 + harnesses 10 green
-⚠️  release verification  Chromium synthetic-mic → real local ASR/Piper probe exists; full AIRI/physical-room/provider proof does not
+✅  mechanical evidence   Core 240; agent 83; AIRI 169; Chromium v3 2; content contract 8 + harnesses 10 green
+⚠️  release verification  one synthetic adult Chromium → Whisper/Core → hosted Hermes/MCP → Piper/AIRI turn has causal ACK/commit evidence; full Market, physical-room and child proof do not
 🔴  approval/governance    curriculum approver, child-room evidence and ship rights remain
 ```
 

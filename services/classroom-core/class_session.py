@@ -512,6 +512,8 @@ class ClassSessionController:
     _callout_assignment_id: str | None = None
     _retry_target: str | None = None
     _retry_activity_id: str | None = None
+    _closure_deadline_mono: float | None = None
+    _closure_task: asyncio.Task[None] | None = None
 
     def __post_init__(self) -> None:
         self.runner.session_controller = self
@@ -587,6 +589,14 @@ class ClassSessionController:
     async def start(self, index: int = 0) -> Any:
         self.session_state = SessionState.PREPARING
         self.started_at_ms = int(time.time() * 1000)
+        plan = getattr(getattr(self.core, "lesson", None), "session_plan", None)
+        if plan is not None:
+            teaching_s = max(
+                1.0,
+                float(plan.duration_min * 60 - plan.closure_reserve_s),
+            )
+            self._closure_deadline_mono = time.monotonic() + teaching_s
+            self._schedule_closure_deadline(teaching_s)
         # Controller.start bypasses LessonRunner.start by design, so it must
         # initialize the lifecycle flags before commit_enter tries to arm
         # playback/capture.  A false ``running`` flag rejects every physical
@@ -636,11 +646,23 @@ class ClassSessionController:
             if target is None:
                 target = self.runner.resolve_intent_target(intent)
 
+            closure_index = self._closure_index()
+            if (
+                closure_index is not None
+                and target != closure_index
+                and self.runner.index != closure_index
+                and intent.cause != "control"
+                and self._closure_deadline_mono is not None
+                and time.monotonic() >= self._closure_deadline_mono
+            ):
+                target = closure_index
+
             if target is None or target < 0 or target >= len(self.runner.activities):
                 self.session_state = SessionState.CLOSING
                 result = await self.runner.commit_finish()
                 self.session_state = SessionState.COMPLETED
                 self.activity_state = ActivityState.CANCELLED
+                self.cancel_session_clock()
                 self.publish_status("lesson_completed")
                 return result
 
@@ -653,6 +675,49 @@ class ClassSessionController:
             self.publish_update(intent.cause)
             self._checkpoint()
             return result
+
+    def _closure_index(self) -> int | None:
+        matches = [
+            index
+            for index, activity in enumerate(self.runner.activities)
+            if getattr(getattr(activity, "teaching", None), "stage", None) == "CLOSURE"
+        ]
+        return matches[0] if len(matches) == 1 else None
+
+    def _schedule_closure_deadline(self, delay_s: float) -> None:
+        self.cancel_session_clock()
+        self._closure_task = asyncio.ensure_future(self._force_closure_after(delay_s))
+
+    async def _force_closure_after(self, delay_s: float) -> None:
+        try:
+            await asyncio.sleep(max(0.001, delay_s))
+        except asyncio.CancelledError:
+            return
+        self._closure_task = None
+        closure_index = self._closure_index()
+        current = self.runner.current
+        if (
+            closure_index is None
+            or self.session_state != SessionState.RUNNING
+            or current is None
+            or self.runner.index == closure_index
+        ):
+            return
+        await self.commit_transition(
+            TransitionIntent(
+                cause="timer",
+                from_activity_id=current.id,
+                activity_generation=self.runner._generation,
+                target_index=closure_index,
+                decision_revision=self.decision_revision,
+            )
+        )
+
+    def cancel_session_clock(self) -> None:
+        task = self._closure_task
+        if task is not None and not task.done() and task is not asyncio.current_task():
+            task.cancel()
+        self._closure_task = None
 
     def note_activity_state(self, state: str) -> None:
         try:

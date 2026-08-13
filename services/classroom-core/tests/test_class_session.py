@@ -93,6 +93,34 @@ def test_hosted_data_policy_drops_raw_and_synthetic_dev_requires_explicit_marker
     assert "My real voice" not in missing_provenance
 
 
+def test_hosted_ephemeral_policy_includes_only_bounded_current_transcript():
+    rendered = outbound_interaction(
+        policy=DataPolicy.HOSTED_EPHEMERAL_TRANSCRIPT,
+        activity_id="a1",
+        response_kind="speech",
+        outcome="correct",
+        payload={"text": "My adult test voice", "studentId": "learner-7"},
+    ).render()
+    assert "My adult test voice" in rendered
+    assert "learner-7" not in rendered
+    assert len(rendered) < 700
+
+
+def test_hosted_ephemeral_policy_requires_explicit_process_ack(tmp_path):
+    from app import build_core
+    from config import Settings
+
+    settings = Settings(
+        data_dir=tmp_path,
+        db_path=tmp_path / "policy.db",
+        lesson_run_path=Path(__file__).resolve().parents[1] / "data" / "sample_lesson_run.json",
+        data_policy="hosted_ephemeral_transcript",
+        hosted_raw_confirmed=False,
+    )
+    with pytest.raises(RuntimeError, match="BRIGHT_HOSTED_RAW_ACK"):
+        build_core(settings)
+
+
 def test_low_confidence_exact_speech_is_uncertain_not_near():
     expect = Expect(kind="speech", correct="I would like rice, please")
     assert grade(expect, "speech", {"text": "I would like rice, please", "confidence": 0.3}) == "uncertain"
@@ -546,6 +574,54 @@ async def test_market_lesson_executes_all_eight_fair_callout_capture_turns(tmp_p
     finally:
         await market.runner.stop()
         market.jobs.shutdown()
+        market.db.close()
+
+
+async def test_market_closure_reserve_redirects_the_next_transition(tmp_path):
+    import time
+    from app import build_core
+    from class_session import TransitionIntent
+    from config import Settings
+
+    lesson_path = (
+        Path(__file__).resolve().parents[3]
+        / "content/lessons/market-food/market-food-01.run.json"
+    )
+    market = build_core(Settings(
+        data_dir=tmp_path,
+        db_path=tmp_path / "closure.db",
+        lesson_run_path=lesson_path,
+        playback_ack_timeout_s=1.0,
+        mode_override="OFFLINE",
+        probe_interval_s=3600,
+    ))
+    try:
+        await market.start_lesson(
+            0,
+            roster=[{"id": "learner-1", "displayName": "Learner 1"}],
+            attendance_ids=["learner-1"],
+        )
+        controller = market.session_controller
+        controller._closure_deadline_mono = time.monotonic() - 1
+        await controller.commit_transition(TransitionIntent(
+                cause="timer",
+            from_activity_id=market.runner.current.id,
+            activity_generation=market.runner._generation,
+            target_index=1,
+        ))
+        assert market.runner.current.id == "closure"
+        await controller.commit_transition(TransitionIntent(
+            cause="timer",
+            from_activity_id="closure",
+            activity_generation=market.runner._generation,
+            target_index=None,
+            decision_revision=controller.decision_revision,
+        ))
+        assert market.runner.finished is True
+        assert controller.session_state == SessionState.COMPLETED
+    finally:
+        market.session_controller.cancel_session_clock()
+        await market.runner.stop()
         market.db.close()
 
 

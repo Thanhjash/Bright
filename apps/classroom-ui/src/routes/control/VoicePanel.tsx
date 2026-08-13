@@ -1,5 +1,5 @@
 /** Child-operated answer-station status and Ready control. */
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { useBus } from '../../bus'
 import {
   EXPECTED_FEEDBACK_MS,
@@ -7,6 +7,7 @@ import {
   useVoiceInput,
 } from '../../speech/useVoiceInput'
 import type { VoicePhase } from '../../speech/useVoiceInput'
+import { isMicrophoneSuppressed, subscribeOutputActivity } from '../../speech/outputActivity'
 
 const PHASE_COPY: Record<VoicePhase, { label: string; hint: string; tone: string }> = {
   idle: {
@@ -52,7 +53,19 @@ export function VoicePanel() {
   const [checking, setChecking] = useState(false)
   const [check, setCheck] = useState<'idle' | 'pass' | 'fail'>('idle')
   const copy = PHASE_COPY[voice.phase]
-  const canReady = voice.phase === 'assigned'
+  const outputQuiet = useSyncExternalStore(
+    subscribeOutputActivity,
+    () => !isMicrophoneSuppressed(),
+    () => false,
+  )
+  const canReady = voice.phase === 'assigned' && outputQuiet
+  const readyCopy = voice.phase === 'assigned' && !outputQuiet
+    ? {
+        label: 'Wait for the listening signal',
+        hint: 'Bright is clearing the teacher voice from the answer microphone.',
+        tone: 'bg-amber/18 ring-amber/70 text-amber',
+      }
+    : copy
 
   return (
     <section className="rounded-3xl bg-ink-800 p-5 ring-2 ring-ink-600" aria-labelledby="answer-station-title">
@@ -75,13 +88,14 @@ export function VoicePanel() {
         onClick={voice.ready}
         disabled={!canReady}
         data-voice-phase={voice.phase}
+        data-output-quiet={outputQuiet ? 'true' : 'false'}
         data-testid="answer-station-ready"
-        className={`flex min-h-[7rem] w-full items-center gap-4 rounded-2xl p-5 text-left ring-2 transition active:scale-[0.985] disabled:cursor-default disabled:opacity-75 ${copy.tone}`}
+        className={`flex min-h-[7rem] w-full items-center gap-4 rounded-2xl p-5 text-left ring-2 transition active:scale-[0.985] disabled:cursor-default disabled:opacity-75 ${readyCopy.tone}`}
       >
         <MicGlyph phase={voice.phase} getLevel={voice.getLevel} />
         <span className="min-w-0 flex-1">
-          <span className="block font-display text-2xl leading-tight font-extrabold">{copy.label}</span>
-          <span className="mt-1 block text-sm leading-snug text-muted">{copy.hint}</span>
+          <span className="block font-display text-2xl leading-tight font-extrabold">{readyCopy.label}</span>
+          <span className="mt-1 block text-sm leading-snug text-muted">{readyCopy.hint}</span>
         </span>
         {voice.phase === 'listening' ? (
           <span className="font-mono text-xl font-bold tabular-nums">{(voice.elapsedMs / 1000).toFixed(1)}s</span>

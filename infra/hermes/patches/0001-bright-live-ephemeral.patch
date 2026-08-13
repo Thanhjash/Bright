@@ -1,5 +1,5 @@
 diff --git a/agent/agent_runtime_helpers.py b/agent/agent_runtime_helpers.py
-index e64fd9ad72309a8bd083f2afa4e439e343844ea1..7daa77a40e225f950a4e2ccad3aee218ed1469a6 100644
+index e64fd9ad7..7daa77a40 100644
 --- a/agent/agent_runtime_helpers.py
 +++ b/agent/agent_runtime_helpers.py
 @@ -1847,6 +1847,12 @@ def dump_api_request_debug(
@@ -15,278 +15,12 @@ index e64fd9ad72309a8bd083f2afa4e439e343844ea1..7daa77a40e225f950a4e2ccad3aee218
      try:
          body = copy.deepcopy(api_kwargs)
          body.pop("timeout", None)
-diff --git a/agent/conversation_loop.py b/agent/conversation_loop.py
-index 1a236e6eacc55a9a64837e4435a08cf4f48ec421..a3e9edf561833f17b71cdaaa7dcbb8d08cfd3f7e 100644
---- a/agent/conversation_loop.py
-+++ b/agent/conversation_loop.py
-@@ -4809,7 +4809,12 @@ def run_conversation(
-                     base_url=str(_base), model=_model, error=api_error
-                 )
-                 if _is_zai_coding_overload:
--                    max_retries = max(max_retries, zai_coding_overload_retry_ceiling())
-+                    from agent.bright_live import bounded_retry_ceiling
-+                    max_retries = bounded_retry_ceiling(
-+                        agent,
-+                        max_retries,
-+                        zai_coding_overload_retry_ceiling(),
-+                    )
-                 _should_fallback = (
-                     is_rate_limited
-                     or (_is_transport_failure and retry_count >= 2)
-@@ -6567,6 +6572,22 @@ def run_conversation(
-                     assistant_message.tool_calls
-                 )
- 
-+                # Bright's live profile exposes one terminal proposal tool.
-+                # Collapse a malformed multi-call batch to the first allowed
-+                # proposal before callbacks, persistence or execution can
-+                # observe it.  Other Hermes profiles retain normal batching.
-+                from agent.bright_live import select_terminal_tool_calls
-+                _bright_live_profile = getattr(agent, "_bright_live_profile", None)
-+                assistant_message.tool_calls = select_terminal_tool_calls(
-+                    _bright_live_profile,
-+                    assistant_message.tool_calls,
-+                )
-+                if _bright_live_profile is not None and not assistant_message.tool_calls:
-+                    _turn_exit_reason = "bright_terminal_tool_missing"
-+                    final_response = ""
-+                    failed = True
-+                    break
-+
-                 # Mixed-batch invalid-name handling: collect the invalid
-                 # calls now so the assistant message (built below) keeps
-                 # EVERY call the model emitted — providers require each
-@@ -6765,6 +6786,16 @@ def run_conversation(
- 
-                 agent._execute_tool_calls(assistant_message, messages, effective_task_id, api_call_count)
- 
-+                # ``classroom_propose_move`` is a terminal commit proposal:
-+                # its MCP output is the authoritative accept/reject result.
-+                # Never ask the provider to interpret that result or compose a
-+                # second final answer.  The Bright adapter buffers teacher_line
-+                # and releases it only after validating structuredContent.ok.
-+                if _bright_live_profile is not None:
-+                    _turn_exit_reason = "bright_terminal_tool"
-+                    final_response = turn_content
-+                    break
-+
-                 if getattr(agent, "_incremental_persistence_failed", False):
-                     # A tool result could not be made canonical. Do not send
-                     # the in-memory result back to the model or project any
-diff --git a/agent/turn_finalizer.py b/agent/turn_finalizer.py
-index de31bbabd48a559750a114a69650e70c89120371..0475a87c1d82ad24b06059634610ce7aca877af4 100644
---- a/agent/turn_finalizer.py
-+++ b/agent/turn_finalizer.py
-@@ -102,6 +102,14 @@ def finalize_turn(
-         and not failed
-         and str(_turn_exit_reason) in {"unknown", "budget_exhausted"}
-     )
-+    # The Bright live profile has a hard one-provider-inference budget.  A
-+    # missing/invalid terminal proposal must fail closed; the normal Hermes
-+    # max-iteration summarizer is a second inference and could emit an
-+    # uncommitted child-facing line.
-+    from agent.bright_live import finalizer_inference_allowed
-+    budget_fallback_eligible = (
-+        budget_fallback_eligible and finalizer_inference_allowed(agent)
-+    )
-     continuation_budget_exhausted = (
-         final_response is None
-         and bool(_pending_verification_response)
-diff --git a/gateway/platforms/api_server.py b/gateway/platforms/api_server.py
-index 6799003ec8d954fc9348a8b39063817a00c2b901..81e673a08c4e365758aef91a9726526910e3f586 100644
---- a/gateway/platforms/api_server.py
-+++ b/gateway/platforms/api_server.py
-@@ -1374,6 +1374,8 @@ class APIServerAdapter(BasePlatformAdapter):
-     def __init__(self, config: PlatformConfig):
-         super().__init__(config, Platform.API_SERVER)
-         extra = config.extra or {}
-+        from agent.bright_live import BrightLiveProfile
-+        self._bright_live_profile = BrightLiveProfile.from_extra(extra)
-         self._host: str = extra.get("host", os.getenv("API_SERVER_HOST", DEFAULT_HOST))
-         raw_port = extra.get("port")
-         if raw_port is None:
-@@ -1417,7 +1419,9 @@ class APIServerAdapter(BasePlatformAdapter):
-         self._app: Optional["web.Application"] = None
-         self._runner: Optional["web.AppRunner"] = None
-         self._site: Optional["web.TCPSite"] = None
--        self._response_store = ResponseStore()
-+        self._response_store = ResponseStore(
-+            db_path=":memory:" if self._bright_live_profile.enabled else None
-+        )
-         # Active run streams: run_id -> asyncio.Queue of SSE event dicts
-         self._run_streams: Dict[str, "asyncio.Queue[Optional[Dict]]"] = {}
-         # Creation timestamps for orphaned-run TTL sweep
-@@ -2044,6 +2048,17 @@ class APIServerAdapter(BasePlatformAdapter):
-         Kept as a method so multiplex tests can assert the /p/<profile>/
-         mirrors without starting a real aiohttp listener.
-         """
-+        if self._bright_live_profile.enabled:
-+            # The classroom process is not a general Hermes gateway.  Do not
-+            # expose session/chat/run/job surfaces that accept history,
-+            # chaining, background work, or persistence-bearing identifiers.
-+            return [
-+                ("GET", "/health", self._handle_health),
-+                ("GET", "/health/detailed", self._handle_health_detailed),
-+                ("GET", "/v1/health", self._handle_health),
-+                ("GET", "/v1/models", self._handle_models),
-+                ("POST", "/v1/responses", self._handle_responses),
-+            ]
-         routes: List[tuple] = [
-             ("GET", "/health", self._handle_health),
-             ("GET", "/health/detailed", self._handle_health_detailed),
-@@ -2725,7 +2740,7 @@ class APIServerAdapter(BasePlatformAdapter):
-         session_key = gateway_session_key or session_id
-         session_row_model = _clean_request_string(session_model)
-         session_override = None
--        if not confirmed_runtime_lock:
-+        if not confirmed_runtime_lock and not self._bright_live_profile.enabled:
-             session_override = self._session_model_override_for(session_key)
-         # Model-string precedence delegates to the shared owner
-         # hermes_cli.model_switch.resolve_effective_model (session /model
-@@ -2864,13 +2879,15 @@ class APIServerAdapter(BasePlatformAdapter):
-         user_config = _load_gateway_config()
-         enabled_toolsets = sorted(_get_platform_tools(user_config, "api_server"))
- 
--        max_iterations = _current_max_iterations()
-+        max_iterations = (
-+            1 if self._bright_live_profile.enabled else _current_max_iterations()
-+        )
- 
-         # Load fallback provider chain so the API server platform has the
-         # same fallback behaviour as Telegram/Discord/Slack (fixes #4954).
-         fallback_model = (
-             None
--            if confirmed_runtime_lock
-+            if confirmed_runtime_lock or self._bright_live_profile.enabled
-             else GatewayRunner._load_fallback_model()
-         )
- 
-@@ -2895,7 +2912,9 @@ class APIServerAdapter(BasePlatformAdapter):
-             "max_iterations": max_iterations,
-             "quiet_mode": True,
-             "verbose_logging": False,
--            "ephemeral_system_prompt": ephemeral_system_prompt or None,
-+            "ephemeral_system_prompt": (
-+                None if self._bright_live_profile.enabled else ephemeral_system_prompt or None
-+            ),
-             "enabled_toolsets": enabled_toolsets,
-             "session_id": session_id,
-             "platform": "api_server",
-@@ -2903,15 +2922,30 @@ class APIServerAdapter(BasePlatformAdapter):
-             "tool_progress_callback": tool_progress_callback,
-             "tool_start_callback": tool_start_callback,
-             "tool_complete_callback": tool_complete_callback,
--            "session_db": self._ensure_session_db(),
-+            "session_db": (
-+                None if self._bright_live_profile.enabled else self._ensure_session_db()
-+            ),
-             "fallback_model": fallback_model,
-             "reasoning_config": reasoning_config,
--            "gateway_session_key": gateway_session_key,
-+            "gateway_session_key": (
-+                None if self._bright_live_profile.enabled else gateway_session_key
-+            ),
-         }
-+        if self._bright_live_profile.enabled:
-+            agent_kwargs.update(
-+                save_trajectories=False,
-+                skip_context_files=True,
-+                skip_memory=True,
-+                skip_background_review=True,
-+                checkpoints_enabled=False,
-+            )
-         if request_service_tier is not _REQUEST_OPTION_MISSING:
-             agent_kwargs["service_tier"] = request_service_tier
- 
-         agent = AIAgent(**agent_kwargs)
-+        if self._bright_live_profile.enabled:
-+            from agent.bright_live import configure_bright_live_agent
-+            configure_bright_live_agent(agent, self._bright_live_profile)
-         agent._hermes_api_runtime = {
-             "provider": runtime_kwargs.get("provider") or getattr(agent, "provider", "") or "",
-             "model": getattr(agent, "model", None) or model,
-@@ -5201,6 +5235,16 @@ class APIServerAdapter(BasePlatformAdapter):
-                 status=400,
-             )
- 
-+        if self._bright_live_profile.enabled:
-+            from agent.bright_live import validate_responses_request
-+            bright_error = validate_responses_request(
-+                self._bright_live_profile,
-+                body,
-+                request.headers,
-+            )
-+            if bright_error:
-+                return web.json_response(_openai_error(bright_error), status=400)
-+
-         raw_input = body.get("input")
-         if raw_input is None:
-             return web.json_response(_openai_error("Missing 'input' field"), status=400)
-diff --git a/pyproject.toml b/pyproject.toml
-index 52fd27046279c816ff7bb858cbfba57ff769a1f0..07b109c43c9a7edd37be1c1c12d29f9f3559cba6 100644
---- a/pyproject.toml
-+++ b/pyproject.toml
-@@ -2,7 +2,7 @@
- 
- [project]
- name = "hermes-agent"
--version = "0.20.0"
-+version = "0.20.0+bright.1"
- description = "The self-improving AI agent — creates skills from experience, improves them during use, and runs anywhere"
- readme = "README.md"
- # Upper bound is load-bearing, not cosmetic. uv resolves the project's
-diff --git a/setup.py b/setup.py
-index fac7fe88161e7aae1033f163fb9bf0705b825b73..a455ec9bc0bf32078905f6480ad2847e2c326e46 100644
---- a/setup.py
-+++ b/setup.py
-@@ -30,6 +30,10 @@ from setuptools import setup
- from setuptools.command.sdist import sdist
- 
- _IN_NIX_BUILD = os.environ.get("HERMES_NIX_BUILD") == "1"
-+_IN_PINNED_BRIGHT_BUILD = (
-+    os.environ.get("HERMES_BRIGHT_BUILD") == "0.20.0+bright.1"
-+)
-+_BUILD_ALLOWED = _IN_NIX_BUILD or _IN_PINNED_BRIGHT_BUILD
- 
- _BLOCK_MESSAGE = (
-     "Building wheels or sdists for hermes-agent is not supported.\n"
-@@ -46,7 +50,7 @@ _BLOCK_MESSAGE = (
- 
- class _GuardedSdist(sdist):
-     def run(self, *args, **kwargs):
--        if not _IN_NIX_BUILD:
-+        if not _BUILD_ALLOWED:
-             raise RuntimeError(_BLOCK_MESSAGE)
-         return super().run(*args, **kwargs)
- 
-@@ -63,7 +67,7 @@ try:
- 
-     class _GuardedBdistWheel(bdist_wheel):
-         def run(self, *args, **kwargs):
--            if not _IN_NIX_BUILD:
-+            if not _BUILD_ALLOWED:
-                 raise RuntimeError(_BLOCK_MESSAGE)
-             return super().run(*args, **kwargs)
- 
-diff --git a/uv.lock b/uv.lock
-index e3733e6476c6ec2fa5f193b273454c518ac2b794..e32f71a288de6e097d8794818cbf641ead21f8c7 100644
---- a/uv.lock
-+++ b/uv.lock
-@@ -1560,7 +1560,7 @@ wheels = [
- 
- [[package]]
- name = "hermes-agent"
--version = "0.20.0"
-+version = "0.20.0+bright.1"
- source = { editable = "." }
- dependencies = [
-     { name = "certifi" },
 diff --git a/agent/bright_live.py b/agent/bright_live.py
 new file mode 100644
-index 0000000000000000000000000000000000000000..4afbfef47ce42fdaaba61dcea0c35f075eb58646
+index 000000000..98fc71281
 --- /dev/null
 +++ b/agent/bright_live.py
-@@ -0,0 +1,140 @@
+@@ -0,0 +1,157 @@
 +"""Narrow, auditable policy for Bright's ephemeral live-teacher profile.
 +
 +This module deliberately has no provider, gateway or persistence imports so
@@ -380,11 +114,26 @@ index 0000000000000000000000000000000000000000..4afbfef47ce42fdaaba61dcea0c35f07
 +    agent.max_iterations = 1
 +    # Hermes counts the first attempt in this value: 1 means zero retries.
 +    agent._api_max_retries = 1
++    # The live profile has exactly one legal terminal tool. Requiring a tool
++    # call prevents reasoning-capable hosted models from spending the whole
++    # classroom deadline composing discarded assistant prose.
++    enforce_bright_live_wire_policy(agent)
 +    agent.fallback_model = None
 +    agent.ephemeral_system_prompt = None
 +    agent._cached_system_prompt = profile.system_prompt
 +    agent._cached_system_prompt_static = profile.system_prompt
 +    agent._disable_request_dumps = True
++    return agent
++
++
++def enforce_bright_live_wire_policy(agent: Any) -> Any:
++    """Reapply terminal-tool wire constraints after upstream turn routing."""
++
++    profile = getattr(agent, "_bright_live_profile", None)
++    if isinstance(profile, BrightLiveProfile) and profile.enabled:
++        request_overrides = dict(getattr(agent, "request_overrides", {}) or {})
++        request_overrides["tool_choice"] = "required"
++        agent.request_overrides = request_overrides
 +    return agent
 +
 +
@@ -398,7 +147,8 @@ index 0000000000000000000000000000000000000000..4afbfef47ce42fdaaba61dcea0c35f07
 +        return list(tool_calls)
 +    for tool_call in tool_calls:
 +        function = getattr(tool_call, "function", None)
-+        if getattr(function, "name", None) == profile.terminal_tool:
++        name = str(getattr(function, "name", None) or "")
++        if name == profile.terminal_tool or name.endswith(f"__{profile.terminal_tool}"):
 +            return [tool_call]
 +    return []
 +
@@ -423,13 +173,310 @@ index 0000000000000000000000000000000000000000..4afbfef47ce42fdaaba61dcea0c35f07
 +    "BrightLiveProfile",
 +    "bounded_retry_ceiling",
 +    "configure_bright_live_agent",
++    "enforce_bright_live_wire_policy",
 +    "finalizer_inference_allowed",
 +    "select_terminal_tool_calls",
 +    "validate_responses_request",
 +]
+diff --git a/agent/chat_completion_helpers.py b/agent/chat_completion_helpers.py
+index 6a87c7c1e..0c10edbe4 100644
+--- a/agent/chat_completion_helpers.py
++++ b/agent/chat_completion_helpers.py
+@@ -1330,4 +1330,9 @@ def interruptible_api_call(agent, api_kwargs: dict):
+ def build_api_kwargs(agent, api_messages: list, tools_for_api: list | None = None) -> dict:
+     """Build the keyword arguments dict for the active API mode."""
++    if getattr(getattr(agent, "_bright_live_profile", None), "enabled", False):
++        # Gateway turn routing may replace request_overrides. The live
++        # classroom's one terminal tool is a wire invariant, not a hint.
++        from agent.bright_live import enforce_bright_live_wire_policy
++        enforce_bright_live_wire_policy(agent)
+     if tools_for_api is None:
+         tools_for_api = agent.tools
+diff --git a/agent/conversation_loop.py b/agent/conversation_loop.py
+index 1a236e6ea..a3e9edf56 100644
+--- a/agent/conversation_loop.py
++++ b/agent/conversation_loop.py
+@@ -4809,7 +4809,12 @@ def run_conversation(
+                     base_url=str(_base), model=_model, error=api_error
+                 )
+                 if _is_zai_coding_overload:
+-                    max_retries = max(max_retries, zai_coding_overload_retry_ceiling())
++                    from agent.bright_live import bounded_retry_ceiling
++                    max_retries = bounded_retry_ceiling(
++                        agent,
++                        max_retries,
++                        zai_coding_overload_retry_ceiling(),
++                    )
+                 _should_fallback = (
+                     is_rate_limited
+                     or (_is_transport_failure and retry_count >= 2)
+@@ -6567,6 +6572,22 @@ def run_conversation(
+                     assistant_message.tool_calls
+                 )
+ 
++                # Bright's live profile exposes one terminal proposal tool.
++                # Collapse a malformed multi-call batch to the first allowed
++                # proposal before callbacks, persistence or execution can
++                # observe it.  Other Hermes profiles retain normal batching.
++                from agent.bright_live import select_terminal_tool_calls
++                _bright_live_profile = getattr(agent, "_bright_live_profile", None)
++                assistant_message.tool_calls = select_terminal_tool_calls(
++                    _bright_live_profile,
++                    assistant_message.tool_calls,
++                )
++                if _bright_live_profile is not None and not assistant_message.tool_calls:
++                    _turn_exit_reason = "bright_terminal_tool_missing"
++                    final_response = ""
++                    failed = True
++                    break
++
+                 # Mixed-batch invalid-name handling: collect the invalid
+                 # calls now so the assistant message (built below) keeps
+                 # EVERY call the model emitted — providers require each
+@@ -6765,6 +6786,16 @@ def run_conversation(
+ 
+                 agent._execute_tool_calls(assistant_message, messages, effective_task_id, api_call_count)
+ 
++                # ``classroom_propose_move`` is a terminal commit proposal:
++                # its MCP output is the authoritative accept/reject result.
++                # Never ask the provider to interpret that result or compose a
++                # second final answer.  The Bright adapter buffers teacher_line
++                # and releases it only after validating structuredContent.ok.
++                if _bright_live_profile is not None:
++                    _turn_exit_reason = "bright_terminal_tool"
++                    final_response = turn_content
++                    break
++
+                 if getattr(agent, "_incremental_persistence_failed", False):
+                     # A tool result could not be made canonical. Do not send
+                     # the in-memory result back to the model or project any
+diff --git a/agent/turn_finalizer.py b/agent/turn_finalizer.py
+index de31bbabd..0475a87c1 100644
+--- a/agent/turn_finalizer.py
++++ b/agent/turn_finalizer.py
+@@ -102,6 +102,14 @@ def finalize_turn(
+         and not failed
+         and str(_turn_exit_reason) in {"unknown", "budget_exhausted"}
+     )
++    # The Bright live profile has a hard one-provider-inference budget.  A
++    # missing/invalid terminal proposal must fail closed; the normal Hermes
++    # max-iteration summarizer is a second inference and could emit an
++    # uncommitted child-facing line.
++    from agent.bright_live import finalizer_inference_allowed
++    budget_fallback_eligible = (
++        budget_fallback_eligible and finalizer_inference_allowed(agent)
++    )
+     continuation_budget_exhausted = (
+         final_response is None
+         and bool(_pending_verification_response)
+diff --git a/gateway/platforms/api_server.py b/gateway/platforms/api_server.py
+index 6799003ec..45459000a 100644
+--- a/gateway/platforms/api_server.py
++++ b/gateway/platforms/api_server.py
+@@ -1374,6 +1374,17 @@ class APIServerAdapter(BasePlatformAdapter):
+     def __init__(self, config: PlatformConfig):
+         super().__init__(config, Platform.API_SERVER)
+         extra = config.extra or {}
++        from agent.bright_live import BrightLiveProfile
++        self._bright_live_profile = BrightLiveProfile.from_extra(extra)
++        if (
++            os.getenv("BRIGHT_REQUIRE_LIVE_PROFILE", "").strip().lower()
++            in {"1", "true", "yes"}
++            and not self._bright_live_profile.enabled
++        ):
++            raise RuntimeError(
++                "BRIGHT_REQUIRE_LIVE_PROFILE is set but gateway.api_server.extra."
++                "bright_live is missing or disabled"
++            )
+         self._host: str = extra.get("host", os.getenv("API_SERVER_HOST", DEFAULT_HOST))
+         raw_port = extra.get("port")
+         if raw_port is None:
+@@ -1417,7 +1428,9 @@ class APIServerAdapter(BasePlatformAdapter):
+         self._app: Optional["web.Application"] = None
+         self._runner: Optional["web.AppRunner"] = None
+         self._site: Optional["web.TCPSite"] = None
+-        self._response_store = ResponseStore()
++        self._response_store = ResponseStore(
++            db_path=":memory:" if self._bright_live_profile.enabled else None
++        )
+         # Active run streams: run_id -> asyncio.Queue of SSE event dicts
+         self._run_streams: Dict[str, "asyncio.Queue[Optional[Dict]]"] = {}
+         # Creation timestamps for orphaned-run TTL sweep
+@@ -2044,6 +2057,17 @@ class APIServerAdapter(BasePlatformAdapter):
+         Kept as a method so multiplex tests can assert the /p/<profile>/
+         mirrors without starting a real aiohttp listener.
+         """
++        if self._bright_live_profile.enabled:
++            # The classroom process is not a general Hermes gateway.  Do not
++            # expose session/chat/run/job surfaces that accept history,
++            # chaining, background work, or persistence-bearing identifiers.
++            return [
++                ("GET", "/health", self._handle_health),
++                ("GET", "/health/detailed", self._handle_health_detailed),
++                ("GET", "/v1/health", self._handle_health),
++                ("GET", "/v1/models", self._handle_models),
++                ("POST", "/v1/responses", self._handle_responses),
++            ]
+         routes: List[tuple] = [
+             ("GET", "/health", self._handle_health),
+             ("GET", "/health/detailed", self._handle_health_detailed),
+@@ -2725,7 +2749,7 @@ class APIServerAdapter(BasePlatformAdapter):
+         session_key = gateway_session_key or session_id
+         session_row_model = _clean_request_string(session_model)
+         session_override = None
+-        if not confirmed_runtime_lock:
++        if not confirmed_runtime_lock and not self._bright_live_profile.enabled:
+             session_override = self._session_model_override_for(session_key)
+         # Model-string precedence delegates to the shared owner
+         # hermes_cli.model_switch.resolve_effective_model (session /model
+@@ -2864,13 +2888,15 @@ class APIServerAdapter(BasePlatformAdapter):
+         user_config = _load_gateway_config()
+         enabled_toolsets = sorted(_get_platform_tools(user_config, "api_server"))
+ 
+-        max_iterations = _current_max_iterations()
++        max_iterations = (
++            1 if self._bright_live_profile.enabled else _current_max_iterations()
++        )
+ 
+         # Load fallback provider chain so the API server platform has the
+         # same fallback behaviour as Telegram/Discord/Slack (fixes #4954).
+         fallback_model = (
+             None
+-            if confirmed_runtime_lock
++            if confirmed_runtime_lock or self._bright_live_profile.enabled
+             else GatewayRunner._load_fallback_model()
+         )
+ 
+@@ -2895,7 +2921,9 @@ class APIServerAdapter(BasePlatformAdapter):
+             "max_iterations": max_iterations,
+             "quiet_mode": True,
+             "verbose_logging": False,
+-            "ephemeral_system_prompt": ephemeral_system_prompt or None,
++            "ephemeral_system_prompt": (
++                None if self._bright_live_profile.enabled else ephemeral_system_prompt or None
++            ),
+             "enabled_toolsets": enabled_toolsets,
+             "session_id": session_id,
+             "platform": "api_server",
+@@ -2903,15 +2931,30 @@ class APIServerAdapter(BasePlatformAdapter):
+             "tool_progress_callback": tool_progress_callback,
+             "tool_start_callback": tool_start_callback,
+             "tool_complete_callback": tool_complete_callback,
+-            "session_db": self._ensure_session_db(),
++            "session_db": (
++                None if self._bright_live_profile.enabled else self._ensure_session_db()
++            ),
+             "fallback_model": fallback_model,
+             "reasoning_config": reasoning_config,
+-            "gateway_session_key": gateway_session_key,
++            "gateway_session_key": (
++                None if self._bright_live_profile.enabled else gateway_session_key
++            ),
+         }
++        if self._bright_live_profile.enabled:
++            agent_kwargs.update(
++                save_trajectories=False,
++                skip_context_files=True,
++                skip_memory=True,
++                skip_background_review=True,
++                checkpoints_enabled=False,
++            )
+         if request_service_tier is not _REQUEST_OPTION_MISSING:
+             agent_kwargs["service_tier"] = request_service_tier
+ 
+         agent = AIAgent(**agent_kwargs)
++        if self._bright_live_profile.enabled:
++            from agent.bright_live import configure_bright_live_agent
++            configure_bright_live_agent(agent, self._bright_live_profile)
+         agent._hermes_api_runtime = {
+             "provider": runtime_kwargs.get("provider") or getattr(agent, "provider", "") or "",
+             "model": getattr(agent, "model", None) or model,
+@@ -5201,6 +5244,16 @@ class APIServerAdapter(BasePlatformAdapter):
+                 status=400,
+             )
+ 
++        if self._bright_live_profile.enabled:
++            from agent.bright_live import validate_responses_request
++            bright_error = validate_responses_request(
++                self._bright_live_profile,
++                body,
++                request.headers,
++            )
++            if bright_error:
++                return web.json_response(_openai_error(bright_error), status=400)
++
+         raw_input = body.get("input")
+         if raw_input is None:
+             return web.json_response(_openai_error("Missing 'input' field"), status=400)
+diff --git a/gateway/run.py b/gateway/run.py
+index ef626504d..b0c0c8f14 100644
+--- a/gateway/run.py
++++ b/gateway/run.py
+@@ -5062,7 +5062,14 @@ class TurnRunner:
+         agent.event_callback = ctx._event_callback_sync
+         agent.reasoning_config = reasoning_config
+         agent.service_tier = self._runner._service_tier
+-        agent.request_overrides = turn_route.get("request_overrides") or {}
++        turn_request_overrides = dict(turn_route.get("request_overrides") or {})
++        bright_profile = getattr(agent, "_bright_live_profile", None)
++        if getattr(bright_profile, "enabled", False):
++            # The gateway normally resets per-turn overrides here. Bright's
++            # live profile requires its single terminal MCP call at the wire,
++            # so routing must not silently erase that policy after agent setup.
++            turn_request_overrides["tool_choice"] = "required"
++        agent.request_overrides = turn_request_overrides
+         # Must-deliver notes for THIS turn ride the current user message
+         # (api_content sidecar), never the system prompt: staged by
+         # _handle_message_with_agent (auto-reset note, first-contact
+diff --git a/pyproject.toml b/pyproject.toml
+index 52fd27046..07b109c43 100644
+--- a/pyproject.toml
++++ b/pyproject.toml
+@@ -2,7 +2,7 @@
+ 
+ [project]
+ name = "hermes-agent"
+-version = "0.20.0"
++version = "0.20.0+bright.1"
+ description = "The self-improving AI agent — creates skills from experience, improves them during use, and runs anywhere"
+ readme = "README.md"
+ # Upper bound is load-bearing, not cosmetic. uv resolves the project's
+diff --git a/setup.py b/setup.py
+index fac7fe881..a455ec9bc 100644
+--- a/setup.py
++++ b/setup.py
+@@ -30,6 +30,10 @@ from setuptools import setup
+ from setuptools.command.sdist import sdist
+ 
+ _IN_NIX_BUILD = os.environ.get("HERMES_NIX_BUILD") == "1"
++_IN_PINNED_BRIGHT_BUILD = (
++    os.environ.get("HERMES_BRIGHT_BUILD") == "0.20.0+bright.1"
++)
++_BUILD_ALLOWED = _IN_NIX_BUILD or _IN_PINNED_BRIGHT_BUILD
+ 
+ _BLOCK_MESSAGE = (
+     "Building wheels or sdists for hermes-agent is not supported.\n"
+@@ -46,7 +50,7 @@ _BLOCK_MESSAGE = (
+ 
+ class _GuardedSdist(sdist):
+     def run(self, *args, **kwargs):
+-        if not _IN_NIX_BUILD:
++        if not _BUILD_ALLOWED:
+             raise RuntimeError(_BLOCK_MESSAGE)
+         return super().run(*args, **kwargs)
+ 
+@@ -63,7 +67,7 @@ try:
+ 
+     class _GuardedBdistWheel(bdist_wheel):
+         def run(self, *args, **kwargs):
+-            if not _IN_NIX_BUILD:
++            if not _BUILD_ALLOWED:
+                 raise RuntimeError(_BLOCK_MESSAGE)
+             return super().run(*args, **kwargs)
+ 
 diff --git a/tests/agent/test_bright_live_profile.py b/tests/agent/test_bright_live_profile.py
 new file mode 100644
-index 0000000000000000000000000000000000000000..615d917bb96c66077d819bfcb965d4b63aa8fac8
+index 000000000..615d917bb
 --- /dev/null
 +++ b/tests/agent/test_bright_live_profile.py
 @@ -0,0 +1,115 @@
@@ -550,10 +597,10 @@ index 0000000000000000000000000000000000000000..615d917bb96c66077d819bfcb965d4b6
 +    assert [item.id for item in selected] == ["first"]
 diff --git a/tests/gateway/test_bright_live_api_server.py b/tests/gateway/test_bright_live_api_server.py
 new file mode 100644
-index 0000000000000000000000000000000000000000..18899b7bab6f5597fc6f301d9c4f95b34a2ad7bc
+index 000000000..570241355
 --- /dev/null
 +++ b/tests/gateway/test_bright_live_api_server.py
-@@ -0,0 +1,64 @@
+@@ -0,0 +1,71 @@
 +"""Gateway boundary tests for Bright's constrained live profile."""
 +
 +from unittest.mock import AsyncMock
@@ -595,6 +642,13 @@ index 0000000000000000000000000000000000000000..18899b7bab6f5597fc6f301d9c4f95b3
 +    }
 +
 +
++def test_required_live_profile_fails_closed_when_config_extension_is_missing(monkeypatch):
++    monkeypatch.setenv("BRIGHT_REQUIRE_LIVE_PROFILE", "1")
++
++    with pytest.raises(RuntimeError, match="bright_live is missing or disabled"):
++        APIServerAdapter(PlatformConfig(enabled=True, extra={}))
++
++
 +@pytest.mark.asyncio
 +async def test_invalid_live_request_is_rejected_before_agent_slot_is_consumed():
 +    adapter = _adapter()
@@ -618,3 +672,15 @@ index 0000000000000000000000000000000000000000..18899b7bab6f5597fc6f301d9c4f95b3
 +        assert "instructions" in (await response.json())["error"]["message"]
 +
 +    adapter._run_agent.assert_not_awaited()
+diff --git a/uv.lock b/uv.lock
+index e3733e647..e32f71a28 100644
+--- a/uv.lock
++++ b/uv.lock
+@@ -1561,5 +1561,5 @@ wheels = [
+ [[package]]
+ name = "hermes-agent"
+-version = "0.20.0"
++version = "0.20.0+bright.1"
+ source = { editable = "." }
+ dependencies = [
+     { name = "certifi" },

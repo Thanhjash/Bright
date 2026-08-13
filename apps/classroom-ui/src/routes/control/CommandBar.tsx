@@ -34,7 +34,7 @@ export function CommandBar({ setup }: { setup: LessonSetup }) {
 
   useEffect(() => bus.on('error', ({ code, message }) => {
     if (!startRequest.current) return
-    if (!['no_lesson', 'lesson_already_running', 'invalid_start_index', 'invalid_lesson_start', 'not_teachable', 'roster_required', 'lesson_mismatch', 'class_mismatch'].includes(code)) return
+    if (!['no_lesson', 'lesson_already_running', 'invalid_start_index', 'invalid_lesson_start', 'not_teachable', 'classroom_not_ready', 'roster_required', 'lesson_mismatch', 'class_mismatch'].includes(code)) return
     startRequest.current = null
     setStartPending(false)
     setStartError(message)

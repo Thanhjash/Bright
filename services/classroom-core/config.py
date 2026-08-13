@@ -135,6 +135,12 @@ class Settings:
     #: two-part development guard; hosted production is semantic-only.
     data_policy: str = "hosted_semantic"
     synthetic_dev_confirmed: bool = False
+    #: Explicit operator acknowledgement for sending the current adult/test
+    #: transcript to a hosted teacher model. It never relaxes durable storage.
+    hosted_raw_confirmed: bool = False
+    #: Acceptance profile is strict: missing live capabilities are a failed
+    #: product proof rather than permission to silently use authored fallback.
+    run_profile: str = "resilient"
     #: Shared loopback bearer capability for the Hermes -> Core MCP hop.  An
     #: empty value disables MCP rather than exposing an unauthenticated tool
     #: surface.
@@ -214,6 +220,8 @@ class Settings:
             ),
             data_policy=_env("BRIGHT_DATA_POLICY", "hosted_semantic").strip().lower(),
             synthetic_dev_confirmed=_env_bool("BRIGHT_SYNTHETIC_DEV_ACK", False),
+            hosted_raw_confirmed=_env_bool("BRIGHT_HOSTED_RAW_ACK", False),
+            run_profile=_env("BRIGHT_RUN_PROFILE", "resilient").strip().lower(),
             mcp_token=os.environ.get("BRIGHT_MCP_TOKEN", ""),
             probe_interval_s=_env_int("CORE_PROBE_INTERVAL_S", 60),
             summary_delay_s=_env_int("CORE_SUMMARY_DELAY_S", 30),
