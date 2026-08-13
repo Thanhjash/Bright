@@ -38,6 +38,10 @@ mechanical evidence from classroom, provider and governance proof.
 - The candidate covers a 41.0-minute correct path and up to 44.7-minute recovery path. Every
   autonomous activity declares stage,
   budget, response/participation scope, skill IDs, evidence policy and recovery targets.
+- A manual full-Market ideal-condition operator protocol now specifies the normal
+  `ideal-hosted start` profile, activity-0 entry, an eight-person pseudonymous roster,
+  the eight authored spoken stations, scrubbed evidence, and strict non-claims. It is a
+  runbook, not evidence that such a full session has yet passed.
 - Control has roster/attendance setup, room-readiness gating, teaching/recovery status
   and prominent emergency controls. Stage has learner turn and recovery cues.
 - `composed-smoke` probes a real local Piper/faster-whisper endpoint from Chromium:
@@ -62,7 +66,7 @@ mechanical evidence from classroom, provider and governance proof.
 
 | Surface | Result | What it proves |
 |---|---:|---|
-| Classroom Core | **240 passed** | deterministic state, runner, app, MCP, session and policy behavior |
+| Classroom Core | **242 passed** | deterministic state, runner, app, MCP, session and policy behavior |
 | Bright agent | **83 passed, 4 live-provider deselected** | non-live adapter/eval behavior only |
 | AIRI bridge | **169 passed** | bridge unit behavior; typecheck/build also green |
 | Chromium v3 flow | **2 passed** | mocked Stage/Control v3 browser contract at tested viewports |

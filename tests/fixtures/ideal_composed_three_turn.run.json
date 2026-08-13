@@ -1,0 +1,144 @@
+{
+  "v": 3,
+  "lessonSchemaVersion": 1,
+  "deliveryMode": "autonomous_class",
+  "lessonId": "ideal-composed-three-turn",
+  "classId": "ideal-acceptance",
+  "title": "Three ideal composed voice turns",
+  "focus": ["polite_request"],
+  "review": [],
+  "studentsToCheck": [],
+  "activities": [
+    {
+      "id": "voice_station_1",
+      "scene": "text",
+      "props": {"text": "Make the polite request.", "size": "xl"},
+      "narration": [{"text": "Make one polite request at the answer station."}],
+      "durationS": 30,
+      "expect": {
+        "kind": "speech",
+        "correct": "at the market today i would like to buy a bottle of water please",
+        "acceptFuzzy": ["at the market today i'd like to buy a bottle of water please"]
+      },
+      "branches": [
+        {"on": "correct", "goto": "voice_station_2"},
+        {"on": "near", "goto": "voice_station_2"},
+        {"on": "wrong", "goto": "voice_station_2"},
+        {"on": "uncertain", "goto": "voice_station_2"},
+        {"on": "unhandled", "goto": "voice_station_2"},
+        {"on": "silence", "goto": "voice_station_2"},
+        {"on": "timeout", "goto": "voice_station_2"}
+      ],
+      "teaching": {
+        "stage": "SAMPLED_RETRIEVAL",
+        "stageBudgetS": 30,
+        "responseScope": "selected_individual",
+        "participationMode": "selected_individual",
+        "skillIds": ["polite_request"],
+        "evidencePolicy": "individual",
+        "recovery": {"easierActivityId": "closure", "safeDefaultActivityId": "closure"},
+        "checkpoint": true
+      }
+    },
+    {
+      "id": "voice_station_2",
+      "scene": "text",
+      "props": {"text": "Make the same polite request again.", "size": "xl"},
+      "narration": [{"text": "Make the same polite request again."}],
+      "durationS": 30,
+      "expect": {
+        "kind": "speech",
+        "correct": "at the market today i would like to buy a bottle of water please",
+        "acceptFuzzy": ["at the market today i'd like to buy a bottle of water please"]
+      },
+      "branches": [
+        {"on": "correct", "goto": "voice_station_3"},
+        {"on": "near", "goto": "voice_station_3"},
+        {"on": "wrong", "goto": "voice_station_3"},
+        {"on": "uncertain", "goto": "voice_station_3"},
+        {"on": "unhandled", "goto": "voice_station_3"},
+        {"on": "silence", "goto": "voice_station_3"},
+        {"on": "timeout", "goto": "voice_station_3"}
+      ],
+      "teaching": {
+        "stage": "SAMPLED_RETRIEVAL",
+        "stageBudgetS": 30,
+        "responseScope": "selected_individual",
+        "participationMode": "selected_individual",
+        "skillIds": ["polite_request"],
+        "evidencePolicy": "individual",
+        "recovery": {"easierActivityId": "closure", "safeDefaultActivityId": "closure"},
+        "checkpoint": true
+      }
+    },
+    {
+      "id": "voice_station_3",
+      "scene": "text",
+      "props": {"text": "Make the same polite request one last time.", "size": "xl"},
+      "narration": [{"text": "Make the same polite request one last time."}],
+      "durationS": 30,
+      "expect": {
+        "kind": "speech",
+        "correct": "at the market today i would like to buy a bottle of water please",
+        "acceptFuzzy": ["at the market today i'd like to buy a bottle of water please"]
+      },
+      "branches": [
+        {"on": "correct", "goto": "closure"},
+        {"on": "near", "goto": "closure"},
+        {"on": "wrong", "goto": "closure"},
+        {"on": "uncertain", "goto": "closure"},
+        {"on": "unhandled", "goto": "closure"},
+        {"on": "silence", "goto": "closure"},
+        {"on": "timeout", "goto": "closure"}
+      ],
+      "teaching": {
+        "stage": "SAMPLED_RETRIEVAL",
+        "stageBudgetS": 30,
+        "responseScope": "selected_individual",
+        "participationMode": "selected_individual",
+        "skillIds": ["polite_request"],
+        "evidencePolicy": "individual",
+        "recovery": {"easierActivityId": "closure", "safeDefaultActivityId": "closure"},
+        "checkpoint": true
+      }
+    },
+    {
+      "id": "closure",
+      "scene": "text",
+      "props": {"text": "Lesson complete.", "size": "xl"},
+      "narration": [{"text": "Thank you. The composed voice turns are complete."}],
+      "durationS": 1,
+      "teaching": {
+        "stage": "CLOSURE",
+        "stageBudgetS": 60,
+        "responseScope": "anonymous",
+        "participationMode": "whole_class",
+        "skillIds": ["polite_request"],
+        "evidencePolicy": "none",
+        "recovery": {"easierActivityId": "closure", "safeDefaultActivityId": "closure"},
+        "checkpoint": true
+      }
+    }
+  ],
+  "mediaManifest": [],
+  "curriculum": {
+    "locale": "en-VN",
+    "learnerWedge": "Synthetic adult acceptance only",
+    "frameworkRefs": ["BRIGHT-COMPOSITION-ACCEPTANCE"],
+    "objectives": [
+      {
+        "id": "polite-request",
+        "description": "Produce the same supported polite request three times.",
+        "evidence": "Three correlated answer-station responses."
+      }
+    ],
+    "approver": "TEST FIXTURE — not classroom curriculum",
+    "approvalStatus": "draft"
+  },
+  "sessionPlan": {
+    "durationMin": 35,
+    "closureReserveS": 60,
+    "namedTurnBudget": 3,
+    "fairnessCooldown": 0
+  }
+}

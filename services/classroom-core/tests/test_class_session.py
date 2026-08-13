@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import time
 from pathlib import Path
 from types import SimpleNamespace
@@ -577,7 +578,7 @@ async def test_market_lesson_executes_all_eight_fair_callout_capture_turns(tmp_p
         market.db.close()
 
 
-async def test_market_closure_reserve_redirects_the_next_transition(tmp_path):
+async def test_market_closure_reserve_uses_authored_exit_route_not_direct_closure(tmp_path):
     import time
     from app import build_core
     from class_session import TransitionIntent
@@ -597,7 +598,7 @@ async def test_market_closure_reserve_redirects_the_next_transition(tmp_path):
     ))
     try:
         await market.start_lesson(
-            0,
+            market.runner.index_of("explore_transfer"),
             roster=[{"id": "learner-1", "displayName": "Learner 1"}],
             attendance_ids=["learner-1"],
         )
@@ -607,22 +608,136 @@ async def test_market_closure_reserve_redirects_the_next_transition(tmp_path):
                 cause="timer",
             from_activity_id=market.runner.current.id,
             activity_generation=market.runner._generation,
-            target_index=1,
+            # A stale timer may ask to close immediately.  The session clock
+            # must follow Market's explicitly-authored recovery route first.
+            target_index=market.runner.index_of("closure"),
         ))
-        assert market.runner.current.id == "closure"
+        assert market.runner.current.id == "exit_check"
+        pacing = [frame["payload"] for frame in market.bus.history if frame["type"] == "lesson.pacing"]
+        assert pacing[-1] == {
+            "reason": "closure_reserve_elapsed",
+            "fromActivityId": "explore_transfer",
+            "targetActivityId": "exit_check",
+            "targetSource": "teaching.recovery.safeDefaultActivityId",
+            "forcedClosure": False,
+        }
+
+        # Exit's authored safe-default is closure.  This is the only point at
+        # which an overdue session is permitted to enter the closing activity.
         await controller.commit_transition(TransitionIntent(
             cause="timer",
-            from_activity_id="closure",
+            from_activity_id="exit_check",
             activity_generation=market.runner._generation,
-            target_index=None,
+            target_index=market.runner.index_of("closure"),
             decision_revision=controller.decision_revision,
         ))
-        assert market.runner.finished is True
-        assert controller.session_state == SessionState.COMPLETED
+        assert market.runner.current.id == "closure"
     finally:
         market.session_controller.cancel_session_clock()
         await market.runner.stop()
         market.db.close()
+
+
+async def test_overdue_clock_follows_authored_route_to_closure_then_done(tmp_path):
+    import time
+    from app import build_core
+    from class_session import TransitionIntent
+    from config import Settings
+
+    lesson_path = (
+        Path(__file__).resolve().parents[3]
+        / "content/lessons/market-food/market-food-01.run.json"
+    )
+    market = build_core(Settings(
+        data_dir=tmp_path,
+        db_path=tmp_path / "closure-cancel.db",
+        lesson_run_path=lesson_path,
+        playback_ack_timeout_s=1.0,
+        mode_override="OFFLINE",
+        probe_interval_s=3600,
+    ))
+    try:
+        closure_index = market.runner.index_of("closure")
+        market.runner.activities[closure_index].duration_s = 0.001
+        await market.start_lesson(
+            market.runner.index_of("explore_transfer"),
+            roster=[{"id": "learner-1", "displayName": "Learner 1"}],
+            attendance_ids=["learner-1"],
+        )
+        controller = market.session_controller
+        controller._closure_deadline_mono = time.monotonic() - 1
+        # Exercise the session clock itself -- no test-side transition commit.
+        controller._schedule_closure_deadline(0.001)
+        for _ in range(100):
+            if market.runner.current and market.runner.current.id == "closure":
+                break
+            await asyncio.sleep(0.005)
+        assert market.runner.current.id == "closure"
+        cancellations = [
+            frame["payload"]
+            for frame in market.bus.history
+            if frame["type"] == "speech.cancel"
+        ]
+        cancelled_ids = [payload["speechTurnId"] for payload in cancellations]
+        # explore has two authored lines; exit has one.  Both live generations
+        # are cancelled before closure starts, so no stale prompt overlaps it.
+        assert len(cancelled_ids) == 3
+        closure_start_index = next(
+            index
+            for index, frame in enumerate(market.bus.history)
+            if frame["type"] == "speech.turn.started"
+            and frame["payload"].get("activityId") == "closure"
+        )
+        assert all(
+            next(
+                index
+                for index, frame in enumerate(market.bus.history)
+                if frame["type"] == "speech.cancel"
+                and frame["payload"]["speechTurnId"] == turn_id
+            ) < closure_start_index
+            for turn_id in cancelled_ids
+        )
+        pacing = [frame["payload"] for frame in market.bus.history if frame["type"] == "lesson.pacing"]
+        assert [(item["fromActivityId"], item["targetActivityId"]) for item in pacing] == [
+            ("explore_transfer", "exit_check"),
+            ("exit_check", "closure"),
+        ]
+
+        # Closure's normal authored duration, not a direct test mutation of
+        # state, is what reaches DONE after its final playback acknowledgement.
+        while market.runner._pending_playback_turns:
+            turn_id = market.runner._pending_playback_turns[0]
+            assert market.runner.on_playback_started(turn_id)
+            assert market.runner.on_playback_finished(turn_id)
+        for _ in range(100):
+            if market.runner.finished:
+                break
+            await asyncio.sleep(0.005)
+        assert market.runner.finished
+        assert market.store.lesson.stage == "DONE"
+    finally:
+        market.session_controller.cancel_session_clock()
+        await market.runner.stop()
+        market.db.close()
+
+
+def test_pacing_cutover_cancels_live_authored_speech_from_all_generations(core):
+    runner = core.runner
+    assert runner is not None
+    runner._generation = 5
+    runner._authored_speech_by_generation[5] = ["old-heard", "old-speaking"]
+    runner._generation = 7
+    runner._authored_speech_by_generation[7] = ["heard", "still-speaking"]
+
+    runner.retire_authored_speech("old-heard")
+    runner.retire_authored_speech("heard")
+    retired = runner.cancel_live_authored_speech(reason="pacing_closure")
+
+    assert retired == ["old-speaking", "still-speaking"]
+    assert [frame["payload"] for frame in core.bus.history if frame["type"] == "speech.cancel"] == [
+        {"speechTurnId": "old-speaking", "reason": "pacing_closure"},
+        {"speechTurnId": "still-speaking", "reason": "pacing_closure"}
+    ]
 
 
 async def test_speech_claim_requires_ready_and_started_capture(core):

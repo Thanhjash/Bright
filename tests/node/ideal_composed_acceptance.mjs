@@ -9,8 +9,7 @@
  */
 
 import { chromium, LAUNCH_ARGS, result } from './lib.mjs'
-import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
-import { createHash } from 'node:crypto'
+import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { tmpdir } from 'node:os'
 
@@ -43,6 +42,9 @@ function normalized(raw) {
   const timeoutMs = Number(raw.timeoutMs ?? raw.timeout ?? DEFAULT_TIMEOUT_MS)
   if (!Number.isFinite(timeoutMs) || timeoutMs < 20_000)
     throw new Error('timeoutMs must be at least 20000')
+  const attempts = Number(raw.attempts ?? 1)
+  if (!Number.isInteger(attempts) || attempts < 1 || attempts > 3)
+    throw new Error('attempts must be an integer from 1 to 3')
   const fakeAudioFile = raw.fakeAudioFile ? resolve(String(raw.fakeAudioFile)) : undefined
   if (mode === 'fake-audio-file' && !fakeAudioFile)
     throw new Error('fake-audio-file mode requires --fake-audio-file /absolute/path.wav')
@@ -50,8 +52,11 @@ function normalized(raw) {
     mode,
     uiOrigin,
     timeoutMs,
+    attempts,
     fakeAudioFile,
-    expectedLessonId: String(raw.expectedLessonId ?? 'ideal-composed-one-turn'),
+    expectedLessonId: String(raw.expectedLessonId ?? (
+      attempts === 3 ? 'ideal-composed-three-turn' : 'ideal-composed-one-turn'
+    )),
     artifacts: resolve(String(raw.artifacts ?? process.env.BRIGHT_ARTIFACTS ?? 'tests/.artifacts/ideal-composed')),
     // Audio-only diagnostics must opt out explicitly. Ideal acceptance requires
     // one committed hosted-Hermes proposal by default.
@@ -70,67 +75,126 @@ function safeError(error) {
 }
 
 function createLedger() {
+  // Raw runtime identifiers never leave this closure. The durable artifact
+  // receives only per-run opaque slots, while assertions can still follow the
+  // exact capability and utterance relationships Core validates.
   const rows = []
-  const turns = new Map()
-  let nextTurn = 0
-  const slot = (id) => {
-    if (!id) return 'unknown-turn'
-    if (!turns.has(id)) turns.set(id, `turn-${++nextTurn}`)
-    return turns.get(id)
+  const slots = new Map()
+  const counters = new Map()
+  const slot = (kind, id) => {
+    if (!id) return `unknown-${kind}`
+    const key = `${kind}:${id}`
+    if (!slots.has(key)) {
+      const next = (counters.get(kind) ?? 0) + 1
+      counters.set(kind, next)
+      slots.set(key, `${kind}-${next}`)
+    }
+    return slots.get(key)
   }
+  const safeStatus = (value, allowed, fallback = 'unknown') => (
+    typeof value === 'string' && allowed.includes(value) ? value : fallback
+  )
+  const safeSource = (value) => {
+    if (value === 'agent') return 'agent'
+    if (value === 'core') return 'callout'
+    return 'other'
+  }
+  const safeTypes = new Set([
+    'stage.lease.granted',
+    'class.turn.assigned',
+    'class.turn.closed',
+    'response.capture.requested',
+    'response.capture.ready',
+    'response.capture.started',
+    'student.speech.final',
+    'student.response.accepted',
+    'speech.turn.started',
+    'speech.playback.started',
+    'speech.playback.finished',
+    'scene.update',
+    'lesson.position',
+    'class.session.updated',
+    'classroom.status',
+    'error',
+  ])
   return {
     note(client, direction, frame) {
-      if (!frame || typeof frame.type !== 'string') return
+      if (!frame || typeof frame.type !== 'string' || !safeTypes.has(frame.type)) return
       const payload = frame.payload && typeof frame.payload === 'object' ? frame.payload : {}
       const row = { order: rows.length + 1, client, direction, type: frame.type }
       if (typeof frame.stateVersion === 'number') row.stateVersion = frame.stateVersion
       if (frame.type === 'speech.turn.started') {
-        row.turn = slot(payload.speechTurnId)
-        row.source = payload.source === 'agent' ? 'agent' : 'non-agent'
+        row.speech = slot('speech', payload.speechTurnId)
+        row.source = safeSource(payload.source)
       }
       else if (frame.type === 'speech.playback.started' || frame.type === 'speech.playback.finished') {
-        row.turn = slot(payload.speechTurnId)
-        if (typeof payload.status === 'string') row.status = payload.status
+        row.speech = slot('speech', payload.speechTurnId)
+        if (frame.type === 'speech.playback.finished')
+          row.status = safeStatus(payload.status, ['completed', 'cancelled', 'failed'])
         if (frame.type === 'speech.playback.started' && payload.metrics) {
           row.causalAudioStart = Number.isFinite(payload.metrics.audioContextTime)
             && Number.isFinite(payload.metrics.firstAudioMs)
         }
       }
       else if (frame.type === 'class.turn.assigned') {
-        row.assignment = slot(payload.assignmentId)
-        row.target = slot(payload.targetId)
+        row.assignment = slot('assignment', payload.assignmentId)
+        row.response = slot('response', payload.responseTurnId)
+        if (payload.targetId) row.learner = slot('learner', payload.targetId)
       }
-      else if (frame.type === 'student.response.accepted') {
-        row.outcome = typeof payload.outcome === 'string' ? payload.outcome : 'unknown'
+      else if (frame.type === 'response.capture.requested') {
+        row.capture = slot('capture', payload.captureId)
+        row.assignment = slot('assignment', payload.assignmentId)
+        row.response = slot('response', payload.responseTurnId)
       }
       else if (frame.type === 'response.capture.ready') {
-        row.status = payload.status === 'ready' ? 'ready' : 'failed'
-        if (typeof payload.reason === 'string') row.reason = payload.reason.slice(0, 64)
+        row.capture = slot('capture', payload.captureId)
+        row.assignment = slot('assignment', payload.assignmentId)
+        row.response = slot('response', payload.responseTurnId)
+        row.status = safeStatus(payload.status, ['ready', 'failed'])
+      }
+      else if (frame.type === 'response.capture.started') {
+        row.capture = slot('capture', payload.captureId)
+        row.assignment = slot('assignment', payload.assignmentId)
+        row.response = slot('response', payload.responseTurnId)
+      }
+      else if (frame.type === 'student.speech.final') {
+        row.utterance = slot('utterance', payload.utteranceId)
+        row.capture = slot('capture', payload.captureId)
+        row.assignment = slot('assignment', payload.assignmentId)
+        row.response = slot('response', payload.responseTurnId)
+      }
+      else if (frame.type === 'student.response.accepted') {
+        row.utterance = slot('utterance', payload.utteranceId)
+        row.outcome = safeStatus(payload.outcome, ['correct', 'near', 'wrong', 'silence', 'timeout', 'rejected'])
+      }
+      else if (frame.type === 'class.turn.closed') {
+        row.assignment = slot('assignment', payload.assignmentId)
+        row.response = slot('response', payload.responseTurnId)
+        row.outcome = safeStatus(payload.outcome, ['correct', 'near', 'wrong', 'uncertain', 'unhandled', 'silence', 'timeout', 'rejected'])
       }
       else if (frame.type === 'lesson.position') {
-        row.lessonId = typeof payload.lessonId === 'string' ? payload.lessonId : 'unknown'
-        row.stage = typeof payload.stage === 'string' ? payload.stage : 'unknown'
-      }
-      else if (frame.type === 'scene.snapshot') {
-        row.lessonId = typeof payload.lesson?.lessonId === 'string'
-          ? payload.lesson.lessonId
-          : 'unknown'
-        row.stage = typeof payload.lesson?.stage === 'string' ? payload.lesson.stage : 'unknown'
+        if (typeof payload.lessonId === 'string') slot('lesson', payload.lessonId)
+        row.stage = safeStatus(payload.stage, ['WARMUP', 'MODELING', 'GUIDED_PRACTICE', 'SAMPLED_RETRIEVAL', 'INDEPENDENT', 'CLOSURE'])
       }
       else if (frame.type === 'class.session.updated') {
-        row.status = typeof payload.status === 'string' ? payload.status : 'unknown'
+        row.status = safeStatus(payload.status, ['PREPARING', 'RUNNING', 'PAUSED', 'RECOVERING', 'CLOSING', 'COMPLETED', 'ABORTED'])
       }
       else if (frame.type === 'classroom.status') {
-        row.status = typeof payload.status === 'string' ? payload.status : 'unknown'
-        if (typeof payload.reason === 'string') row.reason = payload.reason.slice(0, 64)
-      }
-      else if (frame.type === 'error') {
-        row.code = typeof payload.code === 'string' ? payload.code.slice(0, 64) : 'unknown'
+        row.status = safeStatus(payload.readiness, ['ready', 'degraded', 'not_ready'])
       }
       rows.push(row)
     },
     http(client, kind, status) {
-      rows.push({ order: rows.length + 1, client, direction: 'http', type: kind, status })
+      rows.push({
+        order: rows.length + 1,
+        client,
+        direction: 'http',
+        type: kind,
+        status: status >= 200 && status < 300 ? 'ok' : 'not_ok',
+      })
+    },
+    hasLesson(lessonId) {
+      return slots.has(`lesson:${lessonId}`)
     },
     rows,
   }
@@ -169,51 +233,147 @@ async function waitUntil(predicate, timeoutMs) {
   throw new Error('timed out waiting for the composed terminal sequence')
 }
 
-async function minimalState(page) {
-  return page.evaluate(() => {
-    return {
-      path: window.location.pathname,
-      title: document.title,
-      voicePhase: document.querySelector('[data-testid="answer-station-ready"]')?.getAttribute('data-voice-phase') ?? null,
-      notice: document.querySelector('[role="status"]')?.textContent?.slice(0, 120) ?? null,
-    }
-  })
+function received(rows, client, type) {
+  return rows.filter((row) => row.direction === 'received' && row.client === client && row.type === type)
 }
 
-function assertCommitAfterPlayback(rows) {
-  const agentTurns = [...new Map(
-    rows
-      .filter((row) => row.type === 'speech.turn.started' && row.source === 'agent')
-      .map((row) => [row.turn, row]),
-  ).values()]
-  if (agentTurns.length !== 1)
-    throw new Error(`expected exactly one agent speech turn, observed ${agentTurns.length}`)
-  const turn = agentTurns[0].turn
-  const terminal = rows.find((row) => row.direction === 'sent'
-    && row.client === 'stage'
-    && row.type === 'speech.playback.finished'
-    && row.turn === turn
-    && row.status === 'completed')
-  if (!terminal) throw new Error('agent speech did not receive a Stage-originated completed playback acknowledgement')
-  const started = rows.find((row) => row.direction === 'sent'
-    && row.client === 'stage'
-    && row.type === 'speech.playback.started'
-    && row.turn === turn
-    && row.causalAudioStart === true)
-  if (!started) throw new Error('agent speech has no causal WebAudio start evidence')
-  if (started.order >= terminal.order) throw new Error('agent playback terminal preceded its causal WebAudio start')
-  const committed = rows.find((row) => row.order > terminal.order
-    && row.direction === 'received'
-    && ['scene.update', 'lesson.position', 'class.session.updated'].includes(row.type))
-  if (!committed) throw new Error('Core did not publish a post-playback committed state transition')
-  return { agentTurn: turn, playbackFinishedOrder: terminal.order, commitOrder: committed.order }
+function agentSpeechTurns(rows) {
+  // Stage is the unique owner of audio. Looking only at its received events
+  // prevents the Control broadcast copy from counting a proposal twice.
+  return received(rows, 'stage', 'speech.turn.started').filter((row) => row.source === 'agent')
+}
+
+function lastBefore(rows, predicate, before) {
+  return rows.filter((row) => row.order < before && predicate(row)).at(-1)
+}
+
+function firstBetween(rows, predicate, after, before = Infinity) {
+  return rows.find((row) => row.order > after && row.order < before && predicate(row))
+}
+
+function correlatedCorrectCycles(rows) {
+  return received(rows, 'control', 'student.response.accepted')
+    .filter((row) => row.outcome === 'correct')
+    .map((accepted) => {
+      const final = lastBefore(rows, (row) => row.direction === 'sent'
+        && row.client === 'control'
+        && row.type === 'student.speech.final'
+        && row.utterance === accepted.utterance, accepted.order)
+      if (!final)
+        throw new Error('correct Core acceptance has no matching Control utterance slot')
+      return { accepted, final }
+    })
+}
+
+function assertAttempt(rows, cycle, index, nextFinalOrder = Infinity) {
+  const { accepted, final } = cycle
+  const attempt = index + 1
+  const sameCapture = (row) => row.capture === final.capture
+    && row.assignment === final.assignment && row.response === final.response
+  const captureStarted = lastBefore(rows, (row) => row.direction === 'sent'
+    && row.client === 'control' && row.type === 'response.capture.started'
+    && sameCapture(row), final.order)
+  if (!captureStarted) throw new Error(`attempt ${attempt} has no correlated capture.started`)
+  const captureReady = lastBefore(rows, (row) => row.direction === 'sent'
+    && row.client === 'control' && row.type === 'response.capture.ready'
+    && row.status === 'ready' && sameCapture(row), captureStarted.order)
+  if (!captureReady) throw new Error(`attempt ${attempt} has no correlated ready capture`)
+  const captureRequested = lastBefore(rows, (row) => row.direction === 'received'
+    && row.client === 'control' && row.type === 'response.capture.requested'
+    && sameCapture(row), captureReady.order)
+  if (!captureRequested) throw new Error(`attempt ${attempt} has no correlated Core capture request`)
+  const assignmentRefresh = lastBefore(rows, (row) => row.direction === 'received'
+    && row.client === 'control' && row.type === 'class.turn.assigned'
+    && row.assignment === final.assignment && row.response === final.response, captureRequested.order)
+  if (!assignmentRefresh) throw new Error(`attempt ${attempt} has no Core assignment refresh after callout`)
+
+  // Core deliberately re-emits the same assignment immediately after accepting
+  // the exact callout ACK. The callout has no assignment field on the wire, so
+  // bind it to that refresh and require the original same-slot assignment too.
+  const calloutFinished = lastBefore(rows, (row) => row.direction === 'sent'
+    && row.client === 'stage' && row.type === 'speech.playback.finished'
+    && row.status === 'completed'
+    && rows.some((started) => started.direction === 'received'
+      && started.client === 'stage' && started.type === 'speech.turn.started'
+      && started.source === 'callout' && started.speech === row.speech
+      && started.order < row.order), assignmentRefresh.order)
+  if (!calloutFinished) throw new Error(`attempt ${attempt} has no completed Stage callout`)
+  const initialAssignment = lastBefore(rows, (row) => row.direction === 'received'
+    && row.client === 'control' && row.type === 'class.turn.assigned'
+    && row.assignment === final.assignment && row.response === final.response, calloutFinished.order)
+  if (!initialAssignment) throw new Error(`attempt ${attempt} callout has no matching Core assignment`)
+
+  const asr = firstBetween(rows, (row) => row.client === 'control'
+    && row.direction === 'http' && row.type === 'http.audio.transcriptions'
+    && row.status === 'ok', captureStarted.order, final.order)
+  if (!asr) throw new Error(`attempt ${attempt} has no real ASR response after capture started`)
+  if (accepted.order <= final.order)
+    throw new Error(`attempt ${attempt} Core accepted before its correlated utterance`)
+
+  const agent = firstBetween(rows, (row) => row.direction === 'received'
+    && row.client === 'stage' && row.type === 'speech.turn.started'
+    && row.source === 'agent', accepted.order, nextFinalOrder)
+  if (!agent) throw new Error(`attempt ${attempt} has no hosted agent speech after correct acceptance`)
+  const playbackStarted = firstBetween(rows, (row) => row.direction === 'sent'
+    && row.client === 'stage' && row.type === 'speech.playback.started'
+    && row.speech === agent.speech && row.causalAudioStart === true, agent.order, nextFinalOrder)
+  if (!playbackStarted) throw new Error(`attempt ${attempt} agent speech has no causal WebAudio start evidence`)
+  const piper = firstBetween(rows, (row) => row.client === 'stage'
+    && row.direction === 'http' && row.type === 'http.audio.speech'
+    && row.status === 'ok', agent.order, playbackStarted.order)
+  if (!piper) throw new Error(`attempt ${attempt} has no real Piper response before causal audio start`)
+  const playbackFinished = firstBetween(rows, (row) => row.direction === 'sent'
+    && row.client === 'stage' && row.type === 'speech.playback.finished'
+    && row.speech === agent.speech && row.status === 'completed', playbackStarted.order, nextFinalOrder)
+  if (!playbackFinished) throw new Error(`attempt ${attempt} agent speech has no completed Stage playback acknowledgement`)
+  if (typeof agent.stateVersion !== 'number')
+    throw new Error(`attempt ${attempt} agent speech has no Core state version`)
+  const committed = firstBetween(rows, (row) => row.direction === 'received'
+    && ['scene.update', 'lesson.position', 'class.session.updated'].includes(row.type)
+    && typeof row.stateVersion === 'number' && row.stateVersion > agent.stateVersion,
+  playbackFinished.order, nextFinalOrder)
+  if (!committed) throw new Error(`attempt ${attempt} Core did not publish a post-playback committed state transition`)
+  return {
+    attempt: `attempt-${attempt}`,
+    assignment: final.assignment,
+    response: final.response,
+    capture: final.capture,
+    utterance: final.utterance,
+    calloutSpeech: calloutFinished.speech,
+    agentSpeech: agent.speech,
+    calloutCompletedOrder: calloutFinished.order,
+    captureRequestedOrder: captureRequested.order,
+    captureReadyOrder: captureReady.order,
+    captureStartedOrder: captureStarted.order,
+    asrOrder: asr.order,
+    responseAcceptedOrder: accepted.order,
+    piperOrder: piper.order,
+    playbackStartedOrder: playbackStarted.order,
+    playbackFinishedOrder: playbackFinished.order,
+    commitOrder: committed.order,
+  }
+}
+
+function assertExpectedAgentTurns(rows, attempts) {
+  const cycles = correlatedCorrectCycles(rows)
+  if (cycles.length !== attempts)
+    throw new Error(`expected exactly ${attempts} correlated correct response cycles, observed ${cycles.length}`)
+  const proofs = cycles.map((cycle, index) => assertAttempt(
+    rows, cycle, index, cycles[index + 1]?.final.order ?? Infinity,
+  ))
+  const matchedAgentSpeech = new Set(proofs.map((proof) => proof.agentSpeech))
+  const actualAgentSpeech = new Set(agentSpeechTurns(rows).map((row) => row.speech))
+  if (actualAgentSpeech.size !== attempts || actualAgentSpeech.size !== matchedAgentSpeech.size
+    || [...actualAgentSpeech].some((speech) => !matchedAgentSpeech.has(speech)))
+    throw new Error(`expected exactly ${attempts} correlated agent speech turns`)
+  return proofs
 }
 
 function assertRealVoicePath(rows) {
   const tts = rows.some((row) => row.client === 'stage'
-    && row.type === 'http.audio.speech' && row.status === 200)
+    && row.type === 'http.audio.speech' && row.status === 'ok')
   const asr = rows.some((row) => row.client === 'control'
-    && row.type === 'http.audio.transcriptions' && row.status === 200)
+    && row.type === 'http.audio.transcriptions' && row.status === 'ok')
   const correct = rows.some((row) => row.direction === 'received'
     && row.type === 'student.response.accepted' && row.outcome === 'correct')
   if (!tts) throw new Error('Stage never completed a real Piper request')
@@ -225,26 +385,10 @@ function assertRealVoicePath(rows) {
 async function run(raw) {
   const cfg = normalized(raw)
   const out = {
+    artifactVersion: 2,
     ok: false,
     mode: cfg.mode,
-    uiOrigin: cfg.uiOrigin,
-    coverage: [
-      'two persistent Chromium contexts: Stage and Control',
-      'visible UI lesson start and answer-station capture',
-      'Stage-originated playback acknowledgements only',
-      'optional committed hosted Hermes proposal evidence',
-    ],
-    exclusions: [
-      'acoustic-pressure measurement at the speaker cone',
-      'room ASR accuracy, child speech, or grading-quality claims',
-    ],
-  }
-  if (cfg.fakeAudioFile) {
-    const fixture = await readFile(cfg.fakeAudioFile)
-    out.inputFixture = {
-      sha256: createHash('sha256').update(fixture).digest('hex'),
-      bytes: fixture.byteLength,
-    }
+    expectedAttempts: cfg.attempts,
   }
   const stageProfile = await mkdtemp(resolve(tmpdir(), 'bright-stage-acceptance-'))
   const controlProfile = await mkdtemp(resolve(tmpdir(), 'bright-control-acceptance-'))
@@ -302,50 +446,65 @@ async function run(raw) {
     await control.getByTestId('start-lesson').click()
     progress('lesson-start-requested')
     await waitUntil(
-      () => ledger.rows.some((row) => row.direction === 'received'
-        && row.type === 'lesson.position'
-        && row.lessonId === cfg.expectedLessonId),
+      () => ledger.hasLesson(cfg.expectedLessonId),
       cfg.timeoutMs,
     )
     progress('lesson-identity')
 
-    await waitFor(
-      control,
-      () => {
-        const ready = document.querySelector('[data-testid="answer-station-ready"]')
-        return ready?.getAttribute('data-voice-phase') === 'assigned'
-          && ready?.getAttribute('data-output-quiet') === 'true'
-          && !ready?.hasAttribute('disabled')
-      },
-      cfg.timeoutMs,
-    )
-    progress('turn-assigned')
-    // The same visible button a learner presses. Afterwards the browser's real
-    // selected input (or only its configured file device) supplies the audio.
-    await control.getByTestId('answer-station-ready').click()
-    await waitFor(
-      control,
-      () => document.querySelector('[data-testid="answer-station-ready"]')?.getAttribute('data-voice-phase') === 'listening',
-      cfg.timeoutMs,
-    )
-    progress('capture-listening')
-    if (cfg.mode === 'manual-physical-mic')
-      process.stderr.write('Bright acceptance: speak the expected answer into the physical microphone now.\n')
+    for (let attempt = 0; attempt < cfg.attempts; attempt += 1) {
+      await waitFor(
+        control,
+        () => {
+          const ready = document.querySelector('[data-testid="answer-station-ready"]')
+          return ready?.getAttribute('data-voice-phase') === 'assigned'
+            && ready?.getAttribute('data-output-quiet') === 'true'
+            && !ready?.hasAttribute('disabled')
+        },
+        cfg.timeoutMs,
+      )
+      progress(`turn-${attempt + 1}-assigned`)
+      // The same visible button a learner presses. Afterwards the browser's
+      // real selected input (or only its configured file device) supplies the
+      // audio. The harness neither makes nor injects a learner answer.
+      await control.getByTestId('answer-station-ready').click()
+      await waitFor(
+        control,
+        () => document.querySelector('[data-testid="answer-station-ready"]')?.getAttribute('data-voice-phase') === 'listening',
+        cfg.timeoutMs,
+      )
+      progress(`turn-${attempt + 1}-capture-listening`)
+      if (cfg.mode === 'manual-physical-mic')
+        process.stderr.write(`Bright acceptance: speak expected answer ${attempt + 1} of ${cfg.attempts} into the physical microphone now.\n`)
 
-    await waitFor(
-      control,
-      () => document.querySelector('[data-testid="answer-station-ready"]')?.getAttribute('data-voice-phase') === 'idle',
-      cfg.timeoutMs,
-    )
+      await waitFor(
+        control,
+        () => document.querySelector('[data-testid="answer-station-ready"]')?.getAttribute('data-voice-phase') === 'idle',
+        cfg.timeoutMs,
+      )
+      await waitUntil(
+        () => received(ledger.rows, 'control', 'student.response.accepted')
+          .filter((row) => row.outcome === 'correct').length >= attempt + 1,
+        cfg.timeoutMs,
+      )
+      if (cfg.requireAgentProposal) {
+        await waitUntil(() => {
+          try {
+            const cycle = correlatedCorrectCycles(ledger.rows)[attempt]
+            return cycle ? assertAttempt(ledger.rows, cycle, attempt) : null
+          }
+          catch { return null }
+        }, cfg.timeoutMs)
+      }
+      progress(`turn-${attempt + 1}-committed`)
+    }
     out.voicePath = assertRealVoicePath(ledger.rows)
-    if (cfg.requireAgentProposal)
-      out.commit = await waitUntil(() => {
-        try { return assertCommitAfterPlayback(ledger.rows) } catch { return null }
-      }, cfg.timeoutMs)
+    if (cfg.requireAgentProposal) {
+      out.attempts = assertExpectedAgentTurns(ledger.rows, cfg.attempts)
+      // Preserve the one-turn result contract used by existing operators.
+      if (cfg.attempts === 1) out.commit = out.attempts[0]
+    }
 
     out.events = ledger.rows
-    out.stage = await minimalState(stage)
-    out.control = await minimalState(control)
     out.ok = true
   }
   catch (error) {

@@ -12,7 +12,7 @@ Research and rationale: [CTO autonomous-classroom audit](../5-research/2026-08-1
 
 ## Implementation checkpoint — 2026-08-12
 
-The current v3 vertical slice is mechanically green: Core 240 tests; agent 83 non-live
+The current v3 vertical slice is mechanically green: Core 242 tests; agent 83 non-live
 tests with four live-provider cases deselected; AIRI 169 tests; two mocked Chromium v3
 flows; content contract 8 tests plus the lesson self-test. The Market Food candidate runs 41.0–44.7
 minutes in headless simulation. This is implementation evidence, not a release claim.
@@ -222,6 +222,11 @@ The ACK was not fabricated. This promotes G5 from “uncomposed” to a one-turn
 composition proof only. It uses a 90-second cold-provider allowance and a 0.65
 fixture-only speech threshold; the product remains 6 seconds and 0.75. It is not a
 physical-room, child-speech, full-Market, or 20–40 learner proof.
+
+The operator-facing [full-Market ideal-condition protocol](composed-smoke-runbook.md#manual-full-market-ideal-condition-protocol)
+is ready for the next evidence run: it uses normal `ideal-hosted start`, activity 0,
+eight pseudonymous adults and the real answer microphone. Publishing the protocol does
+not mark the full-session gate as passed.
 
 **Exit gate**
 

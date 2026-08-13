@@ -2765,8 +2765,8 @@
     "approvalStatus": "draft"
   },
   "sessionPlan": {
-    "durationMin": 40,
-    "closureReserveS": 240,
+    "durationMin": 45,
+    "closureReserveS": 60,
     "namedTurnBudget": 8,
     "fairnessCooldown": 3
   }

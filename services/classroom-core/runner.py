@@ -297,7 +297,7 @@ class LessonRunner:
         on_finish: Callable[[], Awaitable[None] | None] | None = None,
         decide_next: DecideFn | None = None,
         publish_speech: Callable[..., str] | None = None,
-        cancel_speech: Callable[[str], None] | None = None,
+        cancel_speech: Callable[[str, str], None] | None = None,
         transition_sink: Callable[[Any], Awaitable[Activity | None]] | None = None,
         on_response_window: Callable[[Activity, int], Any] | None = None,
         on_activity_state: Callable[[str], None] | None = None,
@@ -337,6 +337,11 @@ class LessonRunner:
         self._playback_watchdog: asyncio.Task[None] | None = None
         self._playback_retry_count = 0
         self._entry_narration: list[Narration] = []
+        # Every authored line belongs to the generation that requested it.
+        # A normal authored branch is allowed to finish while its target
+        # activity starts; an *authoritative pacing closure* is different: it
+        # has superseded that context and must retire its old narration first.
+        self._authored_speech_by_generation: dict[int, list[str]] = {}
         self._pending: set[asyncio.Task[None]] = set()
         self.running = False
         self.paused = False
@@ -746,6 +751,8 @@ class LessonRunner:
             turn_ids.append(turn_id)
             if line.act is not None:
                 self.bus.publish("avatar.act", line.act)
+        if turn_ids:
+            self._authored_speech_by_generation.setdefault(self._generation, []).extend(turn_ids)
         return turn_ids
 
     # -------------------------------------------------------------- timers
@@ -1130,14 +1137,66 @@ class LessonRunner:
             return None
         return self._speak(branch.narration, f"{activity.id}#{branch.on}")
 
-    def _cancel_speech(self, turn_ids: list[str] | None) -> None:
+    def cancel_current_authored_speech(self, *, reason: str) -> list[str]:
+        """Cancel narration made stale by a controller-authorized cutover.
+
+        This deliberately belongs to the runner: it is the only component that
+        knows which speech was authored for the current activity generation.
+        The controller decides *when* this is legal; Stage remains the audio
+        owner that carries out the cancellation.
+        """
+        turn_ids = self._authored_speech_by_generation.pop(self._generation, [])
+        self._cancel_speech(turn_ids, reason=reason)
+        return turn_ids
+
+    def cancel_live_authored_speech(self, *, reason: str) -> list[str]:
+        """Cancel every non-terminal authored line made stale by a cutover.
+
+        A paced catch-up can advance through more than one activity before
+        Stage has physically finished the preceding narration.  Those lines
+        belong to different runner generations, so cancelling only the
+        current generation lets an older prompt keep talking over the new
+        activity.  ``retire_authored_speech`` has already removed terminal
+        entries from this index; atomically clearing the remainder therefore
+        sends cancellation only for still-live authored turns.
+        """
+        turn_ids = [
+            turn_id
+            for generation in sorted(self._authored_speech_by_generation)
+            for turn_id in self._authored_speech_by_generation[generation]
+        ]
+        self._authored_speech_by_generation.clear()
+        self._cancel_speech(turn_ids, reason=reason)
+        return turn_ids
+
+    def retire_authored_speech(self, speech_turn_id: str) -> None:
+        """Forget an authored line once Stage has terminally acknowledged it.
+
+        The live playback registry is owned by Core, while this small index is
+        only used if the controller later has to supersede the current
+        generation.  Retiring terminal entries here prevents a pacing cutover
+        from sending noisy cancels for lines the class has already heard.
+        """
+        for generation, turn_ids in tuple(self._authored_speech_by_generation.items()):
+            if speech_turn_id not in turn_ids:
+                continue
+            remaining = [turn_id for turn_id in turn_ids if turn_id != speech_turn_id]
+            if remaining:
+                self._authored_speech_by_generation[generation] = remaining
+            else:
+                self._authored_speech_by_generation.pop(generation, None)
+            return
+
+    def _cancel_speech(
+        self, turn_ids: list[str] | None, *, reason: str = "superseded"
+    ) -> None:
         """Retire utterances that a later decision has overtaken (§1 `speech.cancel`)."""
         for turn_id in turn_ids or []:
             if self.cancel_speech is not None:
-                self.cancel_speech(turn_id)
+                self.cancel_speech(turn_id, reason)
             else:
                 self.bus.publish(
-                    "speech.cancel", {"speechTurnId": turn_id, "reason": "superseded"}
+                    "speech.cancel", {"speechTurnId": turn_id, "reason": reason}
                 )
 
     def _agrees_with(self, branch: Branch | None, applied: str | None) -> bool:

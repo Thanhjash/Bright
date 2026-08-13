@@ -3,7 +3,7 @@ id: en-prea1-market-food-01
 class: demo-grade4
 title: Market & Food — I would like…, please
 level: pre-A1
-duration_min: 40
+duration_min: 45
 delivery_mode: autonomous_class
 lesson_schema_version: 1
 fallback_language: vi
@@ -29,8 +29,11 @@ curriculum:
   approver: "UNASSIGNED — curriculum review required before classroom release"
   approvalStatus: draft
 session_plan:
-  durationMin: 40
-  closureReserveS: 240
+  # The authored worst path enters CLOSURE by 43.7 minutes and finishes by
+  # 44.7. EXIT is lesson time, not reserve time; reserve protects only the
+  # final closing minute.
+  durationMin: 45
+  closureReserveS: 60
   namedTurnBudget: 8
   fairnessCooldown: 3
 ---

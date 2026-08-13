@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Operator-only acceptance lane for Bright's one real composed classroom turn.
+# Operator-only acceptance lane for Bright's real composed classroom turns.
 #
 # Start the one-turn ideal stack first, then choose one mode:
 #
@@ -7,6 +7,12 @@
 #   ./scripts/ideal-composed-acceptance.sh --mode manual-physical-mic
 #   ./scripts/ideal-composed-acceptance.sh --mode fake-audio-file \
 #       --fake-audio-file /absolute/path/known-answer.wav
+#
+# The default is one turn. For the repeatable three-turn topology gate, start
+# its matching lesson first, then pass `--attempts 3`:
+#
+#   BRIGHT_ACCEPTANCE_FIXTURE=three-turn ./scripts/ideal-hosted.sh acceptance-start
+#   ./scripts/ideal-composed-acceptance.sh --mode fake-audio-file --attempts 3
 #
 # The synthetic-file mode still uses MediaRecorder -> real ASR -> Core. Manual
 # mode is the actual acceptance run: an adult speaks into the selected physical
@@ -29,10 +35,16 @@ export CHROME_PATH="${BRIGHT_CHROME:-$CHROME_DEFAULT}"
 args=("$@")
 mode="manual-physical-mic"
 has_fixture=0
+attempts=1
 for ((i=0; i<${#args[@]}; i++)); do
   [[ "${args[$i]}" == "--mode" ]] && mode="${args[$((i+1))]:-}"
   [[ "${args[$i]}" == "--fake-audio-file" ]] && has_fixture=1
+  [[ "${args[$i]}" == "--attempts" ]] && attempts="${args[$((i+1))]:-}"
 done
+[[ "$attempts" == "1" || "$attempts" == "3" ]] || {
+  echo "--attempts must be 1 or 3" >&2
+  exit 2
+}
 if [[ "$mode" == "fake-audio-file" && "$has_fixture" == 0 ]]; then
   generated="$ROOT/.runtime/ideal-hosted/fixtures/market-water-request.wav"
   voice_only="${generated%.wav}.voice.wav"
@@ -63,12 +75,18 @@ PY
   args+=(--fake-audio-file "$generated")
 fi
 
+# A failed browser proof must not skip the privacy gate. Keep its exit status
+# so operators see the actual acceptance result after the independent DB check.
+set +e
 node "$ROOT/tests/node/ideal_composed_acceptance.mjs" "${args[@]}"
+node_exit=$?
+set -e
 
 # The live-profile contract includes zero durable classroom messages. Check
 # the actual acceptance home after the real request, not merely the profile
 # object used by unit tests. Schema/cache databases may exist; the transcript
 # table must remain empty.
+set +e
 python3 - "$ROOT/.runtime/ideal-hosted/acceptance-hermes-home" <<'PY'
 import sqlite3
 import sys
@@ -91,3 +109,10 @@ if count:
     raise SystemExit(f"privacy gate failed: Hermes persisted {count} classroom messages")
 print("Bright acceptance privacy gate: messages=0")
 PY
+privacy_exit=$?
+set -e
+
+if (( node_exit != 0 )); then
+  exit "$node_exit"
+fi
+exit "$privacy_exit"

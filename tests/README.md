@@ -56,6 +56,23 @@ ASR/Core path. Neither mode fabricates a learner answer, Stage lease, or
 playback ACK. Profiles are deleted and only scrubbed `result.json` remains
 under `tests/.artifacts/ideal-composed/`.
 
+### Operator-only full Market rehearsal
+
+The one/three-turn acceptance fixtures are not the full Market lesson. To rehearse the
+authored `en-prea1-market-food-01` from activity 0 with a real adult microphone input,
+start the normal ideal profile and operate the visible Stage and Control pages:
+
+```bash
+./scripts/ideal-hosted.sh check
+./scripts/ideal-hosted.sh start
+```
+
+Use eight pseudonymous adult participants, run all eight answer stations, and preserve
+only a scrubbed outcome/order record. This is intentionally a manual operator gate—not
+part of `tests/run.py`, not driven by fake audio, and not evidence for children, room
+acoustics, or no-false-accept grading. The exact roster, phrases, pass criteria and
+privacy rules are in the [full-Market ideal-condition protocol](../docs/4-build/composed-smoke-runbook.md#manual-full-market-ideal-condition-protocol).
+
 Output ends with:
 
 ```

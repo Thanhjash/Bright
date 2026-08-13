@@ -10,7 +10,7 @@
 #   ./scripts/ideal-hosted.sh bootstrap-hermes
 #   ./scripts/ideal-hosted.sh bootstrap-speech
 #   ./scripts/ideal-hosted.sh start              # Market Food product lesson
-#   ./scripts/ideal-hosted.sh acceptance-start   # one-turn composed gate
+#   ./scripts/ideal-hosted.sh acceptance-start   # composed gate (one turn by default)
 #   ./scripts/ideal-hosted.sh status
 #   ./scripts/ideal-hosted.sh stop
 set -euo pipefail
@@ -311,7 +311,14 @@ case "${1:-start}" in
   bootstrap-speech) bootstrap_speech ;;
   start) start_all ;;
   acceptance-start)
-    CORE_LESSON_RUN="$ROOT/tests/fixtures/ideal_composed_one_turn.run.json"
+    # The legacy/default acceptance proof remains one turn.  The explicit v3
+    # fixture repeats the same known answer three times to prove the browser,
+    # ASR, hosted agent, and causal playback path does not only work once.
+    case "${BRIGHT_ACCEPTANCE_FIXTURE:-one-turn}" in
+      one-turn) CORE_LESSON_RUN="$ROOT/tests/fixtures/ideal_composed_one_turn.run.json" ;;
+      three-turn) CORE_LESSON_RUN="$ROOT/tests/fixtures/ideal_composed_three_turn.run.json" ;;
+      *) die "BRIGHT_ACCEPTANCE_FIXTURE must be one-turn or three-turn" ;;
+    esac
     # Each acceptance run is intentionally ephemeral. A fresh home prevents a
     # prior interrupted gateway lock/session database from contaminating the
     # next proof; the pinned Bright profile persists no classroom turns.

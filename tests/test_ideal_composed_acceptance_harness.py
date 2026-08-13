@@ -7,6 +7,7 @@ wire / synthetic-browser smokes.
 
 from __future__ import annotations
 
+import json
 import subprocess
 from pathlib import Path
 
@@ -15,6 +16,7 @@ ROOT = Path(__file__).resolve().parents[1]
 NODE = ROOT / "tests" / "node" / "ideal_composed_acceptance.mjs"
 LIB = ROOT / "tests" / "node" / "lib.mjs"
 SCRIPT = ROOT / "scripts" / "ideal-composed-acceptance.sh"
+THREE_TURN_FIXTURE = ROOT / "tests" / "fixtures" / "ideal_composed_three_turn.run.json"
 
 
 def test_acceptance_lane_is_valid_node_syntax() -> None:
@@ -54,6 +56,62 @@ def test_artifact_contract_is_scrubbed_and_requires_stage_originated_ack() -> No
     assert "result.json" in source
     assert "rm(controlProfile" in source
     assert "rm(stageProfile" in source
+    assert "artifactVersion: 2" in source
+    assert "uiOrigin: cfg.uiOrigin" not in source
+    assert "inputFixture" not in source
+    assert "row.reason" not in source
+    assert "row.code" not in source
+    assert "row.lessonId" not in source
+
+
+def test_per_attempt_proof_uses_capability_and_utterance_slots_not_nth_events() -> None:
+    source = NODE.read_text(encoding="utf-8")
+
+    assert "slot('assignment', payload.assignmentId)" in source
+    assert "slot('capture', payload.captureId)" in source
+    assert "slot('utterance', payload.utteranceId)" in source
+    assert "correlatedCorrectCycles" in source
+    assert "sameCapture" in source
+    assert "calloutFinished" in source
+    assert "captureRequestedOrder" in source
+    assert "captureReadyOrder" in source
+    assert "captureStartedOrder" in source
+    assert "responseAcceptedOrder" in source
+    assert "piperOrder" in source
+    assert "playbackStartedOrder" in source
+    assert "playbackFinishedOrder" in source
+    assert "commitOrder" in source
+
+
+def test_acceptance_lane_keeps_one_turn_default_and_proves_each_requested_attempt() -> None:
+    source = NODE.read_text(encoding="utf-8")
+
+    assert "raw.attempts ?? 1" in source
+    assert "expectedAttempts: cfg.attempts" in source
+    assert "for (let attempt = 0; attempt < cfg.attempts; attempt += 1)" in source
+    assert "assertAttempt(ledger.rows, cycle, attempt)" in source
+    assert "expected exactly ${attempts} correlated agent speech turns" in source
+    assert "asrOrder" in source
+    assert "piperOrder" in source
+    assert "playbackFinishedOrder" in source
+    assert "commitOrder" in source
+    assert "if (cfg.attempts === 1) out.commit = out.attempts[0]" in source
+
+
+def test_v3_fixture_is_three_identical_speech_cycles_not_market_curriculum() -> None:
+    lesson = json.loads(THREE_TURN_FIXTURE.read_text(encoding="utf-8"))
+
+    assert lesson["lessonId"] == "ideal-composed-three-turn"
+    assert lesson["curriculum"]["approver"] == "TEST FIXTURE — not classroom curriculum"
+    stations = lesson["activities"][:3]
+    assert [station["id"] for station in stations] == [
+        "voice_station_1", "voice_station_2", "voice_station_3"
+    ]
+    assert {station["expect"]["kind"] for station in stations} == {"speech"}
+    assert len({station["expect"]["correct"] for station in stations}) == 1
+    assert [station["branches"][0]["goto"] for station in stations] == [
+        "voice_station_2", "voice_station_3", "closure"
+    ]
 
 
 def test_operator_script_uses_only_the_new_acceptance_scenario() -> None:
@@ -63,3 +121,7 @@ def test_operator_script_uses_only_the_new_acceptance_scenario() -> None:
     assert "composed_smoke" not in source
     assert "SELECT COUNT(*) FROM messages" in source
     assert "privacy gate failed" in source
+    assert "--attempts must be 1 or 3" in source
+    assert "node_exit=$?" in source
+    assert "privacy_exit=$?" in source
+    assert "if (( node_exit != 0 )); then" in source

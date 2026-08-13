@@ -100,6 +100,8 @@ def test_product_start_and_acceptance_start_use_distinct_lessons() -> None:
     assert "content/lessons/market-food/market-food-01.run.json" in source
     assert 'acceptance-start)' in source
     assert 'tests/fixtures/ideal_composed_one_turn.run.json' in source
+    assert 'tests/fixtures/ideal_composed_three_turn.run.json' in source
+    assert 'BRIGHT_ACCEPTANCE_FIXTURE must be one-turn or three-turn' in source
     assert 'HERMES_API_TIMEOUT_S="${BRIGHT_ACCEPTANCE_HERMES_TIMEOUT_S:-$AGENT_TURN_TIMEOUT_S}"' in source
 
 

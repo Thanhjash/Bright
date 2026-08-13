@@ -1144,6 +1144,10 @@ def create_app(settings: Settings | None = None, core: Core | None = None) -> Fa
                     "speech.playback.observed",
                     {"speechTurnId": speech_turn_id, "status": status},
                 )
+                # Retire only after Core accepted the Stage terminal state.
+                # A later pacing cutover must cancel live old narration, not
+                # emit redundant cancels for audio already completed/failed.
+                core_.runner.retire_authored_speech(speech_turn_id)
                 controller = core_.session_controller
                 if controller is not None:
                     if status == "completed" and controller.note_callout_playback_finished(

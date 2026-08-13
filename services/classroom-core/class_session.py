@@ -591,6 +591,11 @@ class ClassSessionController:
         self.started_at_ms = int(time.time() * 1000)
         plan = getattr(getattr(self.core, "lesson", None), "session_plan", None)
         if plan is not None:
+            # ``durationMin`` is the authored lesson window.  The final
+            # ``closureReserveS`` begins a protected exit/closure interval;
+            # it is *not* a licence to jump from whatever the class is doing
+            # straight to CLOSURE.  At this boundary Core may only follow the
+            # current activity's explicit safe-default route.
             teaching_s = max(
                 1.0,
                 float(plan.duration_min * 60 - plan.closure_reserve_s),
@@ -647,15 +652,30 @@ class ClassSessionController:
                 target = self.runner.resolve_intent_target(intent)
 
             closure_index = self._closure_index()
+            pacing_reason: str | None = None
             if (
                 closure_index is not None
-                and target != closure_index
                 and self.runner.index != closure_index
                 and intent.cause != "control"
                 and self._closure_deadline_mono is not None
                 and time.monotonic() >= self._closure_deadline_mono
             ):
-                target = closure_index
+                authored_target = self._authored_pacing_target()
+                if authored_target is not None:
+                    target = authored_target
+                    pacing_reason = "closure_reserve_elapsed"
+                else:
+                    self._publish_pacing(
+                        reason="closure_reserve_no_authored_route",
+                        from_activity_id=current_id,
+                        target_activity_id=None,
+                        forced_closure=False,
+                    )
+                    # The reserve clock may never use an arbitrary stale
+                    # timer/control target as a substitute for authored
+                    # policy.  A malformed run must stop rather than invent a
+                    # direct jump to closure.
+                    return None
 
             if target is None or target < 0 or target >= len(self.runner.activities):
                 self.session_state = SessionState.CLOSING
@@ -666,6 +686,25 @@ class ClassSessionController:
                 self.publish_status("lesson_completed")
                 return result
 
+            target_activity = self.runner.activities[target]
+            forced_closure = (
+                pacing_reason is not None
+                and closure_index is not None
+                and target == closure_index
+            )
+            if pacing_reason is not None:
+                self._publish_pacing(
+                    reason=pacing_reason,
+                    from_activity_id=current_id,
+                    target_activity_id=target_activity.id,
+                    forced_closure=forced_closure,
+                )
+            if pacing_reason is not None:
+                # A reserve cutover may traverse several authored activities
+                # before it reaches CLOSURE.  Stage must not finish narration
+                # from *any* superseded generation over the new activity.
+                self.runner.cancel_live_authored_speech(reason="pacing_closure")
+
             result = await self.runner.commit_enter(target)
             self.activity_state = (
                 ActivityState.NARRATING
@@ -674,6 +713,13 @@ class ClassSessionController:
             )
             self.publish_update(intent.cause)
             self._checkpoint()
+            if pacing_reason is not None and not forced_closure:
+                # ``_force_closure_after`` is a one-shot task.  Rearm a fresh
+                # clock step after every authored safe-default so an overdue
+                # lesson continues deterministically through its compiled
+                # route (for Market: explore -> exit -> closure), never a
+                # fabricated direct jump.
+                self._schedule_overdue_pacing_step()
             return result
 
     def _closure_index(self) -> int | None:
@@ -684,9 +730,63 @@ class ClassSessionController:
         ]
         return matches[0] if len(matches) == 1 else None
 
+    def _authored_pacing_target(self) -> int | None:
+        """Return only the current activity's authored catch-up route.
+
+        The recovery metadata is compiled lesson policy.  Core may choose it
+        at the reserve boundary, but it must never invent a direct jump to the
+        closure activity merely because the clock elapsed.
+        """
+        current = self.runner.current
+        teaching = getattr(current, "teaching", None)
+        recovery = getattr(teaching, "recovery", None)
+        safe_default = getattr(recovery, "safe_default_activity_id", None)
+        if not safe_default:
+            return None
+        target = self.runner.index_of(str(safe_default))
+        if target < 0 or target == self.runner.index:
+            return None
+        return target
+
+    def _publish_pacing(
+        self,
+        *,
+        reason: str,
+        from_activity_id: str | None,
+        target_activity_id: str | None,
+        forced_closure: bool,
+    ) -> None:
+        """Publish the deterministic clock decision for operators/evidence."""
+        self.core.bus.publish(
+            "lesson.pacing",
+            {
+                "reason": reason,
+                "fromActivityId": from_activity_id,
+                "targetActivityId": target_activity_id,
+                "targetSource": "teaching.recovery.safeDefaultActivityId",
+                "forcedClosure": forced_closure,
+            },
+        )
+
     def _schedule_closure_deadline(self, delay_s: float) -> None:
         self.cancel_session_clock()
         self._closure_task = asyncio.ensure_future(self._force_closure_after(delay_s))
+
+    def _schedule_overdue_pacing_step(self) -> None:
+        """Queue one further authored catch-up step once reserve time elapsed."""
+        closure_index = self._closure_index()
+        if (
+            closure_index is None
+            or self._closure_deadline_mono is None
+            or time.monotonic() < self._closure_deadline_mono
+            or self.session_state != SessionState.RUNNING
+            or self.runner.current is None
+            or self.runner.index == closure_index
+        ):
+            return
+        # Yield to Stage/event subscribers between explicit authored steps;
+        # this is still controller-time, not a client-controlled transition.
+        self._schedule_closure_deadline(0.001)
 
     async def _force_closure_after(self, delay_s: float) -> None:
         try:
@@ -694,8 +794,8 @@ class ClassSessionController:
         except asyncio.CancelledError:
             return
         self._closure_task = None
-        closure_index = self._closure_index()
         current = self.runner.current
+        closure_index = self._closure_index()
         if (
             closure_index is None
             or self.session_state != SessionState.RUNNING
@@ -703,12 +803,21 @@ class ClassSessionController:
             or self.runner.index == closure_index
         ):
             return
+        target = self._authored_pacing_target()
+        if target is None:
+            self._publish_pacing(
+                reason="closure_reserve_no_authored_route",
+                from_activity_id=current.id,
+                target_activity_id=None,
+                forced_closure=False,
+            )
+            return
         await self.commit_transition(
             TransitionIntent(
                 cause="timer",
                 from_activity_id=current.id,
                 activity_generation=self.runner._generation,
-                target_index=closure_index,
+                target_index=target,
                 decision_revision=self.decision_revision,
             )
         )

@@ -67,6 +67,107 @@ The acceptance launcher intentionally widens only this synthetic cold-provider r
 product defaults remain a 6-second agent budget and `0.75` correct threshold. Do not use
 this command or its result to justify changing them.
 
+## Manual full-Market ideal-condition protocol
+
+This is the next operator gate after the one- and three-turn composition lanes. It
+exercises the **authored Market Food lesson from activity 0**, using the normal hosted
+profile and a real adult at the answer station. It is a rehearsal of the teaching
+product in an ideal quiet condition; it is not a child, acoustic-room, or assessment
+validation.
+
+### Before the run
+
+1. Build the production UI and run the normal fail-closed preflight. Do not use
+   `acceptance-start`: it swaps in a short acceptance fixture and has fixture-only
+   timeout/confidence allowances.
+
+   ```bash
+   ./scripts/ideal-hosted.sh check
+   ./scripts/ideal-hosted.sh start
+   ```
+
+2. Open two separate browser contexts on the same local origin: Stage at
+   `http://127.0.0.1:3000/classroom` and Control at
+   `http://127.0.0.1:3000/control`. Confirm the Stage audio lease, then use **Check
+   microphone** on Control. The Start button must become enabled; do not bypass the
+   setup or call a Core endpoint directly.
+
+3. On Control, enter this eight-person pseudonymous roster and mark all eight present.
+   These are test identities, not student names:
+
+   ```text
+   market-01, Market 01, A1
+   market-02, Market 02, A2
+   market-03, Market 03, A3
+   market-04, Market 04, A4
+   market-05, Market 05, B1
+   market-06, Market 06, B2
+   market-07, Market 07, B3
+   market-08, Market 08, B4
+   ```
+
+4. Leave the lesson id blank when the loaded lesson is shown, or enter
+   `en-prea1-market-food-01`; set a non-identifying class id such as
+   `market-ideal-01`. Press **Start autonomous lesson** once. The normal start flow
+   begins at authored activity 0 (`hook_market`); do not use Recovery/Skip/Back to
+   enter the answer stations.
+
+### Conduct the eight stations
+
+Let the authored hook, input, guided practice and pair task proceed. At each selected
+individual callout, the named adult walks to the one answer microphone, waits until the
+Stage has finished its callout and Control shows the enabled **Ready** state, presses
+Ready, and says the station phrase once. Do not speak over Stage output and do not
+substitute a second person after capture is armed.
+
+The deterministic assignment policy chooses the displayed pseudonym. Record its actual
+order rather than claiming that it follows the roster order. The eight authored stations
+and expected phrases are:
+
+| Station | Authored activity | Expected spoken request |
+|---:|---|---|
+| 1 | `answer_station_01_apple` | I would like an apple, please. |
+| 2 | `answer_station_02_banana` | I would like a banana, please. |
+| 3 | `answer_station_03_bread` | I would like bread, please. |
+| 4 | `answer_station_04_egg` | I would like an egg, please. |
+| 5 | `answer_station_05_rice` | I would like rice, please. |
+| 6 | `answer_station_06_water` | I would like water, please. |
+| 7 | `answer_station_07_apple` | I would like an apple, please. |
+| 8 | `answer_station_08_bread` | I would like bread, please. |
+
+For a `near`, `wrong`, `uncertain`, `silence`, `timeout`, or service-recovery outcome,
+let Bright show the authored sentence-builder recovery and continue to the next station.
+That outcome is data, not a reason to use facilitator Skip. Pause/Emergency is reserved
+for a real safety or equipment interruption; record it and stop calling the run
+autonomous if it is used for teaching.
+
+At the end, let `explore_transfer`, `exit_check`, and `closure` reach DONE. Stop the
+stack only after recording the terminal UI state:
+
+```bash
+./scripts/ideal-hosted.sh status
+./scripts/ideal-hosted.sh stop
+```
+
+### Evidence and pass record
+
+Store the operator's scrubbed result in a dated, access-controlled evidence location
+(for example `tests/.artifacts/manual-market/<run-id>/result.md`, which is ignored by
+Git). The record may contain the commit, lesson id, profile, device model, start/end
+times, all eight pseudonyms in their observed assignment order, each station's activity
+id and **outcome category only**, whether its capture opened after the callout, whether
+the agent response/playback completed, terminal `DONE`, and any Pause/Emergency use.
+
+Do **not** retain audio, raw transcripts, cookies, credentials, actual learner names, or
+speech-service request bodies in that record. Keep runtime logs access-controlled; they
+are diagnostic material, not shareable proof.
+
+A clean ideal-condition pass means: all eight authored stations were reached from
+activity 0 without routine facilitator teaching decisions; every capture followed its
+own completed callout; every path reached the next authored station or its authored
+recovery; and the lesson reached DONE. It does **not** mean that all eight adult answers
+were correct, that ASR is safe for children, or that the system has passed a room test.
+
 ## Optional Hermes readiness and MCP proposal rehearsal
 
 With a running authenticated local sidecar, an operator may add its cheap

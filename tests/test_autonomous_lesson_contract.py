@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import importlib.util
 import subprocess
 import sys
 from pathlib import Path
@@ -62,10 +63,48 @@ def test_market_lesson_lints_compiles_and_all_simulated_paths_finish() -> None:
     assert play.returncode == 0, play.stdout + play.stderr
     report = json.loads(play.stdout)
     assert report["modes"]
+    run = LessonRun.model_validate_json(MARKET_RUN.read_text(encoding="utf-8"))
+    assert run.session_plan is not None
+    # `durationMin` includes teaching, EXIT and CLOSURE.  Reserve protects the
+    # final close only; it cannot be declared by stealing authored lesson time.
+    assert run.session_plan.duration_min == 45
+    assert run.session_plan.closure_reserve_s == 60
     for mode, result in report["modes"].items():
         assert result["stalls"] == [], mode
         assert result["unhandled"] == [], mode
         assert 35 <= result["minutes"] <= 45, mode
+        assert result["minutes"] <= run.session_plan.duration_min, mode
+
+
+def test_market_authored_paths_enter_closure_inside_the_protected_final_minute() -> None:
+    """Treat EXIT as lesson time and reserve only the actual CLOSURE stage.
+
+    This is a fast virtual-clock check over the real runner, not a claim that
+    browser audio has already completed within those timings.
+    """
+    spec = importlib.util.spec_from_file_location(
+        "bright_lesson_play", ROOT / "tools" / "lesson-play" / "lesson_play.py"
+    )
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+
+    run = LessonRun.model_validate_json(MARKET_RUN.read_text(encoding="utf-8"))
+    assert run.session_plan is not None
+    durations = {activity.id: float(activity.duration_s or 0) for activity in run.activities}
+    closure = next(activity for activity in run.activities if activity.teaching.stage == "CLOSURE")
+    assert durations[closure.id] <= run.session_plan.closure_reserve_s
+    teaching_deadline_s = run.session_plan.duration_min * 60 - run.session_plan.closure_reserve_s
+
+    import asyncio
+
+    for mode in ("correct", "near", "wrong", "silence", "mixed"):
+        trace = asyncio.run(module.play(run, mode))
+        assert closure.id in trace.steps, mode
+        closure_index = trace.steps.index(closure.id)
+        before_closure_s = sum(durations[activity_id] for activity_id in trace.steps[:closure_index])
+        assert before_closure_s <= teaching_deadline_s, (mode, before_closure_s, teaching_deadline_s)
 
 
 def test_draft_market_lesson_cannot_be_packaged_as_a_release() -> None:
