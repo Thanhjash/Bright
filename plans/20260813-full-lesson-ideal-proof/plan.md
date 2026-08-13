@@ -103,8 +103,13 @@ Out of scope:
   Core grading, a Hermes MCP proposal, and a following commit. Its scrubbed local
   artifact is `tests/.artifacts/ideal-composed/result.json`; the ephemeral Hermes home
   had zero stored messages.
-- Phase 2's three-turn live run remains pending. One synthetic adult turn is not a
-  substitute for the full Market/manual, room, child-ASR or 20–40 learner gates.
+- One three-turn synthetic run was observed to complete its three real causal chains
+  and retain zero Hermes messages, but its immediate rerun timed out before a first
+  Core event and overwrote the single result artifact with `ok: false`. Phase 2
+  therefore remains pending a deterministic rerun with a retained scrubbed PASS
+  artifact; it is neither repeatability nor latency evidence.
+- Neither the one- nor observed three-turn synthetic adult run substitutes for the
+  full Market/manual, room, child-ASR or 20–40 learner gates.
 - Phase 3's runbook is ready; the manual eight-station Market run has not yet been
   performed.
 - Phase 4's deterministic suite is green and its one-turn live composition gate now

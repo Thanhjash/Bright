@@ -68,6 +68,19 @@ The acceptance launcher intentionally widens only this synthetic cold-provider r
 product defaults remain a 6-second agent budget and `0.75` correct threshold. Do not use
 this command or its result to justify changing them.
 
+### Three-turn status: diagnostic observation, gate still pending
+
+One three-attempt `fake-audio-file` run was observed to complete three causal
+Stage/Control → Piper/Whisper → Core → hosted-Hermes cycles, with zero stored messages
+in its ephemeral Hermes home. The first rerun immediately after it timed out before the
+first Core event and was terminated; because the harness writes one Git-ignored
+`result.json`, that failed rerun replaced the earlier result with `ok: false`.
+
+Do not describe the three-turn lane as repeatably green or use it as latency evidence.
+Rerun it until a passing, scrubbed artifact is retained for the same run. It remains a
+synthetic adult wiring diagnostic, never evidence for a full Market lesson, physical
+room, children or a 20–40 learner autonomous classroom.
+
 ## Manual full-Market ideal-condition protocol
 
 This is the next operator gate after the one- and three-turn composition lanes. It

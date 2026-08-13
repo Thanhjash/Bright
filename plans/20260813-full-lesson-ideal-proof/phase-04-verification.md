@@ -19,7 +19,10 @@ supported by the resulting artifacts.
 - [x] One Chromium one-turn acceptance passes with the locally configured hosted
   provider; the scrubbed artifact is
   `tests/.artifacts/ideal-composed/result.json` (Git-ignored).
-- [ ] Repeat composition and run the separate three-turn/manual-Market gates.
+- [ ] Rerun the three-turn lane deterministically and retain its own scrubbed PASS
+  artifact. One observed three-turn pass was followed by a timeout rerun that overwrote
+  the single result artifact with `ok: false`; it is not repeatability evidence.
+- [ ] Run the separate manual-Market gate.
 - [ ] Docs distinguish fixture composition, manual ideal proof, and room validation.
 - [ ] The checked-in environment template names every ideal-hosted preflight
   variable without providing a credential or silently opting a developer into

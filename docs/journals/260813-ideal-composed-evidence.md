@@ -49,9 +49,26 @@ threshold only for its generated fixture. The product remains fail-closed at the
 6-second agent budget and 0.75 correct threshold. The fixture must not lower either
 production bar.
 
+## Three-turn follow-up — observed once, not yet a closed gate
+
+Later on 2026-08-14, an operator observed one `fake-audio-file` three-attempt run
+complete all three causal chains through the same two Chromium contexts, real Piper and
+Whisper, Core and hosted Hermes. The ephemeral Hermes database again had zero stored
+messages. This is useful diagnostic evidence that the three-cycle topology can work.
+
+It is **not** repeatability evidence: the immediately following three-turn rerun timed
+out before the first Core event, was terminated, and overwrote the Git-ignored
+`tests/.artifacts/ideal-composed/result.json` with `ok: false`. There is therefore no
+durable scrubbed PASS artifact for that observed first run. Keep the three-turn gate
+pending until a fresh run both passes and preserves its own scrubbed artifact. Neither
+outcome establishes product latency, a physical room, child recognition, a full Market
+lesson, or an autonomous 20–40 learner class.
+
 ## Next
 
-1. Repeat with `manual-physical-mic` and record only scrubbed evidence.
-2. Cover every Market oral path, recovery path and cancellation/degrade path.
-3. Run full-session and consented room-corpus gates; require zero false praise for
+1. Make the three-turn acceptance rerun deterministic and retain a scrubbed PASS
+   artifact before promoting it beyond diagnostic evidence.
+2. Repeat with `manual-physical-mic` and record only scrubbed evidence.
+3. Cover every Market oral path, recovery path and cancellation/degrade path.
+4. Run full-session and consented room-corpus gates; require zero false praise for
    wrong or silent answers before any competition-ready claim.
