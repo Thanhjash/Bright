@@ -20,6 +20,7 @@ SCRIPT = ROOT / "scripts" / "ideal-hosted.sh"
 BUILD_SCRIPT = ROOT / "infra" / "hermes" / "build_pinned.py"
 REQUIREMENTS = ROOT / "infra" / "hermes" / "requirements.txt"
 VERIFY_RUNTIME = ROOT / "infra" / "hermes" / "verify_runtime.py"
+ENV_EXAMPLE = ROOT / ".env.example"
 
 
 def run_launcher(*args: str, env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
@@ -80,6 +81,60 @@ def test_ideal_launcher_rejects_placeholder_credentials_before_starting() -> Non
 
     assert result.returncode != 0
     assert "placeholder" in result.stderr.lower()
+
+
+def test_ideal_launcher_rejects_copied_profile_placeholders_before_runtime_checks(
+    tmp_path: Path,
+) -> None:
+    """A copied template remains fail-closed even after policy acknowledgement.
+
+    Use an isolated root so a developer's untracked ``.env`` cannot mask the
+    template values.  The root intentionally has no Python environments or
+    services: a placeholder must be diagnosed before the launcher inspects
+    either of them.
+    """
+    result = run_launcher(
+        "check",
+        env={
+            "BRIGHT_ROOT": str(tmp_path / "copied-profile"),
+            "HERMES_API_KEY": "CHANGE-ME-LOCAL-GATEWAY-KEY",
+            "API_SERVER_KEY": "CHANGE-ME-API-SERVER-KEY",
+            "BRIGHT_MCP_TOKEN": "CHANGE-ME-MCP-TOKEN",
+            "HERMES_MODEL_PROVIDER": "custom",
+            "HERMES_MODEL_BASE_URL": "https://provider.example/v1",
+            "HERMES_MODEL_API_KEY": "CHANGE-ME-HOSTED-PROVIDER-KEY",
+            "HERMES_MODEL_NAME": "CHANGE-ME-HOSTED-TEACHER-MODEL",
+            "BRIGHT_DATA_POLICY": "hosted_ephemeral_transcript",
+            "BRIGHT_HOSTED_RAW_ACK": "1",
+        },
+    )
+
+    assert result.returncode != 0
+    assert "HERMES_API_KEY is a placeholder" in result.stderr
+    assert "classroom-core Python is missing" not in result.stderr
+    assert "speech Python is missing" not in result.stderr
+
+
+def test_env_example_has_a_fail_closed_ideal_hosted_profile_template() -> None:
+    """A copied template must expose every ideal preflight input safely."""
+    example = ENV_EXAMPLE.read_text(encoding="utf-8")
+
+    for name in (
+        "HERMES_API_KEY",
+        "API_SERVER_KEY",
+        "BRIGHT_MCP_TOKEN",
+        "HERMES_MODEL_PROVIDER",
+        "HERMES_MODEL_BASE_URL",
+        "HERMES_MODEL_API_KEY",
+        "HERMES_MODEL_NAME",
+        "BRIGHT_DATA_POLICY",
+        "BRIGHT_HOSTED_RAW_ACK",
+    ):
+        assert f"{name}=" in example
+
+    assert "BRIGHT_DATA_POLICY=hosted_ephemeral_transcript" in example
+    assert "BRIGHT_HOSTED_RAW_ACK=0" in example
+    assert "raw ASR transcript" in example
 
 
 def test_ideal_launcher_never_calls_running_services_a_ready_classroom() -> None:
