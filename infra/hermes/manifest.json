@@ -3,13 +3,13 @@
   "upstream_repository": "https://github.com/NousResearch/hermes-agent.git",
   "upstream_commit": "03fa32c92dd445eb64c7f67434dd91b32c40701d",
   "distribution": "hermes-agent",
-  "version": "0.20.0+bright.1",
+  "version": "0.20.0+bright.2",
   "patches": [
     {
       "file": "patches/0001-bright-live-ephemeral.patch",
-      "sha256": "e98ef6bc6bd7b98b455c7067fea8d4cdb60ab745cfc244b9c5266281ea11a776"
+      "sha256": "29c7a07eb8369b83ec2fd270ef5fb08ceecd0e80ed748964d73bb81891bccced"
     }
   ],
-  "wheel_sha256": "7d82697c4dbe2e9f0947eb33ebdb61e334802305c5e86dad162ad04602f69c87",
-  "bright_live_sha256": "95e95278e7f9a88a7424d5852be43eb4bae073b7c4092835fa22ff0aee4417f5"
+  "wheel_sha256": "46f0c6fb1fdd83d475141ac681991a30765e590d90a5b6d4e5d21d1d4efd9b84",
+  "bright_live_sha256": "0b19284cf2c423a8837f7f967fde6222f4c9c6b0475fc4e3b83eecb22bc0e48f"
 }

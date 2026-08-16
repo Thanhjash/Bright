@@ -215,7 +215,7 @@ preflight() {
   [[ -x "$HERMES_BIN" ]] || die "pinned Hermes gateway is missing: $HERMES_BIN"
   [[ -f "$HERMES_HOME/config.yaml" ]] || die "HERMES_HOME/config.yaml is missing: $HERMES_HOME/config.yaml"
   "$HERMES_PY" "$ROOT/infra/hermes/verify_runtime.py" >/dev/null \
-    || die "installed Hermes is not the verified 0.20.0+bright.1 Bright runtime"
+    || die "installed Hermes is not the verified Bright runtime from infra/hermes/manifest.json"
   say "ideal hosted preflight passed"
 }
 
@@ -234,7 +234,13 @@ bootstrap_hermes() {
   # The version is intentionally stable while Bright iterates its pinned
   # patch. pip therefore cannot use the version string as proof that the
   # installed files are current. Reinstall the exact verified wheel last.
-  local bright_wheel="$ROOT/wheels/hermes_agent-0.20.0+bright.1-py3-none-any.whl"
+  local expected_version bright_wheel
+  expected_version="$(python3 - "$ROOT/infra/hermes/manifest.json" <<'PY'
+import json, sys
+print(json.load(open(sys.argv[1], encoding="utf-8"))["version"])
+PY
+)"
+  bright_wheel="$ROOT/wheels/hermes_agent-${expected_version}-py3-none-any.whl"
   [[ -s "$bright_wheel" ]] || die "verified Bright Hermes wheel is missing: $bright_wheel"
   "$HERMES_VENV/bin/pip" install --force-reinstall --no-deps "$bright_wheel" >/dev/null
   install -m 0600 "$ROOT/infra/hermes/config.yaml" "$HERMES_HOME/config.yaml"

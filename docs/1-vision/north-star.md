@@ -202,7 +202,7 @@ The renderer decides the UI. This is the single most important boundary in the s
 
 ### NS-4 — The runtime is replaceable; the contract is not
 
-The live runtime pins `hermes-agent 0.20.0+bright.1` to upstream commit
+The live runtime pins `hermes-agent 0.20.0+bright.2` to upstream commit
 `03fa32c92dd445eb64c7f67434dd91b32c40701d`. Hermes is young and fast-moving;
 if it stops fitting, we must be able to swap it in days, not rewrite the product.
 

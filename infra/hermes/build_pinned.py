@@ -128,7 +128,7 @@ def main() -> int:
                 capture=True,
             )
             _run(build_command, cwd=worktree, env=build_env)
-            wheels = sorted(args.outdir.glob("hermes_agent-0.20.0+bright.1-*.whl"))
+            wheels = sorted(args.outdir.glob(f"hermes_agent-{manifest['version']}-*.whl"))
             if len(wheels) != 1:
                 raise SystemExit(f"expected one Bright wheel, found {len(wheels)}")
             wheel = wheels[0]

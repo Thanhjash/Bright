@@ -76,7 +76,7 @@ not production proof.
 Hermes' live profile has an explicit allowlist containing only the Bright classroom
 MCP server and its one terminal proposal tool. Terminal, filesystem, browser, cron,
 delegation, general memory, and other default tools are absent. The pinned runtime is
-`hermes-agent 0.20.0+bright.1`, upstream commit
+`hermes-agent 0.20.0+bright.2`, upstream commit
 `03fa32c92dd445eb64c7f67434dd91b32c40701d`; its patch disables live persistence,
 conversation chaining, background work and a second inference after the terminal
 tool. A future planner profile must be a separate trust domain and may not silently

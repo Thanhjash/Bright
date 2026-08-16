@@ -20,7 +20,7 @@ new file mode 100644
 index 000000000..98fc71281
 --- /dev/null
 +++ b/agent/bright_live.py
-@@ -0,0 +1,178 @@
+@@ -0,0 +1,182 @@
 +"""Narrow, auditable policy for Bright's ephemeral live-teacher profile.
 +
 +This module deliberately has no provider, gateway or persistence imports so
@@ -33,7 +33,7 @@ index 000000000..98fc71281
 +from typing import Any, Mapping, Sequence
 +
 +
-+BRIGHT_PATCH_VERSION = "0.20.0+bright.1"
++BRIGHT_PATCH_VERSION = "0.20.0+bright.2"
 +
 +
 +def _truthy(value: Any) -> bool:
@@ -127,9 +127,10 @@ index 000000000..98fc71281
 +    agent.max_iterations = 1
 +    # Hermes counts the first attempt in this value: 1 means zero retries.
 +    agent._api_max_retries = 1
-+    # The live profile has exactly one legal terminal tool. Requiring a tool
-+    # call prevents reasoning-capable hosted models from spending the whole
-+    # classroom deadline composing discarded assistant prose.
++    # The live profile has exactly one legal terminal tool. Pinning the exact
++    # function, rather than merely requiring any tool, prevents a provider
++    # from choosing an incidental gateway capability or spending the classroom
++    # deadline composing discarded assistant prose.
 +    enforce_bright_live_wire_policy(agent)
 +    agent.fallback_model = None
 +    agent.ephemeral_system_prompt = None
@@ -145,7 +146,10 @@ index 000000000..98fc71281
 +    profile = getattr(agent, "_bright_live_profile", None)
 +    if isinstance(profile, BrightLiveProfile) and profile.enabled:
 +        request_overrides = dict(getattr(agent, "request_overrides", {}) or {})
-+        request_overrides["tool_choice"] = "required"
++        request_overrides["tool_choice"] = {
++            "type": "function",
++            "function": {"name": profile.terminal_tool},
++        }
 +        if profile.mimo_disable_thinking:
 +            # ``extra_body`` is the OpenAI SDK escape hatch: it serializes
 +            # its entries into the JSON body at the top level. Nesting this
@@ -433,7 +437,7 @@ diff --git a/gateway/run.py b/gateway/run.py
 index ef626504d..b0c0c8f14 100644
 --- a/gateway/run.py
 +++ b/gateway/run.py
-@@ -5062,7 +5062,14 @@ class TurnRunner:
+@@ -5062,7 +5062,17 @@ class TurnRunner:
          agent.event_callback = ctx._event_callback_sync
          agent.reasoning_config = reasoning_config
          agent.service_tier = self._runner._service_tier
@@ -444,7 +448,10 @@ index ef626504d..b0c0c8f14 100644
 +            # The gateway normally resets per-turn overrides here. Bright's
 +            # live profile requires its single terminal MCP call at the wire,
 +            # so routing must not silently erase that policy after agent setup.
-+            turn_request_overrides["tool_choice"] = "required"
++            turn_request_overrides["tool_choice"] = {
++                "type": "function",
++                "function": {"name": bright_profile.terminal_tool},
++            }
 +        agent.request_overrides = turn_request_overrides
          # Must-deliver notes for THIS turn ride the current user message
          # (api_content sidecar), never the system prompt: staged by
@@ -458,7 +465,7 @@ index 52fd27046..07b109c43 100644
  [project]
  name = "hermes-agent"
 -version = "0.20.0"
-+version = "0.20.0+bright.1"
++version = "0.20.0+bright.2"
  description = "The self-improving AI agent — creates skills from experience, improves them during use, and runs anywhere"
  readme = "README.md"
  # Upper bound is load-bearing, not cosmetic. uv resolves the project's
@@ -471,7 +478,7 @@ index fac7fe881..a455ec9bc 100644
  
  _IN_NIX_BUILD = os.environ.get("HERMES_NIX_BUILD") == "1"
 +_IN_PINNED_BRIGHT_BUILD = (
-+    os.environ.get("HERMES_BRIGHT_BUILD") == "0.20.0+bright.1"
++    os.environ.get("HERMES_BRIGHT_BUILD") == "0.20.0+bright.2"
 +)
 +_BUILD_ALLOWED = _IN_NIX_BUILD or _IN_PINNED_BRIGHT_BUILD
  
@@ -500,7 +507,7 @@ new file mode 100644
 index 000000000..615d917bb
 --- /dev/null
 +++ b/tests/agent/test_bright_live_profile.py
-@@ -0,0 +1,161 @@
+@@ -0,0 +1,167 @@
 +"""Bright live-classroom invariants for the pinned Hermes build."""
 +
 +from types import SimpleNamespace
@@ -532,7 +539,7 @@ index 000000000..615d917bb
 +
 +
 +def test_patch_has_a_distinct_local_version():
-+    assert BRIGHT_PATCH_VERSION == "0.20.0+bright.1"
++    assert BRIGHT_PATCH_VERSION == "0.20.0+bright.2"
 +
 +
 +def test_mimo_thinking_switch_is_profile_scoped_and_uses_sdk_extra_body():
@@ -552,7 +559,10 @@ index 000000000..615d917bb
 +    )
 +    enforce_bright_live_wire_policy(agent)
 +    assert agent.request_overrides == {
-+        "tool_choice": "required",
++        "tool_choice": {
++            "type": "function",
++            "function": {"name": "classroom_propose_move"},
++        },
 +        "extra_body": {
 +            "provider_hint": "keep",
 +            "thinking": {"type": "disabled"},
@@ -575,7 +585,10 @@ index 000000000..615d917bb
 +    )
 +    enforce_bright_live_wire_policy(other_provider)
 +    assert other_provider.request_overrides == {
-+        "tool_choice": "required",
++        "tool_choice": {
++            "type": "function",
++            "function": {"name": "classroom_propose_move"},
++        },
 +        "extra_body": {"native_option": "keep"},
 +    }
 +
@@ -636,7 +649,7 @@ index 000000000..615d917bb
 +    assert agent.skip_memory is True
 +    assert agent.skip_background_review is True
 +    assert agent.max_iterations == 1
-+    assert agent._api_max_retries == 1  # one attempt, therefore zero retries
++    assert agent._api_max_retries == 1  # one provider attempt, zero model retries
 +    assert agent.fallback_model is None
 +    assert agent.ephemeral_system_prompt is None
 +    assert agent._cached_system_prompt == PROMPT
@@ -747,7 +760,7 @@ index e3733e647..e32f71a28 100644
  [[package]]
  name = "hermes-agent"
 -version = "0.20.0"
-+version = "0.20.0+bright.1"
++version = "0.20.0+bright.2"
  source = { editable = "." }
  dependencies = [
      { name = "certifi" },

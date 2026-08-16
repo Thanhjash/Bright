@@ -131,8 +131,8 @@ docs/
 
 ```
 ✅  protocol/runtime floor Protocol v3; Core runs a lesson with Hermes dead
-✅  Option B live boundary one terminal tool on pinned Hermes 0.20.0+bright.1
-⚠️  Layer 1 teacher brain  one historical hosted composed turn; 10–20 turn / 25 min × 3 not proven
+✅  Option B live boundary one terminal tool on pinned Hermes 0.20.0+bright.2
+⚠️  Layer 1 teacher brain  10/10 live MCP on hosted MiMo (2026-08-16); 25 min × 3 not proven
 🔴  Layers 2–7            text station, voice, AIRI, 20–40, local Gemma, giveaway — later
 ```
 

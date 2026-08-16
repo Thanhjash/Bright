@@ -29,6 +29,9 @@ Student detectors are Layer 5 and never render on the projector.
 - Living order: `docs/4-build/autonomous-classroom-roadmap.md`
 - Research: `docs/5-research/2026-08-16-teacher-loop-roadmap.md`
 
-## Next
+## Layer 1 follow-up (same day)
 
-Hermes-only live probe on clean `main`. No UI, AIRI, or new MCP tools.
+`tool_choice: required` on `bright.1` missed 1/10 live turns (provider
+`completed`, zero tools). Wire-only `0.20.0+bright.2` pins the exact terminal
+function. Second live probe: 10/10 + reconnect, timeout fail-closed, no
+sentinel leak. 25-minute × 3 remains open.

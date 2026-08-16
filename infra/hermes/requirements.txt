@@ -1,6 +1,6 @@
 # Pin deliberately. Upgrade only after replaying the Hermes adapter contract
 # tests and the real MCP/SSE smoke test against the candidate release.
-hermes-agent[mcp]==0.20.0+bright.1
+hermes-agent[mcp]==0.20.0+bright.2
 # The loopback Responses gateway is an aiohttp platform. The upstream `mcp`
 # extra does not install its transport dependency.
 aiohttp==3.14.3

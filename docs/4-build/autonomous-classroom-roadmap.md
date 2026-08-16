@@ -124,27 +124,34 @@ tool exist; one hosted composed turn has historical evidence.
 Exit: do not regress the LLM-free path. No new foundation features until
 Layer 1 is green.
 
-### Layer 1 — Text teacher brain  **NOW**
+### Layer 1 — Text teacher brain  **NOW (tool-call gate green)**
 
-Baseline: clean `main` (Option B, pinned `0.20.0+bright.1`, three-field
-proposal). Do not develop on the parked WIP branch.
+Baseline: clean `main`, pinned `0.20.0+bright.2` **wire-only** (exact
+`tool_choice` for `mcp__bright_classroom__classroom_propose_move`). Do not
+bring the parked 1:1 `/learn` pile.
 
-Work:
+How to run:
 
-1. Hermes-only provider probe: same TeacherContext, one MCP tool, real
-   hosted provider, 10–20 turns (correct / wrong / ambiguous / Ask /
-   no-tool / timeout).
-2. If healthy turns miss the terminal tool: change **only** the Hermes wire
-   profile, rebuild, re-probe. Do not add UI or extra prompt fields.
-3. If the adapter glue keeps growing past ~800 lines to paper over the
-   provider: consider a thin Bright loop (NS-4).
+```bash
+./scripts/hermes-layer1-probe.sh bootstrap
+./scripts/hermes-layer1-probe.sh run
+```
 
-Exit:
+Evidence:
 
-- valid `classroom_propose_move` on 100% of healthy-provider turns
-- injected failure → Core fallback, no stall
-- no raw learner text in DB / live Hermes stores
-- one learner finishes a 25-minute **text** lesson three times
+| Run | Result |
+|---|---|
+| `bright.1` + `tool_choice: required` (`…T153445Z…`) | 9/10 live legal MCP; `wrong-3` completed with 0 tools |
+| `bright.2` exact function (`…T155028Z…`) | **10/10 live + reconnect**; timeout fail-closed in 81 ms; no sentinel leak |
+
+Root cause of the miss: MiMo can return `completed` with no function call
+when the wire only says `required`. Pinning the exact terminal tool cleared
+it on the second live sample. First turn ~15 s (cold); later turns ~2–4 s.
+
+Layer 1 is **not** finished. Remaining exit:
+
+- repeat this probe until no-tool stays at 0 across two consecutive green runs
+- one learner finishes a 25-minute **text** lesson three times (Layer 2 attach)
 
 Parked, not deleted: `wip/20260814-1to1-text-unproven`.
 
@@ -262,9 +269,6 @@ this week’s order:
 
 ## 9. Next action
 
-On clean `main`, with pinned `0.20.0+bright.1` and the real hosted key:
-
-> Run a Hermes-only provider probe. No UI, no AIRI, no ASR, no new tools.
-
-That is the only Layer 1 start. After it is green, cherry-pick Layer 2 from
-`wip/20260814-1to1-text-unproven`.
+Layer 1 tool-call gate is green on `0.20.0+bright.2`. Next: a second
+consecutive green probe, then cherry-pick Layer 2 (`/learn` text station)
+from `wip/20260814-1to1-text-unproven`. Still no AIRI, ASR, or extra MCP tools.
