@@ -12,6 +12,8 @@ __pycache__/
 .venv/
 venv/
 .pytest_cache/
+.pytest-cache/
+.tmp-tests/
 tests/.artifacts/
 .tools/
 .runtime/
