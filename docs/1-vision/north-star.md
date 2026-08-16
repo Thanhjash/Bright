@@ -9,9 +9,11 @@
 
 > This is the root document. Every other technical decision must answer: *what does it serve here?*
 > If another document contradicts this file, this file wins.
+> Execution order lives in [autonomous-classroom-roadmap.md](../4-build/autonomous-classroom-roadmap.md):
+> text teacher brain first, then station, voice, AIRI, class scale, local Gemma.
 
-**Updated:** 2026-08-12
-**Status:** direction locked; v3 autonomous vertical slice mechanically green, release gates open
+**Updated:** 2026-08-16
+**Status:** direction locked; Layer 1 (Hermes text teacher) is the only current critical path
 
 ---
 

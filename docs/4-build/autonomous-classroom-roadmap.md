@@ -1,365 +1,270 @@
-# Autonomous Classroom Product — competition roadmap
+# Execution roadmap — teacher loop first
 
-**Updated:** 2026-08-13
-**Authority:** current execution roadmap  
-**North Star:** one autonomous AI teacher for 20–40 children on a shared board
+**Updated:** 2026-08-16  
+**Authority:** current execution order  
+**North Star:** [1-vision/north-star.md](../1-vision/north-star.md) still wins on product thesis  
+**Research:** [5-research/2026-08-16-teacher-loop-roadmap.md](../5-research/2026-08-16-teacher-loop-roadmap.md)
 
-This roadmap replaces feature-count planning with evidence gates. It deliberately
-does not attach optimistic dates: work is ordered by dependency and product risk.
-Move as fast as possible, but never declare a later gate while its evidence is fake.
+This file replaces feature-count planning and the older G0–G8 “do everything at once”
+order. The destination is unchanged: one autonomous AI teacher for 20–40 children on
+a shared board, later offline on cheap Intel hardware. The build order is now the
+smallest teacher loop first.
 
-Research and rationale: [CTO autonomous-classroom audit](../5-research/2026-08-12-cto-autonomous-classroom-audit.md).
+Do not declare a later layer while its evidence is fake.
 
-## Implementation checkpoint — 2026-08-12
+---
 
-The current v3 vertical slice is mechanically green: Core 242 tests; agent 83 non-live
-tests with four live-provider cases deselected; AIRI 169 tests; two mocked Chromium v3
-flows; content contract 8 tests plus the lesson self-test. The Market Food candidate runs 41.0–44.7
-minutes in headless simulation. This is implementation evidence, not a release claim.
+## 1. Destination (unchanged)
 
-| Gate | Current state |
-|---|---|
-| G0 product truth | **Mostly implemented:** Protocol v3/toolchain/CI/capability states; provenance and legal decisions remain |
-| G1 real teaching product | **Candidate implemented:** full executable draft; curriculum approver unassigned |
-| G2 classroom teacher spine | **Partial:** roster/fairness/assignments/checkpoint writes; memory, restore and pacing execution incomplete |
-| G3 oral interaction | **Partial:** eight authored, individually assigned answer-station turns with bounded recovery; no room-safety evidence |
-| G4 product UX | **Partial:** setup/status/emergency redesign and mocked Chromium gate; first-time facilitator proof absent |
-| G5–G8 | **Open:** local speech/browser composition probe exists, but no full real Stage/AIRI/provider/room/hardware proof, local Gemma, appliance or governance proof |
+We are not building a chatbot with an avatar.
 
-## Competition-ready definition
+We are building:
 
-A build is competition-ready only when it can run a real 35–45 minute lesson for a
-20–40 learner roster, with the AI owning teaching decisions, pacing, participation
-and recovery. The operator performs setup and room safety, not teaching.
+> An autonomous teaching system that runs offline on cheap hardware, remembers each
+> student, prepares its own lessons, drives one shared board, and adapts from what
+> the class actually does.
 
-The live demo may present a shorter excerpt, but it must use the same lesson,
-runtime, recovery paths and hardware as the full autonomous rehearsal. There is no
-separate “scripted demo product”.
+Success is still the five North Star tests: plug in and it teaches; unplug the
+network and it still teaches; children are known over time; agent failure does not
+stop the class; hardware is cheap enough to give away.
 
-## NOW — the shortest honest path
+1:1 text is the maturity wedge, not a product fork.
 
-### G0 — Restore product truth
+---
 
-**Why first:** content artifacts and release claims cannot be trusted while the
-compiler/runtime contracts disagree.
-
-- Keep lesson compiler output aligned with Protocol v3 and keep self-test green. *(Implemented.)*
-- Add CI for contracts, Python, UI/AIRI, content compile/lint/play and packaging.
-- Create one clean-checkout command that builds, tests and produces an evidence manifest.
-- Separate health into `liveness`, `readiness` and `teachable`.
-- Treat speech/audio as a classroom capability distinct from agent mode; never call
-  a silent, advancing lesson “offline-ready”.
-- Lock the first learner wedge and name a curriculum approver.
-- Verify the competition organizer/rulebook wording before public claims.
-- Decide root code/content licences; add NOTICE/SBOM/asset-model-voice provenance.
-- Replace stale status claims with the four-state release matrix.
-
-**Exit gate**
-
-- clean checkout produces a valid v3 lesson and runs all authored paths to DONE;
-- CI, dependency/content/model hashes and test artifacts are tied to a commit;
-- no restricted/unprovenanced artifact is silently bundled.
-
-### G1 — One real teaching product *(candidate implemented; approval open)*
-
-Build one teacher-approved 35–45 minute communicative lesson, not more fixtures.
-
-Recommended arc:
-
-1. hook;
-2. comprehensible input;
-3. whole-class chorus/gesture;
-4. guided practice;
-5. pair/small-group task;
-6. sampled individual retrieval;
-7. production/roleplay;
-8. bounded EXPLORE;
-9. exit check and closure.
-
-Every activity needs timebox, correct/near/wrong/uncertain/silence/timeout outcomes,
-an easier recovery and a safe default. Map outcomes to Vietnam 2018 + CEFR young
-learner “can do” descriptors after the learner wedge is confirmed.
-
-Instrument SP-0:
-
-- human author/review hours separate from model time;
-- branch/default coverage and headless no-stall simulation;
-- narration duration, board density, locale coverage;
-- media/audio/license provenance;
-- pre-test, exit check, one-week delayed retrieval and transfer task.
-
-**Exit gate**
-
-- 100% executable paths reach DONE without manual Skip;
-- one 20-minute equivalent costs no more than 8 human hours after tooling;
-- curriculum approver signs content and assessment rubric;
-- no public learning-efficacy claim before delayed/transfer evidence.
-
-### G2 — Core becomes a classroom teacher *(spine implemented; policy execution partial)*
-
-Add a Core-owned `ClassSessionController`; do not put this authority in Hermes.
-
-Data model:
-
-- classes, class members, attendance, session participants;
-- session owner separate from current target learner;
-- participation ledger and turn assignments;
-- persisted lesson/session checkpoint plus startup restore;
-- confidence/evidence-backed learner observations.
-
-Deterministic policies:
-
-- fair call queue, cooldown and students-to-check;
-- selected individual / group / anonymous / uncertain answer scopes;
-- session clock, stage time budgets and pace checkpoints;
-- silence/noise/two-speaker/confused-class/failed-activity recovery;
-- class energy reset and exit/closure;
-- memory write only for a selected/confirmed learner.
-
-Hermes receives minimal aggregate state and current target, then chooses only among
-legal actions. It never receives or owns the whole roster.
-
-**Exit gate**
-
-- simulated 40-student session has no cross-student memory write;
-- every learner is scheduled for at least one meaningful participation mode;
-- named turns satisfy deterministic fairness/cooldown policy;
-- agent restart does not lose Core state; Core restart restores roster, target, lesson
-  and participation state from the checkpoint;
-- the lesson can complete with Hermes/model/network absent.
-
-### G3 — Autonomous oral interaction and recovery *(eight authored individual turns implemented; room proof open)*
-
-Use the minimum honest classroom topology:
-
-- one answer position with a measured directional/handheld mic;
-- AI calls the learner; next capture belongs to that learner;
-- group/choral response never becomes individual evidence;
-- automatic capture is state-driven; facilitator does not PTT every answer;
-- no face/voice biometric identity in NOW.
-
-Implement `unhandled_utterance` and bounded recovery:
-
-- low confidence/noise → authored neutral retry;
-- relevant off-script question → short Hermes response inside lesson boundary;
-- unsafe/unrelated/ambiguous → neutral boundary and return to lesson;
-- agent/TTS/ASR failure → immediate authored fallback and self-restart;
-- correctness and conversational helpfulness remain separate.
-
-The Market Food candidate now authors eight separate selected-individual turns,
-each with an exact target phrase and an authored whole-class recovery before the
-next selected learner. For a named turn, Core first publishes its deterministic
-spoken roster-name callout and only issues the capture request after Stage acknowledges that
-exact callout's completed playback. A failed or missing ACK safe-pauses; an old
-ACK cannot arm a newer learner's microphone. This closes a protocol hole, not
-the ecological safety gate below.
-
-**Exit gate**
-
-- zero false accepts for wrong/silent cases in the consented release corpus;
-- child stop-speaking → first meaningful sound p95 <2.5 s, hard fail >4 s;
-- cancellation → local silence <100 ms;
-- no feedback hole >2 s because authored backchannel is always available;
-- room noise/two-speaker/echo paths never write confident individual memory.
-
-### G4 — Product UX, not an engineering console *(first v3 redesign implemented)*
-
-Target operator journey:
+## 2. Locked sequence
 
 ```text
-Setup class → roster/attendance → choose lesson → audio/projector/mic preflight
-→ Start → quiet autonomy status → Pause/Emergency/Resume → session summary
+0  Floor already in repo     Core lesson_run, protocol v3, authored fallback
+1  Text teacher brain        Hermes + 1 MCP tool, 1 learner, hosted API
+2  Thin text station         /learn + TeacherContext + local assets
+3  Voice                     TTS of teacher_line, then Bright ASR
+4  Body                      AIRI lipsync on Stage (not a second agent)
+5  Classroom                 20–40, fairness, optional student detector
+6  Local mind                Gemma 4 behind the same Hermes profile
+7  Giveaway                  consent, licences, appliance, locale
 ```
 
-Required UX changes:
+Hosted API now. Local Gemma later. Same Core, MCP, protocol, UI, and curriculum.
 
-- Setup Wizard instead of env-only lesson/class selection.
-- Stage shows whom the AI called, response mode and clear turn-taking cues.
-- Control prioritizes “what Bright is doing, why, what is next, room readiness”.
-- Keep Pause/Emergency/Resume prominent; move Back/Skip/Repeat/Takeover behind a
-  recovery/debug disclosure, require reason, and log their use.
-- Resolve the physical topology: how Stage and authenticated Control appear on the
-  actual appliance, not merely as two URLs.
-- Test projector contrast, long Vietnamese, 100–150% scaling, touch targets,
-  disconnected/degraded states, avatar failure and mic/audio-device changes.
-- Make emergency controls sticky at `1024×768` and `1366×768`; use clear focus styles
-  and guarded activation for destructive/emergency actions.
-- On required speech failure: stop progression, retry, use cached/pre-generated
-  audio, then enter an explicit safe pause with actionable recovery.
+AIRI, ASR, detector, and legal work are real, but they are not the current
+critical path.
 
-**Exit gate**
+---
 
-- a first-time facilitator starts unaided after cold boot;
-- zero routine pedagogical taps in three full sessions;
-- Pause/Emergency/Resume is found and completes in <10 s;
-- one physical voice per turn; no overlapping Stage/Control output;
-- keyboard, touch and projector viewport E2E pass in Chromium.
+## 3. Tool and board contract
 
-### G5 — Real composed product evidence *(one hosted synthetic turn evidenced; full composition open)*
+Three classroom capabilities are required for a real lesson:
 
-Replace the Core-wire smoke as release proof with a composed harness:
+| Capability | Owner | Hermes sees |
+|---|---|---|
+| Show / crop an image | Core + Stage | a legal `move_id`, never a filesystem path |
+| Play / pause authored audio | Core + Stage | a legal `move_id` such as `replay_model` |
+| Write dialogue / words on the board | Core + Stage | a legal `move_id`; Core already holds the lines |
 
-- two real Chromium contexts: Stage and Control;
-- Core + AIRI + Piper + ASR + pinned Hermes;
-- real playback events, not Python-fabricated ACKs;
-- modes: authored-only, ScriptedAgent, hosted Hermes, model killed mid-turn;
-- capture TTFT, ASR, TTS, first-audio, cancellation and reflex distributions;
-- 35–45 minute soak and target audio hardware.
+Live Hermes keeps **one** terminal tool:
 
-Keep the existing Core-wire smoke, but label it correctly as a protocol smoke.
+```text
+classroom_propose_move(turn_id, move_id, teacher_line)
+```
 
-The current `composed-smoke` remains an early, deliberately narrower probe: Chromium
-records a synthetic browser microphone stream to the real local ASR endpoint and plays
-real local Piper WAV through the browser audio pipeline. It can optionally check
-authenticated Hermes health and rehearse Hermes → Core MCP through the separate wire
-smoke.
+Core computes `available_actions[]` from `lesson_run.json`. Hermes chooses one
+legal pedagogical move and one short teacher line. Core turns that move into
+image / audio / board updates.
 
-The separate `ideal-composed-acceptance` lane has one successful `fake-audio-file` run:
-two persistent real Chromium contexts entered through visible UI controls; the adult
-Piper fixture traversed MediaRecorder → Whisper → Core → hosted Hermes/MCP → Piper →
-AIRI; and Stage's causal WebAudio ACK preceded the Core commit (events 368 then 370).
-The ACK was not fabricated. This promotes G5 from “uncomposed” to a one-turn ideal
-composition proof only. It uses a 90-second cold-provider allowance and a 0.65
-fixture-only speech threshold; the product remains 6 seconds and 0.75. It is not a
-physical-room, child-speech, full-Market, or 20–40 learner proof.
+Rejected live tools (teammate draft and chatbot demos):
 
-The operator-facing [full-Market ideal-condition protocol](composed-smoke-runbook.md#manual-full-market-ideal-condition-protocol)
-is ready for the next evidence run: it uses normal `ideal-hosted start`, activity 0,
-eight pseudonymous adults and the real answer microphone. Publishing the protocol does
-not mark the full-session gate as passed.
+- `display_image(path)`, `play_audio(path)`, `write_class_memory`
+- free chat (“Ask Gemma about an animal”)
+- Hermes TTS / STT / filesystem / browser
+- AIRI `core-agent`
 
-**Exit gate**
+Adaptive teaching means: repeat, scaffold, replay the model track, zoom the
+current panel, invite a pair, or stay on the task cycle. It does not mean
+inventing a new slide or a new vocabulary item.
 
-- three consecutive full autonomous sessions: zero crashes/stalls and zero routine
-  operator teaching decisions;
-- model/network killed mid-session: lesson completes and mode visibly degrades;
-- reflex p95 <100 ms under full load;
-- cold boot → teachable ≤3 min;
-- no uncorrelated/stale terminal or memory mutation.
+Assets are `asset://id` in a local store. Google Drive is an ingest source only.
 
-### G6 — Local Gemma/OpenVINO competition path
+---
 
-Preserve the Option B seam. Bright only talks to Hermes; provider/model/base URL are
-profile/deployment concerns.
+## 4. Data layer
 
-- Pin Hermes runtime/config and test real MCP/SSE behavior.
-- Build one provider conformance suite for hosted and local.
-- Add OVMS/Gemma service/image for the target Intel box.
-- Test legal action selection, schema validity, policy boundary, stale tools,
-  cancellation and no-parallel mutation.
-- Measure 2K/4K context, TTFT/decode, RSS/PSS, thermal and sustained 45-minute load.
-- Verify local endpoint before enabling `local-trusted` privacy policy.
-- Keep dedicated ASR canonical; evaluate Gemma native audio later behind `AsrProvider`.
+```text
+content/lessons/     authored units (locked vocabulary, TBLT phases)
+assets/              local images, audio, video (hashed, offline)
+data/runs/           compiled lesson_run.json + preloaded media
+data/students/       Core semantic memory only
+```
 
-**Exit gate**
+Persist:
 
-- tool selection ≥85%, schema validity 100%, critical policy violation 0;
-- target decode ≥8 tok/s while classroom latency gates remain green;
-- no swap/thermal collapse during a 45-minute session;
-- killing Hermes/Gemma still completes the authored lesson 100%.
+- class unit progress, function mastery, pacing notes
+- optional per-student `demonstrated | emerging | not_observed` and
+  `confidence_trend` when identification and consent exist
 
-### G7 — Appliance, recovery and offline distribution
+Do not persist:
 
-- Pin OS, Python, Chromium, drivers and architecture-specific wheels.
-- Make blank-image installation fully offline, including Hermes/Core dependencies.
-- Persist checkpoint atomically and resume safely after Core/power loss.
-- Add watchdog, disk-full policy, DB backup/restore and privacy-safe diagnostics.
-- Sign USB packs with a baked public key.
-- Version and rollback app + content + model + DB migration as one release.
-- Fault-inject power pull, full disk, corrupt WAL/DB, missing audio and killed services.
+- raw classroom video / audio beyond the session
+- chat transcripts as memory
+- face boxes, match percentages, or ranks on the projector
 
-**Exit gate**
+Student detector / face+seat fusion is a Layer 5 input to Core. Hermes receives
+an opaque learner id, never pixels. Identity is never drawn on the shared board.
 
-- 10 power cuts: no corruption; resume correct activity ≤30 s;
-- interrupted USB update leaves active release unchanged;
-- incompatible update rolls back the whole stack;
-- zero-internet boot and lesson completion;
-- support bundle diagnoses injected faults without child data/secrets.
+---
 
-### G8 — Child safety, privacy and legal ship
+## 5. Layers and exit gates
 
-- Data inventory with purpose, retention and deletion per field.
-- Institution + guardian/child consent, withdrawal, export/delete/correct workflow.
-- DPIA and cross-border assessment while hosted inference exists.
-- Pseudonymous learner IDs and device-theft policy/encryption decision.
-- Real capability auth for Stage/Control/admin; per-device secret rotation/recovery.
-- Root LICENSE, THIRD_PARTY_NOTICES, SBOM, model/voice/media/content licence manifest.
-- Replace Hiyori/Haru with an owned/cleared child-tested character.
-- Collect child/room recordings only after approval and consent workflow exists.
+### Layer 0 — Floor (keep; do not expand)
 
-**Exit gate**
+Already true enough to build on: Core can play an authored `lesson_run.json`
+with Hermes dead; Protocol v3 exists; pinned Hermes sidecar and one proposal
+tool exist; one hosted composed turn has historical evidence.
 
-- raw transcript/audio cannot be recovered from logs, DB, backups or support bundles;
-- delete/withdrawal removes all intended copies;
-- signed update is mandatory;
-- no restricted asset is in distribution bundle;
-- privacy/legal/curriculum owners sign the release evidence.
+Exit: do not regress the LLM-free path. No new foundation features until
+Layer 1 is green.
 
-## Competition release gates
+### Layer 1 — Text teacher brain  **NOW**
 
-| Gate | Required evidence |
+Baseline: clean `main` (Option B, pinned `0.20.0+bright.1`, three-field
+proposal). Do not develop on the parked WIP branch.
+
+Work:
+
+1. Hermes-only provider probe: same TeacherContext, one MCP tool, real
+   hosted provider, 10–20 turns (correct / wrong / ambiguous / Ask /
+   no-tool / timeout).
+2. If healthy turns miss the terminal tool: change **only** the Hermes wire
+   profile, rebuild, re-probe. Do not add UI or extra prompt fields.
+3. If the adapter glue keeps growing past ~800 lines to paper over the
+   provider: consider a thin Bright loop (NS-4).
+
+Exit:
+
+- valid `classroom_propose_move` on 100% of healthy-provider turns
+- injected failure → Core fallback, no stall
+- no raw learner text in DB / live Hermes stores
+- one learner finishes a 25-minute **text** lesson three times
+
+Parked, not deleted: `wip/20260814-1to1-text-unproven`.
+
+### Layer 2 — Thin text station
+
+Cherry-pick from the parked branch only after Layer 1 is green:
+
+- `/learn` as a child text station, not a chat product
+- `TeacherContext`, mastery, legal moves
+- first real unit (Market Food 1:1 or compiled Global Success *Hello*)
+
+Board image / audio / text appear because the **current activity** says so,
+or because Hermes chose a legal move that Core already knows how to render.
+
+Exit: one child completes the text lesson without an adult teaching decision.
+
+### Layer 3 — Voice
+
+Same loop, new channel.
+
+1. TTS of the validated `teacher_line` (and authored tracks). Stage is the
+   only speaker.
+2. Then Bright ASR for assigned turns. Not Hermes voice tools. Not AIRI’s
+   streaming server.
+
+Exit: one learner, multi-turn speech; half-duplex; echo does not grade;
+authored narration continues if Hermes dies.
+
+### Layer 4 — AIRI body
+
+From `references/airi` take Live2D/VRM + wLipSync + playback queue.
+
+Do not take `core-agent`, Tamagotchi, Telegram, or the 900-line Vue stage
+app. AIRI renders a speech turn Core already committed.
+
+Hiyori sample licence is not shippable at donation scale. Choose a
+distributable character before a public demo.
+
+### Layer 5 — Classroom 20–40
+
+Same Core / Hermes / Stage. Add fairness, named callouts, one mic, pair
+tasks, facilitator emergency in Vietnamese.
+
+Optional student detector feeds Core identity fusion only after consent.
+No ranking. No biometric overlay on the projector.
+
+Exit: 35–45 minute lesson, 20–40 learners, AI teaches, adult does not Skip.
+
+### Layer 6 — Local Gemma
+
+Change Hermes `provider` / `model` / `base_url` only. Re-run the Layer 1
+and Layer 3 conformance suites.
+
+Probe OpenVINO / Gemma 4 E4B **in parallel after Layer 1 is green**. It
+must not reorder Layers 1–2. E4B is small; the one-tool contract is what
+makes it usable. SKU purchase waits for measured RAM / tokens / thermal.
+
+### Layer 7 — Giveaway
+
+- Child data: written guardian consent; additional child consent if aged 7+;
+  silence is not consent. Confirm against the current Vietnamese personal-data
+  decree (NĐ 13/2023, successor NĐ 356/2025) with a human lawyer before any
+  real-child detector/ASR store.
+- Textbook assets: Global Success pages/tracks are prototype-private until
+  NXB GD + Macmillan permission, or replace with original media.
+- Locale is configuration, not hardcoded Vietnamese.
+- Appliance, power-loss, SBOM, signed updates.
+
+Hermes cron / skills may prepare tomorrow’s `lesson_run` in a **separate**
+trust domain. They stay out of the live classroom profile.
+
+---
+
+## 6. First unit (content, not chat)
+
+The teammate Global Success Grade 3 Unit 1 *Hello* package is a valid
+**curriculum spec**: TBLT phases, locked vocabulary, local asset manifest,
+no public marks, choral-before-individual, escalation to the facilitator.
+
+Compile it to `lesson.md` + `lesson_run.json` + `asset://…`. Do not paste
+the long system prompt into live Hermes. Core owns phase order, timers,
+and fallbacks. Hermes only chooses among legal moves for the current step.
+
+Do not teach *What’s your name?* in this unit. That is Unit 2.
+
+---
+
+## 7. Explicitly out of the current critical path
+
+- New `/learn` features, browser acceptance as “Hermes proof”
+- AIRI polish, face boxes, Ask-Gemma chat
+- Extra Hermes MCP tools
+- Claiming “Hermes reliability completed” without repeated live evidence
+- Auth, appliance, SBOM, and licence work as a substitute for a working teacher
+- Developing on the dirty 1:1 WIP tree
+
+---
+
+## 8. Historical G0–G8 map
+
+The 2026-08-12/14 gates remain useful as **later evidence labels**, not as
+this week’s order:
+
+| Old gate | Lives in |
 |---|---|
-| R0 Reproducible | Clean checkout/image builds offline; CI green; content/compiler/runtime contract aligned |
-| R1 NS-1 | Network + Hermes + Gemma absent; real lesson completes |
-| R2 Composed | Real browser Stage/Control + AIRI + speech + Hermes; no fake playback ACK |
-| R3 Autonomous class | 20–40 roster, fair AI call queue, automatic capture, no adult teaching loop |
-| R4 Ecological safety | Consented child/noisy-room corpus; zero false praise/accept for wrong or silence |
-| R5 Performance | Reflex p95 <100 ms; response first-audio p95 <2.5 s; stable thermal/RAM |
-| R6 Recovery | Service/browser/power failures self-recover; release rollback is atomic |
-| R7 Local Intel | Gemma/OpenVINO provider, tool, latency and resource conformance on target box |
-| R8 Human factors | New facilitator starts unaided; emergency action <10 s; three full autonomous runs |
-| R9 Governance | Consent, DPIA, delete/export, licences, SBOM and signed updates complete |
+| G0 product truth / compiler | Layer 0, keep green |
+| G1 one teaching product | Layer 2 + Layer 6 content |
+| G2 class controller | Layer 5 |
+| G3 oral interaction | Layer 3 |
+| G4 product UX | Layers 2 and 5 |
+| G5 composed room evidence | Layers 3–5 |
+| G6–G8 local Gemma, appliance, governance | Layers 6–7 |
 
-## NEXT — after the first autonomous vertical slice
+---
 
-- Authoring Studio: branch preview, teacher approval/versioning, voice/media generation.
-- One coherent 4–6 lesson unit with skill graph and spaced retrieval.
-- Roster-scoped longitudinal memory, absence handling and correction UX.
-- Two to three consented classroom pilots; instrument every intervention cause.
-- Signed content packs, backup/export/delete and educator-readable diagnostics.
-- Owned character validated for attention/listening/turn cues, not attachment mechanics.
+## 9. Next action
 
-Pilot gates: ≥90% sessions complete without technical help; emergency recovery <10 s;
-no privacy/safety incident; learning evidence directionally positive on immediate,
-delayed and transfer measures.
+On clean `main`, with pinned `0.20.0+bright.1` and the real hosted key:
 
-## LATER — scale only after product proof
+> Run a Hermes-only provider probe. No UI, no AIRI, no ASR, no new tools.
 
-- Locale Pack contract: UI, fallback language, ASR/TTS, curriculum mapping, cultural
-  assets, fonts, accessibility, safety strings and licences.
-- Offline fleet/channel distribution with signed packs and rollback.
-- Privacy-safe aggregate analytics when a device reconnects.
-- Additional locales and accessibility modes.
-- Camera/perception/identity only after measured need, consent and accuracy gates.
-- Pronunciation score only after child/accent calibration.
-
-## Explicitly not NOW
-
-- copying/embedding Hermes into AIRI;
-- replacing dedicated ASR with Gemma audio before provider and room benchmarks;
-- face recognition, voice biometrics or automatic identity claims;
-- full-duplex always-listening classroom audio;
-- a fleet cloud/LMS before one appliance teaches reliably;
-- producing many lessons before SP-0 authoring economics is known;
-- decorative avatar polish before ownership, turn cues and classroom legibility;
-- public “AI teaches better” claims without delayed and transfer evidence.
-
-## Immediate execution order
-
-1. Close remaining G0/G1 governance: curriculum approval, competition wording,
-   licences/provenance and reproducible evidence artifact.
-2. Complete G2 execution: stage budgets/pacing/recovery, class-aware memory and Core
-   checkpoint restore; prove a simulated 40-learner full session.
-3. Execute G3 in a real room: exercise the eight authored callout/capture/recovery
-   paths with correct, wrong, silent, noisy and two-speaker inputs; build the
-   consented zero-false-accept corpus.
-4. Keep the one-turn ideal composition lane green, then extend it from the synthetic
-   fixture to manual physical-mic, all Market oral paths, repeated full sessions and
-   the room gates (G4/G5). Do not relax production latency or grading thresholds from
-   the fixture result.
-5. Run local Gemma/OpenVINO conformance and appliance hardening in parallel once
-   the real workload exists (G6/G7).
-6. Governance is continuous, with a hard gate before child recordings or shipping (G8).
-
-The fastest path is not fewer gates. It is removing work that does not prove an
-autonomous class, and running independent evidence workstreams in parallel.
+That is the only Layer 1 start. After it is green, cherry-pick Layer 2 from
+`wip/20260814-1to1-text-unproven`.

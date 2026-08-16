@@ -86,13 +86,13 @@ docs/
 ### 4-build
 | | |
 |---|---|
-| [state-of-the-project.md](4-build/state-of-the-project.md) | 🔴 **LIVING. Read this first if you want the honest picture.** What is proven, what is not, what to do next |
-| [tracker.md](4-build/tracker.md) | 🔴 **LIVING.** Status board, definition of done per component, integration tests, measured facts, risks |
-| [phase-1-plan.md](4-build/phase-1-plan.md) | Historical Phase-1 plan. Hosted model seam, agent loop and memory schema; superseded where it conflicts with v3 status/roadmap |
-| [execution-plan.md](4-build/execution-plan.md) | Adversarial review. What actually kills this project, and milestone ordering |
-| [open-questions.md](4-build/open-questions.md) | Eleven spikes with kill criteria, plus decisions that need a human |
-| [option-b-implementation-status.md](4-build/option-b-implementation-status.md) | **Current implementation handoff:** delivered slices, verification evidence, and remaining release blockers |
-| [autonomous-classroom-roadmap.md](4-build/autonomous-classroom-roadmap.md) | **Current product roadmap:** dependency-ordered gates from Option B to a competition-ready autonomous classroom |
+| [autonomous-classroom-roadmap.md](4-build/autonomous-classroom-roadmap.md) | 🔴 **LIVING execution order.** Teacher-loop first: Hermes text → station → voice → AIRI → class → Gemma → giveaway |
+| [option-b-implementation-status.md](4-build/option-b-implementation-status.md) | Implementation handoff snapshot. Superseded on *order of work* by the 2026-08-16 roadmap |
+| [state-of-the-project.md](4-build/state-of-the-project.md) | Historical (2026-08-11). Not the current picture |
+| [tracker.md](4-build/tracker.md) | Historical (2026-08-11). Hermes harness “not this week” is stale |
+| [phase-1-plan.md](4-build/phase-1-plan.md) | Historical Phase-1 plan |
+| [execution-plan.md](4-build/execution-plan.md) | Adversarial review; Hermes 800-line adapter trigger still valid |
+| [open-questions.md](4-build/open-questions.md) | Spikes; treat as background, not this week’s queue |
 
 ### 5-research
 | | |
@@ -101,12 +101,14 @@ docs/
 | [PROMPT-avatar-decision.md](5-research/PROMPT-avatar-decision.md) | Ready-to-run deep-research prompt: which avatar format, and which character for Vietnamese children |
 | [2026-08-12-codebase-exploration.md](5-research/2026-08-12-codebase-exploration.md) | Code-grounded audit of the interrupted implementation; historical observations, not runtime doctrine |
 | [2026-08-12-cto-autonomous-classroom-audit.md](5-research/2026-08-12-cto-autonomous-classroom-audit.md) | CTO audit of product, architecture, classroom validity, appliance, local Gemma, governance and competition evidence |
+| [2026-08-16-teacher-loop-roadmap.md](5-research/2026-08-16-teacher-loop-roadmap.md) | Why teacher-loop-first: small-model tools, TBLT vs chatbot, child-data law, Gemma/OpenVINO |
 
 ### Journals
 | | |
 |---|---|
 | [260812-autonomous-classroom-roadmap.md](journals/260812-autonomous-classroom-roadmap.md) | Decision record: autonomous classroom as release unit, Option B retained, evidence-gated execution |
 | [260813-ideal-composed-evidence.md](journals/260813-ideal-composed-evidence.md) | One hosted synthetic adult composed turn: exact evidence, privacy observation and remaining room gates |
+| [260816-teacher-loop-roadmap.md](journals/260816-teacher-loop-roadmap.md) | Locked teacher-loop-first execution order; 1:1 WIP parked |
 
 ### Outside `docs/`
 | | |
@@ -128,13 +130,13 @@ docs/
 ## Status
 
 ```
-✅  protocol/runtime floor Protocol v3, class sessions, leases, capture correlation
-✅  Option B live boundary one terminal Hermes proposal tool; Core commits after playback
-✅  product lesson draft   41.0–44.7 minute Market Food paths; eight authored individual oral turns and recovery paths terminate headlessly
-✅  mechanical evidence   Core 242; agent 83; AIRI 169; Chromium v3 2; content contract 9 + hardened acceptance harnesses green
-⚠️  release verification  one synthetic adult Chromium → Whisper/Core → hosted Hermes/MCP → Piper/AIRI turn has causal ACK/commit evidence; full Market, physical-room and child proof do not
-🔴  approval/governance    curriculum approver, child-room evidence and ship rights remain
+✅  protocol/runtime floor Protocol v3; Core runs a lesson with Hermes dead
+✅  Option B live boundary one terminal tool on pinned Hermes 0.20.0+bright.1
+⚠️  Layer 1 teacher brain  one historical hosted composed turn; 10–20 turn / 25 min × 3 not proven
+🔴  Layers 2–7            text station, voice, AIRI, 20–40, local Gemma, giveaway — later
 ```
+
+Current work is Layer 1 only. See [autonomous-classroom-roadmap.md](4-build/autonomous-classroom-roadmap.md).
 
 Agent evidence excludes four live-provider tests. The Chromium v3 test is a mocked
 browser contract flow, not real audio or Hermes evidence. Test counts in older build
