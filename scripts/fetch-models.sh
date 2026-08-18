@@ -75,7 +75,7 @@ PY
 #
 #   LICENCE: Live2D Inc. sample material. Fine for internal development and
 #   demos; commercial/public release is RESTRICTED and must be resolved before
-#   shipping to schools. See docs/4-build/tracker.md item P1.
+#   shipping to schools. See docs/archive/tracker.md item P1.
 #
 # Note this model ships motion groups "Idle" and "Tap" only, so emotions are
 # driven through its 8 expressions. The mapping lives in models/live2d/

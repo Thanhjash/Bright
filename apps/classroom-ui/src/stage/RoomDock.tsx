@@ -1,0 +1,228 @@
+/**
+ * The only chrome on the projector.
+ *
+ * There is no Start button. She opens her own class the moment the Stage
+ * claims the audio lease -- the presence gate in `teacher_os.pulse_teacher`.
+ * A button to begin is an adult decision sitting on the teaching path, which
+ * NS-1 forbids, and the room is meant to run itself.
+ *
+ * There is no hold-to-talk either. The room listens whenever she is not
+ * speaking (`voiceGate`), because a child in a remote classroom has no
+ * keyboard and no mouse. This component is a status chip and a fault banner.
+ * Not a chat. Subtitles stay on the board.
+ */
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { CORE_HTTP } from '../lib/env'
+import { createMicRecorder } from '../speech/micRecorder'
+import { createVoiceGate } from '../speech/voiceGate'
+import { SttError, transcribe } from '../speech/stt'
+import { useClassroom } from '../store/classroom'
+
+type Status = {
+  ok?: boolean
+  phase?: string
+  hermesUp?: boolean
+  speechUp?: boolean
+  stageAudioOwner?: boolean
+  readyToStart?: boolean
+  sessionOpen?: boolean
+  turnBusy?: boolean
+  lastSay?: string | null
+  lastFault?: { error?: string } | null
+}
+
+type DockPhase = 'asleep' | 'waking' | 'speaking' | 'listen' | 'hearing' | 'thinking' | 'fault'
+
+async function readJson(res: Response): Promise<Record<string, unknown>> {
+  const text = await res.text()
+  try {
+    return JSON.parse(text) as Record<string, unknown>
+  } catch {
+    throw new Error(text.slice(0, 160) || `HTTP ${res.status}`)
+  }
+}
+
+export function RoomDock() {
+  const speaking = useClassroom((s) => s.avatar.speaking)
+  const connected = useClassroom((s) => s.connection.state === 'open' || s.connection.state === 'mock')
+  const [status, setStatus] = useState<Status>({})
+  const [phase, setPhase] = useState<DockPhase>('asleep')
+  const [heard, setHeard] = useState<string | null>(null)
+  const [hint, setHint] = useState<string | null>(null)
+  const mic = useRef(createMicRecorder())
+  const phaseRef = useRef<DockPhase>('asleep')
+
+  const setDock = useCallback((next: DockPhase) => {
+    phaseRef.current = next
+    setPhase(next)
+  }, [])
+
+  useEffect(() => {
+    return () => mic.current.release()
+  }, [])
+
+  useEffect(() => {
+    let cancel = false
+    const tick = async () => {
+      try {
+        const body = (await fetch(`${CORE_HTTP}/teacher/status`).then((r) => r.json())) as Status
+        if (cancel) return
+        setStatus(body)
+        if (phaseRef.current === 'hearing') return
+        if (body.sessionOpen) {
+          if (body.turnBusy) setDock('thinking')
+          else setDock(speaking ? 'speaking' : 'listen')
+        } else if (!body.hermesUp && connected) {
+          setDock('fault')
+        } else {
+          setDock('asleep')
+        }
+      } catch {
+        if (!cancel && phaseRef.current === 'asleep') setDock(connected ? 'fault' : 'asleep')
+      }
+    }
+    void tick()
+    const id = window.setInterval(() => { void tick() }, 2500)
+    return () => {
+      cancel = true
+      window.clearInterval(id)
+    }
+  }, [connected, setDock, speaking])
+
+  useEffect(() => {
+    if (phaseRef.current === 'hearing' || phaseRef.current === 'thinking' || phaseRef.current === 'waking') return
+    if (status.sessionOpen) setDock(speaking ? 'speaking' : 'listen')
+  }, [setDock, speaking, status.sessionOpen])
+
+  // One clip, already endpointed by the gate. Same path a released button
+  // used to take: transcribe, then hand the words to Core.
+  const submitClip = useCallback(async (clip: { audio: Blob; durationMs: number }) => {
+    setDock('thinking')
+    try {
+      const heardText = (await transcribe(clip.audio)).text.trim()
+      if (!heardText) {
+        setDock('listen')
+        return
+      }
+      setHeard(heardText)
+      setHint(null)
+      const res = await fetch(`${CORE_HTTP}/teacher/turn`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ text: heardText }),
+      })
+      const body = await readJson(res)
+      if (!res.ok) throw new Error(JSON.stringify(body).slice(0, 180))
+      setDock('listen')
+    } catch (err) {
+      setHint(err instanceof SttError ? err.message : 'The teacher needs a moment.')
+      setDock('listen')
+    }
+  }, [setDock])
+
+  // The room listens by itself. The gate never opens while she is speaking --
+  // the Stage is the only loudspeaker, so an open mic during Piper output
+  // would feed her own voice back into Whisper.
+  useEffect(() => {
+    const recorder = mic.current
+    const gate = createVoiceGate(recorder, {
+      onClip: (clip) => { void submitClip(clip) },
+      onError: (message) => setHint(message),
+    })
+    gate.start()
+    return () => gate.stop()
+  }, [submitClip])
+
+  const ready = Boolean(status.hermesUp && status.stageAudioOwner)
+  const light = !connected
+    ? 'bg-coral'
+    : ready && status.speechUp
+      ? 'bg-mint'
+      : status.hermesUp
+        ? 'bg-amber'
+        : 'bg-coral'
+
+  const copy = labelFor(phase, ready)
+
+  return (
+    <div
+      data-stage="dock"
+      className="pointer-events-none absolute inset-x-0 bottom-0 z-[28] flex flex-col items-center gap-3 px-[4vw] pb-[3.2vh] pt-8"
+    >
+      {heard ? (
+        <p
+          data-stage="heard"
+          className="pointer-events-none max-w-[36rem] truncate rounded-full bg-ink-950/70 px-5 py-2 font-display text-[clamp(0.95rem,1.4vw,1.25rem)] text-cream/90"
+        >
+          I heard: {heard}
+        </p>
+      ) : null}
+      {hint ? (
+        <p className="pointer-events-none max-w-[36rem] text-center font-display text-[clamp(0.95rem,1.4vw,1.2rem)] text-amber">
+          {hint}
+        </p>
+      ) : null}
+
+      {phase === 'asleep' || phase === 'fault' || phase === 'waking' ? (
+        <div
+          data-stage="waiting"
+          className="pointer-events-none flex min-h-[4.4rem] items-center justify-center gap-3 rounded-full bg-ink-950/70 px-8 py-4 font-display text-[clamp(1.1rem,1.7vw,1.5rem)] font-bold text-cream/85"
+        >
+          <span className={`h-3 w-3 rounded-full ${light}`} aria-hidden />
+          {copy.cta}
+        </div>
+      ) : (
+        <div
+          data-stage="listening"
+          className={
+            'pointer-events-none flex min-h-[4.6rem] items-center justify-center gap-3 rounded-full px-10 py-4 font-display text-[clamp(1.1rem,1.6vw,1.45rem)] font-bold ' +
+            (phase === 'hearing'
+              ? 'bg-amber/90 text-ink-900'
+              : 'bg-ink-950/70 text-cream/85')
+          }
+        >
+          <span className="flex h-6 items-end gap-1" aria-hidden>
+            {[0, 1, 2, 3].map((i) => (
+              <span
+                key={i}
+                className={`w-1.5 rounded-full ${phase === 'hearing' ? 'bg-ink-900' : 'bg-mint'}`}
+                style={{
+                  height: `${[40, 70, 100, 55][i]}%`,
+                  animation: phase === 'hearing' ? 'listen 1.1s ease-in-out infinite' : undefined,
+                  animationDelay: `${i * 90}ms`,
+                  transformOrigin: 'bottom',
+                }}
+              />
+            ))}
+          </span>
+          {copy.cta}
+        </div>
+      )}
+      <p className="pointer-events-none font-display text-[clamp(0.8rem,1.1vw,1rem)] tracking-wide text-cream/70">
+        {copy.sub}
+      </p>
+    </div>
+  )
+}
+
+function labelFor(phase: DockPhase, ready: boolean): { cta: string; sub: string } {
+  switch (phase) {
+    case 'waking':
+      return { cta: 'The teacher is coming to the board', sub: '' }
+    case 'speaking':
+      return { cta: 'Listen', sub: 'Wait until she finishes' }
+    case 'hearing':
+      return { cta: 'Listening…', sub: 'Release when you are done' }
+    case 'thinking':
+      return { cta: 'Thinking…', sub: 'Stay with the board' }
+    case 'listen':
+      return { cta: 'Hold to speak', sub: 'Spacebar works too' }
+    case 'fault':
+      return { cta: 'The teacher is checking the room', sub: 'She will start again herself' }
+    default:
+      return {
+        cta: ready ? 'The teacher is coming' : 'Waking the room',
+        sub: ready ? 'She opens the class herself' : 'Waiting for the teacher',
+      }
+  }
+}

@@ -80,7 +80,7 @@ The production boundary is exercised without a TestClient or API secret by:
 It starts Core with `CORE_DEV=0`, performs the Control-only `lesson.start`,
 checks Stage-only playback acknowledgements, and requires the authored lesson
 to finish while Hermes is absent. See the
-[product smoke runbook](../../docs/4-build/product-smoke-runbook.md).
+[product smoke runbook](../../docs/archive/product-smoke-runbook.md).
 
 ### `/ws`
 
@@ -172,7 +172,7 @@ model call of its own — everything model-shaped goes through the object
 | `app.py` | FastAPI: health, `/ws`, assets, dev endpoints, lifespan wiring |
 | `bus.py` | pub/sub; per-connection `seq`, global `stateVersion`, camelCase framing |
 | `state.py` | the store: Scene + LessonPosition + Mode, one writer, `snapshot()` |
-| `db.py` | SQLite schema (docs/4-build/phase-1-plan.md §5) + FTS5 `recall()` |
+| `db.py` | SQLite schema (docs/archive/phase-1-plan.md §5) + FTS5 `recall()` |
 | `runner.py` | the reflex tier: render, narrate, grade, branch, auto-advance |
 | `modes.py` | FULL/DEGRADED/OFFLINE from measured agent latency |
 | `scheduler.py` | apscheduler jobs + `AgentSeam` (the only place an agent plugs in) |
@@ -235,7 +235,7 @@ code path exists. Not "a hook that returns early" — absent (NS-1).
 Counters are in `/dev/state` under `agent`: turns, applied, timeouts, errors,
 skippedNotFull, skippedBusy, mean latency.
 
-### Background jobs (docs/4-build/phase-1-plan.md §6)
+### Background jobs (docs/archive/phase-1-plan.md §6)
 
 | Job | Trigger |
 |---|---|

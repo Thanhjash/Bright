@@ -1,4 +1,4 @@
-"""SQLite persistence -- schema per docs/4-build/phase-1-plan.md §5.
+"""SQLite persistence -- schema per docs/archive/phase-1-plan.md §5.
 
 Learning state (``students``, ``skills``), episodic memory (``sessions``,
 ``observations``) and teacher long-term memory (``session_summaries``), with an
@@ -141,6 +141,12 @@ MIGRATIONS: list[tuple[str, tuple[str, ...]]] = [
                 PRIMARY KEY (session_id, learner_id)
             )
             """,
+        ),
+    ),
+    (
+        "0004_observation_mode",
+        (
+            "ALTER TABLE observations ADD COLUMN mode TEXT",
         ),
     ),
 ]
@@ -333,6 +339,15 @@ class Database:
             ).fetchone()
         return dict(row) if row else None
 
+    def list_open_sessions(self, student_id: str) -> list[dict[str, Any]]:
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT * FROM sessions WHERE student_id = ? AND ended_at IS NULL "
+                "ORDER BY started_at ASC",
+                (student_id,),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
     # ---------------------------------------------------------- observations
     def record_observation(
         self,
@@ -345,13 +360,15 @@ class Database:
         *,
         response_turn_id: str | None = None,
         activity_id: str | None = None,
+        mode: str | None = None,
     ) -> int:
         when = ts or utc_now()
+        stored_mode = (mode or "").strip() or None
         with self._lock:
             cur = self._conn.execute(
                 "INSERT OR IGNORE INTO observations "
-                "(session_id, student_id, skill, result, evidence, ts, response_turn_id, activity_id)"
-                " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                "(session_id, student_id, skill, result, evidence, ts, response_turn_id, activity_id, mode)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     session_id,
                     student_id,
@@ -361,6 +378,7 @@ class Database:
                     iso(when),
                     response_turn_id,
                     activity_id,
+                    stored_mode,
                 ),
             )
             inserted = cur.rowcount != 0

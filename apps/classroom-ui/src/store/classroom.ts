@@ -4,7 +4,7 @@
  * It is a **pure reflection of server events**. Every mutator below is called
  * from `bus/wiring.ts` in response to something classroom-core said. Nothing
  * in the UI advances the lesson, grades an answer, or picks the next scene —
- * components emit interaction events and wait (docs/3-design/runtime-topology.md §4, rule 2).
+ * components emit interaction events and wait (docs/design/runtime-topology.md §4, rule 2).
  *
  * The one exception is deliberate and local: optimistic *press* feedback on a
  * tapped card lives in component state, never here, so this invariant stays

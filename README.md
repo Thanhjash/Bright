@@ -19,9 +19,10 @@ an authored lesson continues when the model or network is unavailable.
 - `packages/airi-bridge`: Live2D, ACT markers, and keyed speech playback.
 - `packages/contracts`: protocol v2 documentation and TypeScript/Python mirrors.
 
-Start with [the documentation map](docs/README.md), the
-[North Star](docs/1-vision/north-star.md), and the
-[Option B runtime decision](docs/2-decisions/option-b-classroom-runtime.md).
+Two documents are living: [**NORTH-STAR.md**](docs/NORTH-STAR.md) (why this
+exists and the five principles) and [**STATE.md**](docs/STATE.md) (what is wired
+and what is next — paste this into a new agent chat). The
+[documentation map](docs/README.md) indexes everything else.
 
 ## Local development
 
@@ -42,8 +43,8 @@ Focused Core, Hermes, AIRI, UI, speech, room-gate, a virtual-ACK wire smoke, and
 synthetic-browser-mic-to-real-local-speech probe are in place. This repository does
 not yet claim classroom release readiness: a full real Stage/AIRI/browser/audio/Hermes
 composition on target hardware and a consented child/noisy-room zero-false-accept
-corpus remain mandatory gates. Current evidence and
-blockers are maintained in [Option B implementation status](docs/4-build/option-b-implementation-status.md).
+corpus remain mandatory gates. Current evidence and open risks
+are maintained in [STATE.md](docs/STATE.md).
 
 ## Data and models
 

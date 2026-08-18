@@ -1,4 +1,4 @@
-"""FULL / DEGRADED / OFFLINE (PROTOCOL.md §7, docs/3-design/architecture.md §2).
+"""FULL / DEGRADED / OFFLINE (PROTOCOL.md §7, docs/design/architecture.md §2).
 
 The mode is a *measurement*, never a setting the teacher is asked about.  A
 ``health_probe`` calls the injected agent seam, times it, and moves the mode:

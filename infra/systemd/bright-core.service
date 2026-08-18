@@ -1,6 +1,6 @@
 [Unit]
 Description=Bright classroom-core — lesson runner, state machine, event bus
-Documentation=file:///opt/bright/current/docs/3-design/runtime-topology.md
+Documentation=file:///opt/bright/current/docs/design/runtime-topology.md
 PartOf=bright.target
 After=local-fs.target
 # When a local model server is added, this becomes:

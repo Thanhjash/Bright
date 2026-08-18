@@ -12,8 +12,10 @@ import {
   failSpeech,
   pushSpeech,
   speak,
+  hasSpeechTurn,
   startSpeech,
   stop as stopSpeaking,
+  unlockAudioOnFirstGesture,
 } from '../speech/speakingDriver'
 import {
   observeOutputActivity,
@@ -42,11 +44,40 @@ export function connectBusToStore(bus: Bus): Unsubscribe {
     audioOwner = false
   }
 
+  type PendingSpeech = {
+    speechTurnId: string
+    conversationTurnId?: string
+    behavior?: 'queue' | 'interrupt' | 'replace'
+    audioAsset?: string
+    ended?: string
+    reason?: string
+  }
+  let pending: PendingSpeech | null = null
+  const heardPlayback = new Set<string>()
+
+  const flushPending = () => {
+    if (!ownsAudio() || !pending) return
+    const held = pending
+    pending = null
+    startSpeech({
+      speechTurnId: held.speechTurnId,
+      conversationTurnId: held.conversationTurnId,
+      behavior: held.behavior,
+      audioAsset: held.audioAsset,
+    })
+    const text = textByTurn.get(held.speechTurnId) ?? ''
+    if (text) void pushSpeech(held.speechTurnId, text)
+    if (held.ended === 'completed') void endSpeech(held.speechTurnId)
+    else if (held.ended === 'error') failSpeech(held.speechTurnId, held.reason ?? held.ended)
+    else if (held.ended) cancelSpeech(held.speechTurnId, held.reason ?? held.ended)
+  }
+
   const enableAudio = (expiresAt: number) => {
     if (!audioOwner) {
       audioOwner = true
       releaseSpeechOutput = configureSpeechOutput({
         onPlaybackStarted: (speechTurnId, metrics) => {
+          heardPlayback.add(speechTurnId)
           publishOutputActivity('playback-started', speechTurnId)
           store().startSpeech(speechTurnId)
           store().updateSpeechText(speechTurnId, textByTurn.get(speechTurnId) ?? '')
@@ -75,6 +106,7 @@ export function connectBusToStore(bus: Bus): Unsubscribe {
       () => disableAudio('stage-audio-lease-expired', true),
       Math.max(0, expiresAt - Date.now()),
     )
+    flushPending()
   }
 
   const offs: Unsubscribe[] = [
@@ -111,6 +143,7 @@ export function connectBusToStore(bus: Bus): Unsubscribe {
         return
       }
       enableAudio(lease.expiresAt)
+      unlockAudioOnFirstGesture()
     }),
     bus.on('lesson.position', (lesson) => store().applyLesson(lesson)),
     bus.on('lesson.started', ({ lessonId, index }) => {
@@ -128,13 +161,15 @@ export function connectBusToStore(bus: Bus): Unsubscribe {
 
     bus.on('speech.turn.started', (payload) => {
       textByTurn.set(payload.speechTurnId, '')
-      // Control tracks the intent immediately, while only Stage owns physical
-      // playback. The matching `finished` signal still comes from Stage.
+      // One projector Stage: play the teacher even if the 15s lease timer
+      // dropped client-side while Hermes was still thinking.
+      if (bus.role === 'stage' && !audioOwner)
+        enableAudio(Date.now() + 60_000)
       if (ownsAudio()) publishOutputActivity('started', payload.speechTurnId)
       else observeOutputActivity('started', payload.speechTurnId)
       if (!ownsAudio())
         store().startSpeech(payload.speechTurnId)
-      if (ownsAudio()) {
+      if (bus.role === 'stage') {
         startSpeech({
           speechTurnId: payload.speechTurnId,
           conversationTurnId: payload.conversationTurnId,
@@ -149,19 +184,23 @@ export function connectBusToStore(bus: Bus): Unsubscribe {
       textByTurn.set(speechTurnId, text)
       if (store().currentTurnId === speechTurnId)
         store().updateSpeechText(speechTurnId, text)
-      if (ownsAudio())
+      if (bus.role === 'stage')
         void pushSpeech(speechTurnId, delta)
     }),
 
     bus.on('speech.turn.ended', ({ speechTurnId, status, reason }) => {
       const text = textByTurn.get(speechTurnId) ?? ''
       store().finishSpeechText(speechTurnId, text)
-      if (!ownsAudio()) {
+      if (bus.role !== 'stage') {
         textByTurn.delete(speechTurnId)
         return
       }
-      if (status === 'completed')
-        void endSpeech(speechTurnId)
+      if (status === 'completed') {
+        if (!hasSpeechTurn(speechTurnId) && text)
+          speak(text, speechTurnId)
+        else
+          void endSpeech(speechTurnId)
+      }
       else if (status === 'error')
         failSpeech(speechTurnId, reason ?? status)
       else

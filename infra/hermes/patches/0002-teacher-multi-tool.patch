@@ -1,0 +1,98 @@
+Teacher multi-tool live loop: 8 iterations, say is the terminal tool.
+
+--- a/agent/bright_live.py
++++ b/agent/bright_live.py
+@@ -13,7 +13,7 @@
+ from typing import Any, Mapping, Sequence
+ 
+ 
+-BRIGHT_PATCH_VERSION = "0.20.0+bright.2"
++BRIGHT_PATCH_VERSION = "0.20.0+bright.4"
+ 
+ 
+ def _truthy(value: Any) -> bool:
+@@ -101,7 +101,7 @@
+     agent.save_trajectories = False
+     agent.skip_memory = True
+     agent.skip_background_review = True
+-    agent.max_iterations = 1
++    agent.max_iterations = 8
+     # Hermes counts the first attempt in this value: 1 means zero retries.
+     agent._api_max_retries = 1
+     # The live profile has exactly one legal terminal tool. Pinning the exact
+@@ -123,10 +123,7 @@
+     profile = getattr(agent, "_bright_live_profile", None)
+     if isinstance(profile, BrightLiveProfile) and profile.enabled:
+         request_overrides = dict(getattr(agent, "request_overrides", {}) or {})
+-        request_overrides["tool_choice"] = {
+-            "type": "function",
+-            "function": {"name": profile.terminal_tool},
+-        }
++        request_overrides["tool_choice"] = {"type": "required"}
+         if profile.mimo_disable_thinking:
+             # ``extra_body`` is the OpenAI SDK escape hatch: it serializes
+             # its entries into the JSON body at the top level. Nesting this
+@@ -147,12 +144,15 @@
+ 
+     if profile is None or not profile.enabled:
+         return list(tool_calls)
++    kept: list[Any] = []
+     for tool_call in tool_calls:
+         function = getattr(tool_call, "function", None)
+         name = str(getattr(function, "name", None) or "")
+-        if name == profile.terminal_tool or name.endswith(f"__{profile.terminal_tool}"):
+-            return [tool_call]
+-    return []
++        if "bright_classroom" in name or name.endswith(
++            ("read_library", "search_library", "write_board", "read_board", "show_image", "show_exercise", "play_clip", "say", "record_evidence")
++        ):
++            kept.append(tool_call)
++    return kept
+ 
+ 
+ def finalizer_inference_allowed(agent: Any) -> bool:
+--- a/gateway/platforms/api_server.py
++++ b/gateway/platforms/api_server.py
+@@ -2889,7 +2889,7 @@
+         enabled_toolsets = sorted(_get_platform_tools(user_config, "api_server"))
+ 
+         max_iterations = (
+-            1 if self._bright_live_profile.enabled else _current_max_iterations()
++            8 if self._bright_live_profile.enabled else _current_max_iterations()
+         )
+ 
+         # Load fallback provider chain so the API server platform has the
+--- a/gateway/run.py
++++ b/gateway/run.py
+@@ -5068,10 +5068,7 @@
+             # The gateway normally resets per-turn overrides here. Bright's
+             # live profile requires its single terminal MCP call at the wire,
+             # so routing must not silently erase that policy after agent setup.
+-            turn_request_overrides["tool_choice"] = {
+-                "type": "function",
+-                "function": {"name": bright_profile.terminal_tool},
+-            }
++            turn_request_overrides["tool_choice"] = {"type": "required"}
+         agent.request_overrides = turn_request_overrides
+         # Must-deliver notes for THIS turn ride the current user message
+         # (api_content sidecar), never the system prompt: staged by
+--- a/agent/conversation_loop.py
++++ b/agent/conversation_loop.py
+@@ -6792,9 +6792,14 @@
+                 # second final answer.  The Bright adapter buffers teacher_line
+                 # and releases it only after validating structuredContent.ok.
+                 if _bright_live_profile is not None:
+-                    _turn_exit_reason = "bright_terminal_tool"
+-                    final_response = turn_content
+-                    break
++                    _last_names = [
++                        str(getattr(getattr(tc, "function", None), "name", "") or "")
++                        for tc in (assistant_message.tool_calls or [])
++                    ]
++                    if any(name.endswith("__say") or name.endswith(".say") or name == "say" for name in _last_names):
++                        _turn_exit_reason = "bright_terminal_tool"
++                        final_response = turn_content
++                        break
+ 
+                 if getattr(agent, "_incremental_persistence_failed", False):
+                     # A tool result could not be made canonical. Do not send

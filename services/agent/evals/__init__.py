@@ -1,6 +1,6 @@
 """`services/agent/evals` — the tool-routing and pedagogy suite (SP-3).
 
-docs/4-build/open-questions.md SP-3 asks one question with a kill criterion:
+docs/archive/open-questions.md SP-3 asks one question with a kill criterion:
 *at Tau2 42.2, can E4B drive our tool surface?* Phase 1 runs mimo-v2.5-pro,
 which is far stronger than what ships, so a good score here proves nothing on
 its own. The suite therefore always measures **two configurations** and reports

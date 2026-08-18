@@ -7,7 +7,6 @@ import httpx
 import pytest
 from fastapi import FastAPI
 
-from agent_bridge import AutoTurn, AgentDriver, TurnResult, TurnScope, build_turn_context, make_tool_executor
 from app import ConversationCoordinator
 from bright_contracts import Activity
 from bus import EventBus
@@ -125,34 +124,6 @@ async def test_retiring_turn_cancels_an_inflight_tool_before_late_mutation():
     assert mutated is False
 
 
-def test_hosted_context_scrubs_display_subtitle_but_local_keeps_it():
-    core = minimal_core()
-    core.store.set_overlay(subtitle="Mai said the raw sentence")
-
-    hosted = build_turn_context(core, student_id="s01", context_policy="hosted-minimal")
-    local = build_turn_context(core, student_id="s01", context_policy="local-trusted")
-
-    assert hosted.scene.overlay.subtitle is None
-    assert hosted.lesson.current_student_id is None
-    assert local.scene.overlay.subtitle == "Mai said the raw sentence"
-
-
-async def test_hosted_context_cannot_recall_learner_notes_through_mcp_executor():
-    core = minimal_core()
-    execute = make_tool_executor(
-        core,
-        TurnResult(),
-        lambda: TurnScope(student_id="s01", context_policy="hosted-minimal"),
-    )
-
-    result = await execute("classroom_recall", {"query": "anything", "k": 3})
-
-    assert result == {
-        "ok": False,
-        "reason": "recall unavailable for this context policy",
-    }
-
-
 async def test_mcp_is_authenticated_and_never_exposes_classroom_say():
     core = minimal_core()
     app = FastAPI()
@@ -169,150 +140,16 @@ async def test_mcp_is_authenticated_and_never_exposes_classroom_say():
             json={"jsonrpc": "2.0", "id": 2, "method": "tools/list"},
         )
         names = {tool["name"] for tool in response.json()["result"]["tools"]}
-        assert names == {"classroom_propose_move"}
+        assert names == {
+            "read_library",
+            "search_library",
+            "write_board",
+            "read_board",
+            "show_image",
+            "show_exercise",
+            "play_clip",
+            "say",
+            "record_evidence",
+        }
         assert "classroom_say" not in names
         assert all("turn_id" in tool["inputSchema"]["required"] for tool in TOOLS)
-
-
-class ProposalHermesFake:
-    streams_text_as_voice = True
-
-    def __init__(self, core, teacher_line="Let's continue."):
-        self.core = core
-        self.teacher_line = teacher_line
-        self.prepared = None
-
-    def prepare_turn(self, turn_id):
-        self.prepared = turn_id
-
-    async def turn(self, ctx):
-        move_id = ctx.available_actions[0].id
-        result = await self.core.turn_registry.invoke(
-            "classroom_propose_move",
-            {
-                "turn_id": self.prepared,
-                "move_id": move_id,
-                "teacher_line": self.teacher_line,
-            },
-        )
-        assert result["ok"] is True and result["applied"] is False
-        yield SimpleNamespace(type="text_delta", text=self.teacher_line)
-        yield SimpleNamespace(type="done", reason="complete", detail=None, usage=None)
-
-
-async def test_driver_keeps_proposal_pending_until_physical_playback_ack():
-    core = minimal_core()
-    moved = []
-
-    async def start(index):
-        moved.append(index)
-
-    core.runner.start = start
-    driver = AgentDriver(core, lambda _executor: ProposalHermesFake(core))
-    core.agent_driver = driver
-    task = asyncio.create_task(driver.take_turn(student_id="s01"))
-    for _ in range(10):
-        await asyncio.sleep(0)
-        if driver._speech_turn_id:
-            break
-    assert moved == []
-    assert driver.note_playback_result(driver._speech_turn_id, "completed") is True
-    result = await task
-    assert result.applied is True and result.chose == "repeat_activity"
-    assert moved == [0]
-    assert result.said == ["Let's continue."]
-
-
-async def test_failed_agent_playback_discards_pending_move():
-    core = minimal_core()
-    moved = []
-
-    async def start(index):
-        moved.append(index)
-
-    core.runner.start = start
-    driver = AgentDriver(core, lambda _executor: ProposalHermesFake(core))
-    core.agent_driver = driver
-    task = asyncio.create_task(driver.take_turn(student_id="s01"))
-    for _ in range(10):
-        await asyncio.sleep(0)
-        if driver._speech_turn_id:
-            break
-    driver.note_playback_result(driver._speech_turn_id, "failed")
-    result = await task
-    assert result.applied is False
-    assert moved == []
-
-
-async def test_inference_budget_ends_before_independent_playback_ack_budget():
-    core = minimal_core()
-    moved = []
-
-    async def start(index):
-        moved.append(index)
-
-    core.runner.start = start
-    driver = AgentDriver(core, lambda _executor: ProposalHermesFake(core))
-    core.agent_driver = driver
-    gate = AutoTurn(core, timeout_s=0.01)
-    task = asyncio.create_task(gate(core.runner.current, "wrong", {}))
-    for _ in range(20):
-        await asyncio.sleep(0)
-        if driver._speech_turn_id:
-            break
-    # Exceed the model budget while the authored teacher line is queued. This
-    # is physical playback latency, not a provider timeout.
-    await asyncio.sleep(0.03)
-    assert task.done() is False
-    assert gate.timeouts == 0
-    assert driver.note_playback_result(driver._speech_turn_id, "completed") is True
-    assert await task == "repeat_activity"
-    assert moved == [0]
-
-
-@pytest.mark.parametrize(
-    "line",
-    [
-        "Correct!",
-        "Well done.",
-        "https://bad.example",
-        "<|ACT {}|>",
-        "Mai, continue.",
-        "Let us continue. Please look here.",
-        "Let us continue; please look here.",
-        "Let us continue",
-    ],
-)
-async def test_truth_identity_and_markup_teacher_lines_are_rejected(line):
-    core = minimal_core()
-    core.session_controller = SimpleNamespace(
-        roster={"s01": SimpleNamespace(display_name="Mai")}
-    )
-    result = TurnResult()
-    execute = make_tool_executor(core, result)
-    answer = await execute(
-        "classroom_propose_move",
-        {"_action_id": "repeat_activity", "teacher_line": line},
-    )
-    assert answer["ok"] is False
-    assert result.pending_action is None
-
-
-class ErrorHermesFake:
-    streams_text_as_voice = True
-
-    def prepare_turn(self, _turn_id):
-        pass
-
-    async def turn(self, _ctx):
-        yield SimpleNamespace(type="done", reason="error", detail="sidecar down", usage=None)
-
-
-async def test_driver_marks_done_error_as_operational_not_a_bad_proposal():
-    core = minimal_core()
-    driver = AgentDriver(core, lambda _executor: ErrorHermesFake())
-
-    result = await driver.take_turn(student_id="s01")
-
-    assert result.operational_error is True
-    assert result.rejected == "agent reported error"

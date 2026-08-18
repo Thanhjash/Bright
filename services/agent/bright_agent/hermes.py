@@ -33,6 +33,28 @@ log = logging.getLogger("bright.agent.hermes")
 
 PROPOSE_MOVE_TOOL = "classroom_propose_move"
 PROPOSE_MOVE_WIRE_TOOL = "mcp__bright_classroom__classroom_propose_move"
+TEACHER_TOOLS = frozenset(
+    {
+        "read_library",
+        "search_library",
+        "write_board",
+        "read_board",
+        "show_image",
+        "show_exercise",
+        "play_clip",
+        "say",
+        "record_evidence",
+    }
+)
+
+
+def teacher_loop_enabled() -> bool:
+    return os.environ.get("BRIGHT_TEACHER_AGENT", "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
 
 
 class HermesProtocolError(RuntimeError):
@@ -218,6 +240,92 @@ def render_hermes_turn(ctx: TurnContext, turn_id: str) -> str:
     return "\n".join(lines)
 
 
+def render_teacher_turn(ctx: TurnContext, turn_id: str) -> str:
+    """One student utterance for the library teacher. No move menu."""
+
+    unit = str(getattr(getattr(ctx, "lesson", None), "lesson_id", None) or "").strip()
+    said = ""
+    last = getattr(ctx, "last_interaction", None)
+    if last is not None:
+        said = str(getattr(last, "detail", "") or "")
+    student_id = ""
+    writing = ""
+    images = ""
+    clip = ""
+    exercise = ""
+    last_line = ""
+    skill_card = ""
+    past = ""
+    beats = ""
+    reads = ""
+    for mem in list(getattr(ctx, "recalled", None) or []):
+        text = str(getattr(mem, "text", "") or "")
+        if text.startswith("student_id="):
+            student_id = text[len("student_id=") :]
+        elif text.startswith("writing="):
+            writing = text[len("writing=") :]
+        elif text.startswith("images="):
+            images = text[len("images=") :]
+        elif text.startswith("clip="):
+            clip = text[len("clip=") :]
+        elif text.startswith("exercise="):
+            exercise = text[len("exercise=") :]
+        elif text.startswith("last_teacher_line="):
+            last_line = text[len("last_teacher_line=") :]
+        elif text.startswith("SKILL_CARD="):
+            skill_card = text[len("SKILL_CARD=") :]
+        elif text.startswith("PAST="):
+            past = text[len("PAST=") :]
+        elif text.startswith("BEATS="):
+            beats = text[len("BEATS=") :]
+        elif text.startswith("reads="):
+            reads = text[len("reads=") :]
+    map_path = f"units/{unit}/map.md" if unit else "the unit map listed in index.md"
+    token = " ".join(said.split())
+    event = {"[sat_down]": "class_start", "[heartbeat]": "heartbeat"}.get(token)
+    student_said = "" if event else said
+    lines = [
+        f"TURN_ID={turn_id}",
+        f"STUDENT_ID={student_id}",
+        f"UNIT={unit}",
+        f"EVENT={event or 'student'}",
+        f"STUDENT_SAID={student_said}",
+        f"WRITING={writing}",
+        f"IMAGES={images}",
+        f"CLIP={clip}",
+        f"EXERCISE={exercise}",
+        f"LAST_SAY={last_line}",
+        f"SKILL_CARD={skill_card}",
+        f"PAST={past}",
+        f"BEATS={beats}",
+        f"READS={reads}",
+        "If READS has no how-to-teach.md, read_library how-to-teach.md.",
+        "If READS has no skills index, read_library skills/index.md. Open a skill only when it applies.",
+        f"If READS has no map, read_library {map_path}.",
+        "If they named or pointed and READS has no keys.md, read keys.md before you judge.",
+        f"When you are checking what landed rather than teaching something new, read "
+        f"units/{unit}/exercises.md if READS has no exercises, and put the check up with "
+        f"show_exercise. They answer by speaking; the board never takes a touch.",
+        "Mix home_language and target_language from index.md. End this turn with say.",
+        "If SKILL_CARD is not empty, review what they named vs only pointed, then continue the map. Do not EXIT on the open. Point is not a name.",
+        "BEATS is the teaching sequence. STUDENT_SAID is this turn only. Do not quote old child words.",
+        "EXERCISE is what show_exercise last put on the board, and whether it is revealed. Do not call show_exercise again just to check.",
+        "read_board before EXIT. Copy TURN_ID and STUDENT_ID into every call that needs them "
+        "(STUDENT_ID into record_evidence). No invented objective ids. No classroom_propose_move.",
+    ]
+    if event == "class_start":
+        lines.append(
+            "The adult started class. Begin teaching from the unit map. End this turn with say."
+        )
+    elif event == "heartbeat":
+        lines.append(
+            "The class is silent after LAST_SAY. This is not a student utterance. "
+            "If they still have time to answer, reply HEARTBEAT_OK and do not call say or record_evidence. "
+            "If you should prompt or move, use tools and end with say."
+        )
+    return "\n".join(lines)
+
+
 def build_hermes_input(ctx: TurnContext, turn_id: str) -> str:
     """Build one authoritative, self-contained live classroom turn."""
 
@@ -235,16 +343,47 @@ def build_hermes_request(
 
     return {
         "model": config.model,
-        "input": build_hermes_input(ctx, turn_id),
+        "input": (
+            render_teacher_turn(ctx, turn_id)
+            if teacher_loop_enabled()
+            else build_hermes_input(ctx, turn_id)
+        ),
         "stream": stream,
         "store": False,
     }
 
 
+def _accept_tool_call(
+    name: str,
+    args: dict[str, Any],
+    turn_id: str,
+    calls: dict[str, tuple[str, dict[str, Any]]],
+) -> None:
+    if teacher_loop_enabled():
+        if name not in TEACHER_TOOLS:
+            raise HermesProtocolError(f"live Hermes called forbidden tool {name!r}")
+        if args.get("turn_id") != turn_id:
+            raise HermesProtocolError("proposal turn_id does not match Core turn")
+        if name == "say":
+            line = args.get("teacher_line")
+            if not isinstance(line, str) or not line.strip():
+                raise HermesProtocolError("say has no teacher_line")
+        return
+    if name != PROPOSE_MOVE_TOOL:
+        raise HermesProtocolError(f"live Hermes called forbidden tool {name!r}")
+    if calls:
+        raise HermesProtocolError("live Hermes must call exactly one proposal tool")
+    if args.get("turn_id") != turn_id:
+        raise HermesProtocolError("proposal turn_id does not match Core turn")
+    for required in ("move_id", "teacher_line"):
+        if not isinstance(args.get(required), str) or not args[required].strip():
+            raise HermesProtocolError(f"proposal has no non-empty {required}")
+
+
 def _raw_tool_name(name: str) -> str:
     """Map Hermes' MCP-prefixed wire name back to Bright's stable tool name."""
 
-    for candidate in (*TOOL_NAMES, PROPOSE_MOVE_TOOL):
+    for candidate in (*TOOL_NAMES, PROPOSE_MOVE_TOOL, *TEACHER_TOOLS):
         if name == candidate or name.endswith(f"__{candidate}"):
             return candidate
     return name
@@ -269,7 +408,8 @@ def _tool_output(item: dict[str, Any]) -> Any:
         text = "".join(
             str(block.get("text") or "")
             for block in output
-            if isinstance(block, dict) and block.get("type") in ("input_text", "output_text")
+            if isinstance(block, dict)
+            and block.get("type") in ("input_text", "output_text", "text")
         )
         if text:
             try:
@@ -277,6 +417,17 @@ def _tool_output(item: dict[str, Any]) -> Any:
             except json.JSONDecodeError:
                 return text
     return output
+
+
+def _result_with_ok(value: Any) -> dict[str, Any] | None:
+    if isinstance(value, str):
+        try:
+            value = json.loads(value)
+        except json.JSONDecodeError:
+            return None
+    if isinstance(value, dict) and isinstance(value.get("ok"), bool):
+        return value
+    return None
 
 
 def _validated_mcp_result(item: dict[str, Any]) -> tuple[bool, dict[str, Any], str | None]:
@@ -295,14 +446,20 @@ def _validated_mcp_result(item: dict[str, Any]) -> tuple[bool, dict[str, Any], s
             raise HermesProtocolError("MCP tool output is not a JSON object") from exc
     if not isinstance(envelope, dict):
         raise HermesProtocolError("MCP tool output is not an object")
-    structured = envelope.get("structuredContent")
-    if isinstance(structured, str):
-        try:
-            structured = json.loads(structured)
-        except json.JSONDecodeError as exc:
-            raise HermesProtocolError("MCP structuredContent is invalid JSON") from exc
+    structured = _result_with_ok(envelope.get("structuredContent")) or _result_with_ok(envelope)
+    if structured is None:
+        content = envelope.get("content")
+        if isinstance(content, list):
+            text = "".join(
+                str(block.get("text") or "")
+                for block in content
+                if isinstance(block, dict)
+            )
+            structured = _result_with_ok(text)
     if not isinstance(structured, dict) or not isinstance(structured.get("ok"), bool):
-        raise HermesProtocolError("MCP tool output has no boolean structuredContent.ok")
+        if envelope.get("isError") is True:
+            return False, envelope, str(envelope.get("reason") or "tool error")
+        return True, envelope, None
     ok = structured["ok"] is True
     detail = structured.get("reason") or structured.get("error")
     return ok, structured, None if ok else str(detail or "proposal rejected")
@@ -523,21 +680,7 @@ class HermesAgent:
                                 raise HermesProtocolError("function_call has no call_id")
                             name = _raw_tool_name(str(item.get("name") or ""))
                             args = _arguments(item)
-                            if name != PROPOSE_MOVE_TOOL:
-                                raise HermesProtocolError(
-                                    f"live Hermes called forbidden tool {name!r}"
-                                )
-                            if calls:
-                                raise HermesProtocolError(
-                                    "live Hermes must call exactly one proposal tool"
-                                )
-                            if args.get("turn_id") != turn_id:
-                                raise HermesProtocolError("proposal turn_id does not match Core turn")
-                            for required in ("move_id", "teacher_line"):
-                                if not isinstance(args.get(required), str) or not args[required].strip():
-                                    raise HermesProtocolError(
-                                        f"proposal has no non-empty {required}"
-                                    )
+                            _accept_tool_call(name, args, turn_id, calls)
                             calls[call_id] = (name, args)
                             yield ToolCall(call_id=call_id, name=name, arguments=args)
                         elif item.get("type") == "function_call_output":
@@ -585,18 +728,7 @@ class HermesAgent:
                             if item_type == "function_call" and call_id and call_id not in calls:
                                 name = _raw_tool_name(str(item.get("name") or ""))
                                 args = _arguments(item)
-                                if name != PROPOSE_MOVE_TOOL:
-                                    raise HermesProtocolError(
-                                        f"live Hermes called forbidden tool {name!r}"
-                                    )
-                                if calls:
-                                    raise HermesProtocolError(
-                                        "live Hermes must call exactly one proposal tool"
-                                    )
-                                if args.get("turn_id") != turn_id:
-                                    raise HermesProtocolError(
-                                        "proposal turn_id does not match Core turn"
-                                    )
+                                _accept_tool_call(name, args, turn_id, calls)
                                 calls[call_id] = (name, args)
                             elif (
                                 item_type == "function_call_output"
@@ -604,6 +736,23 @@ class HermesAgent:
                                 and call_id not in results
                             ):
                                 results[call_id] = _validated_mcp_result(item)
+                        if teacher_loop_enabled():
+                            said = [
+                                args.get("teacher_line")
+                                for call_id, (name, args) in calls.items()
+                                if name == "say" and results.get(call_id, (False, None, None))[0]
+                            ]
+                            if not said:
+                                yield self._done(
+                                    "error",
+                                    "teacher agent did not say",
+                                    usage,
+                                    started,
+                                )
+                                return
+                            yield TextDelta(text=str(said[-1]))
+                            yield self._done("complete", None, usage, started)
+                            return
                         if len(calls) != 1 or len(results) != 1:
                             log.warning(
                                 "Hermes terminal contract incomplete: calls=%d results=%d",

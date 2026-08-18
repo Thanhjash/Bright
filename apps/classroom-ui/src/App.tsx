@@ -4,7 +4,7 @@ import { ControlRoute } from './routes/control/ControlRoute'
 import { NotFound } from './routes/NotFound'
 
 /**
- * Two routes, one app (docs/3-design/runtime-topology.md §1).
+ * Two routes, one app (docs/design/runtime-topology.md §1).
  *
  * In the classroom these are two windows on an extended display: the projector
  * shows `/classroom`, the laptop shows `/control`. Each window opens its own

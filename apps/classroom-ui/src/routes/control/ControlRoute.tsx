@@ -5,7 +5,6 @@ import { CommandBar } from './CommandBar'
 import { ConnectionPill } from './ConnectionPill'
 import { LinkHealth } from './LinkHealth'
 import { StatusPanel } from './StatusPanel'
-import { VoicePanel } from './VoicePanel'
 import { SetupPanel } from './SetupPanel'
 import { IS_MOCK } from '../../lib/env'
 import { mockRoster } from './lessonSetup'
@@ -42,7 +41,6 @@ export function ControlRoute() {
             {!useRunningSession() ? <SetupPanel value={setup} onChange={setSetup} /> : null}
             <CommandBar setup={setup} />
           </div>
-          <div className="min-h-0 lg:overflow-y-auto"><VoicePanel /></div>
         </main>
       </div>
     </BusProvider>

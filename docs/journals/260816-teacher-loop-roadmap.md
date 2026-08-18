@@ -1,10 +1,15 @@
 ---
 date: 2026-08-16
 topic: teacher-loop-first-roadmap
-status: locked-for-execution
+status: superseded-same-day
 ---
 
 # Teacher-loop-first execution order
+
+> **SUPERSEDED the same day.** The order below treated a one-tool wire
+> probe and `lesson_run.json` as the teacher. Replacement:
+> [260816-teacher-agent-correction.md](260816-teacher-agent-correction.md)
+> and [autonomous-classroom-roadmap.md](../STATE.md).
 
 ## Context
 
@@ -26,8 +31,8 @@ Student detectors are Layer 5 and never render on the projector.
 
 ## Docs
 
-- Living order: `docs/4-build/autonomous-classroom-roadmap.md`
-- Research: `docs/5-research/2026-08-16-teacher-loop-roadmap.md`
+- Living order: `docs/STATE.md`
+- Research: `docs/research/notes/2026-08-16-teacher-loop-roadmap.md`
 
 ## Layer 1 follow-up (same day)
 

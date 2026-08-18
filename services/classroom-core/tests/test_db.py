@@ -132,3 +132,31 @@ def test_session_summary_is_recallable_and_upsertable(database: Database):
 def test_fts_query_quotes_tokens():
     assert fts_query("cat dog") == '"cat" OR "dog"'
     assert fts_query('cat" OR sqlite_master') == '"cat" OR "OR" OR "sqlite_master"'
+
+
+def test_observation_mode_is_optional_and_migrated(tmp_path):
+    path = tmp_path / "mode.db"
+    database = open_database(path)
+    columns = {
+        row["name"]
+        for row in database._conn.execute("PRAGMA table_info(observations)")
+    }
+    assert "mode" in columns
+    session_id = database.start_session(student_id="s01")
+    database.record_observation("s01", "animal_vocab", "correct", "unit=demo; outcome=correct", session_id)
+    database.record_observation(
+        "s01",
+        "animal_vocab",
+        "correct",
+        "unit=demo; outcome=correct; mode=point",
+        session_id,
+        mode="point",
+    )
+    rows = database.list_observations(student_id="s01")
+    assert rows[0]["mode"] is None
+    assert rows[1]["mode"] == "point"
+    database.close()
+    again = open_database(path)
+    assert again.migrate() == []
+    assert again.list_observations(student_id="s01")[1]["mode"] == "point"
+    again.close()

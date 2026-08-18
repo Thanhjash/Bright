@@ -16,12 +16,16 @@ from __future__ import annotations
 import asyncio
 import itertools
 import time
-from typing import Any, Callable, Iterable
+import logging
+from typing import Any, Callable, Iterable, get_args
 
 from pydantic import BaseModel
 
 import config  # noqa: F401  -- installs the bright_contracts import path
-from bright_contracts import PROTOCOL_VERSION, Event
+from bright_contracts import PROTOCOL_VERSION, Event, EventType
+
+log = logging.getLogger("classroom_core.bus")
+_EVENT_TYPES = frozenset(get_args(EventType))
 
 _conn_ids = itertools.count(1)
 
@@ -175,6 +179,11 @@ class EventBus:
         return event.model_dump(mode="json", by_alias=True)
 
     def _enqueue(self, sub: Subscriber, type_: str, payload: Any) -> dict[str, Any] | None:
+        if type_ not in _EVENT_TYPES:
+            # next_seq() must not run: an illegal type used to punch a hole
+            # and Stage dropped the following speech.turn as a seq gap.
+            log.warning("refusing unknown event type %s", type_)
+            return None
         if sub.dropped:
             # Its queue has already been reclaimed and its socket is closing.
             # Refilling it would leak the memory the drop just freed.

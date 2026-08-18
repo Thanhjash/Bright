@@ -39,9 +39,9 @@ export interface AvatarProps {
  *
  * Overridable so a different character drops in without a rebuild — which one
  * we ship is an open product decision, not a constant
- * (docs/4-build/tracker.md, P1).
+ * (docs/STATE.md §9).
  */
-const MODEL_URL = import.meta.env.VITE_LIVE2D_MODEL ?? '/live2d/hiyori_pro_zh.zip'
+const MODEL_URL = import.meta.env.VITE_LIVE2D_MODEL ?? '/live2d/hiyori_pro_zh/runtime/hiyori_pro_t11.model3.json'
 /** Exported: AvatarLayer reads the same document to size the canvas box. */
 export const BINDING_URL = import.meta.env.VITE_LIVE2D_BINDING ?? '/live2d/bright-model.json'
 const CUBISM_CORE = import.meta.env.VITE_CUBISM_CORE ?? '/live2d/live2dcubismcore.min.js'

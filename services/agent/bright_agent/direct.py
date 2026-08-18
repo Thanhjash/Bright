@@ -2,7 +2,7 @@
 
 No SDK. We control the request body ourselves because MiMo's
 `thinking` field is non-standard and must appear **top-level**
-(docs/4-build/phase-1-plan.md §0): `extra_body={"thinking": ...}` is Python-SDK sugar that the
+(docs/archive/phase-1-plan.md §0): `extra_body={"thinking": ...}` is Python-SDK sugar that the
 SDK flattens; over raw HTTP a nested field silently leaves reasoning on
 and the completion budget is burned returning empty content.
 

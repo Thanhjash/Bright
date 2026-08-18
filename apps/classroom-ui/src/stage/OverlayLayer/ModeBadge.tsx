@@ -1,7 +1,7 @@
 import { useModeBadge } from '../../store/classroom'
 
 /**
- * PROTOCOL.md §7 / docs/3-design/runtime-topology.md §4: shown **only** in DEGRADED or OFFLINE, never
+ * PROTOCOL.md §7 / docs/design/runtime-topology.md §4: shown **only** in DEGRADED or OFFLINE, never
  * in FULL. Calm, small, honest — the teacher is never asked to care, but the
  * room should not be lied to either.
  */

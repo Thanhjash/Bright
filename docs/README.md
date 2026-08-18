@@ -1,144 +1,159 @@
 # Bright — documentation
 
-An autonomous AI English teacher for Vietnamese classrooms. It is local-first and
-keeps teaching when the network or model is unavailable. Hosted inference is an
-explicit transitional mode; local Gemma remains the deployment target.
-
-**New here? Read [1-vision/north-star.md](1-vision/north-star.md).** Everything else answers to it.
+An autonomous AI English teacher for remote, under-resourced classrooms, built
+to be given away. **The AI is the teacher** — Hermes, an agent harness, reading a
+curriculum library the way a coding agent reads a repo. Classroom Core is the
+room's operating system and never teaches. If the model dies, the room stays up,
+the adult is told, and the AI restarts. There is no lesson tape.
 
 ---
 
-## Is this a website or a desktop app?
+## Two files, in order
 
-**A web application that runs on your own machine.** The classroom UI, Core, speech,
-and learner data are local. During the current transition Hermes may call a hosted
-model under the minimal-data policy in the Option B decision; primary lesson flow
-never depends on that connection.
+| | |
+|---|---|
+| 🔵 [**NORTH-STAR.md**](NORTH-STAR.md) | The bible. Why this exists, the teacher's working day, who the real user is, NS-1…NS-7. Changes rarely. If anything contradicts it, it loses. |
+| 🔴 [**STATE.md**](STATE.md) | The only living execution doc. What is wired, what is next, how to boot and prove it, and the landmines. **Paste this into a new agent chat.** |
+
+Everything else is supporting material. You do not need it to start.
+
+---
+
+## How this folder is organised
 
 ```
-open Chrome  →  http://127.0.0.1:3000/classroom  →  press F11  →  plug in the projector
+docs/
+  NORTH-STAR.md    the bible                  — 1 file, rarely changes
+  STATE.md         the living execution doc   — 1 file, changes constantly
+  decisions/       append-only. One choice per file, dated, with evidence.
+                   Read before re-litigating one. Never edited in place —
+                   a reversal is a NEW file that says what it supersedes.
+  design/          how the machine is put together
+  research/        external research and code-grounded audits
+  journals/        dated records of what happened and what it cost
+  archive/         superseded. Kept for provenance. NEVER cook from it.
 ```
 
-That is the product. On the finished appliance the only difference is that Chromium starts by itself in kiosk mode:
+### Five rules that keep this from rotting again
 
-```bash
-chromium --kiosk http://127.0.0.1:3000/classroom
-```
+It rotted once: thirteen dead files sat beside live ones, four claimed to be the
+current status at the same time, and the bible listed tools that had not existed
+for a week. These rules exist because of that, not in the abstract.
 
-The teacher sees a lesson. Not Chrome, not an address bar, not Linux. **Nobody needs to learn desktop app development** — a native wrapper (Tauri) is a packaging option we may never need. Full reasoning: [3-design/runtime-topology.md](3-design/runtime-topology.md).
+1. **Exactly one living document.** `STATE.md`. If a plan needs writing, it goes
+   in a journal or in `STATE.md`, and is deleted when absorbed. A second "current
+   status" file is how the last set drifted into thirteen.
+2. **`decisions/` is append-only.** Never edit a decision to reverse it — write a
+   new dated file that says what it supersedes. A stale detail inside a
+   still-valid decision gets a dated correction banner, not a rewrite.
+3. **Archive on the day it stops being true**, not later. `archive/README.md`
+   must say what each file is wrong about.
+4. **Research is evidence, not doctrine.** A finding becomes binding only when a
+   `decisions/` file adopts it. Keep the three research subfolders separate:
+   `prompts/` (questions we send out), `external/` (answers we commissioned),
+   `notes/` (what we found ourselves).
+5. **Every claim carries its source.** `file:line` for code, a citation for
+   research, or the word "unproven". A number with no method behind it is a
+   defect — we have shipped three wrong measurements already.
 
-The one thing that *is* unusual: **nothing listens on the internet.** Every service binds `127.0.0.1`. Your machine is both the server and the client.
+### On `references/`
+
+The cloned repos under `references/` are **reference only**. Read them to answer
+*"has anyone solved this, and how?"* — never to inherit a structure. Every one of
+them was built for a different room: one learner, one device, a keyboard, the
+internet. Adopting their shape quietly imports that room into ours. Take a
+syntax, a process pattern, or a warning. Never an architecture, and never a
+change to the north star.
+
+---
+
+## decisions/
+
+| | |
+|---|---|
+| [teacher-agent-not-cassette.md](decisions/teacher-agent-not-cassette.md) | **2026-08-16.** Hermes is the teacher; Core is the OS; no authored-tape fallback |
+| [layer-1-memory-is-enough.md](decisions/layer-1-memory-is-enough.md) | **2026-08-17.** Stop deepening the student store |
+| [2026-08-18-room-runs-itself.md](decisions/2026-08-18-room-runs-itself.md) | **2026-08-18.** No product buttons. The pulse opens the class |
+| [2026-08-18-three-stores.md](decisions/2026-08-18-three-stores.md) | **2026-08-18.** Three stores, three kinds of truth, and the kill list |
+| [2026-08-18-evidence-and-practice.md](decisions/2026-08-18-evidence-and-practice.md) | **2026-08-18.** Abundant practice, sparse evidence, honest uncertainty. The two-axis evidence model, item families, and no cameras for attribution |
+| [2026-08-18-teacher-skills.md](decisions/2026-08-18-teacher-skills.md) | **2026-08-18.** The profession lives in the library as skills, not in Hermes' skills dir |
+| [2026-08-18-identity-is-perception.md](decisions/2026-08-18-identity-is-perception.md) | **2026-08-18.** A separate CPU service answers "which `student_id`". The model never recognises anyone |
+| [option-b-classroom-runtime.md](decisions/option-b-classroom-runtime.md) | Process topology: Hermes sidecar, MCP hands, Stage owns audio, local-Gemma seam |
+| [hermes-over-openclaw.md](decisions/hermes-over-openclaw.md) | Why one agent runtime, not two — with file:line evidence |
+| [fact-check-gpt-brief.md](decisions/fact-check-gpt-brief.md) | The original brief, claim by claim: 25 verdicts |
+
+## design/
+
+| | |
+|---|---|
+| [teaching-loop.md](design/teaching-loop.md) | **The workflow.** The day, one turn in full, the board, and the failure/restart doctrine |
+| [tool-surface.md](design/tool-surface.md) | **Her hands.** What teaching requires, the four gaps, the proposed 11 tools, and what she deliberately never gets |
+| [architecture.md](design/architecture.md) | Two control tiers, tool contract, event bus, identity, speech, ownership boundaries |
+| [runtime-topology.md](design/runtime-topology.md) | Local-first → appliance. Two screens, one backend, service map, boot sequence |
+| [reusing-airi-and-friends.md](design/reusing-airi-and-friends.md) | What to take from each cloned repo, and what to leave |
+
+The wire contract lives with the code, not here:
+[`packages/contracts/PROTOCOL.md`](../packages/contracts/PROTOCOL.md). Change it
+*before* changing any implementation.
+
+## research/
+
+| | |
+|---|---|
+| [Practice, Assessment, and Evidence for an Autonomous Whole-Class Teacher.md](research/external/Practice,%20Assessment,%20and%20Evidence%20for%20an%20Autonomous%20Whole-Class%20Teacher.md) | Whole-class evidence, item families, the two-axis evidence model. Acted on in [evidence-and-practice](decisions/2026-08-18-evidence-and-practice.md) |
+| [Offline bilingual classroom speech IO for Bright.md](research/external/Offline%20bilingual%20classroom%20speech%20IO%20for%20Bright.md) | VieNeu-TTS v3 Turbo + faster-whisper `small` multilingual. **A pending decision, not open research** |
+| [2026-08-18-changemakers-inputs.md](research/notes/2026-08-18-changemakers-inputs.md) | The teammate package + 80-page textbook and 108 audio tracks. What to adopt (safety escalation, three languages, consent law, TBLT) and the one shape conflict |
+| [2026-08-18-teaching-agent-repos.md](research/notes/2026-08-18-teaching-agent-repos.md) | LiaScript's markdown quiz syntax (worth taking) and a shipped product whose "adaptive difficulty" is one string in a prompt (worth avoiding) |
+| [2026-08-11-edge-stack-viability.md](research/notes/2026-08-11-edge-stack-viability.md) | Gemma-on-Intel throughput, ASR/TTS options. Contains one same-day correction by measurement |
+| [2026-08-11-codex-deadline-review.md](research/notes/2026-08-11-codex-deadline-review.md) | Adversarial deadline review |
+| [2026-08-11-second-opinion-fable.md](research/notes/2026-08-11-second-opinion-fable.md) | Independent second opinion |
+| [2026-08-12-cto-autonomous-classroom-audit.md](research/notes/2026-08-12-cto-autonomous-classroom-audit.md) | Product, architecture, classroom validity, governance, competition evidence |
+| [2026-08-12-codebase-exploration.md](research/notes/2026-08-12-codebase-exploration.md) | Code-grounded audit of the interrupted implementation |
+| [PROMPT-classroom-assessment.md](research/prompts/PROMPT-classroom-assessment.md) | **Ready to run.** Practice items, quizzes and evidence for 30 children on one shared screen. Feeds the open half of the tool surface |
+| [PROMPT-avatar-decision.md](research/prompts/PROMPT-avatar-decision.md) | Ready-to-run prompt: which avatar format, which character |
+| [PROMPT-bilingual-speech.md](research/prompts/PROMPT-bilingual-speech.md) | The prompt that produced the speech research above |
+
+Research is dated by nature. A finding here is evidence, not doctrine — doctrine
+only exists once a `decisions/` file adopts it.
+
+## journals/
+
+Dated records, newest last. Read one when you need to know *why* something was
+done, not *what* is true now.
+
+## archive/
+
+Fifteen superseded documents, kept so the reasoning trail survives. Each one is
+wrong about something. [`archive/README.md`](archive/README.md) says which.
 
 ---
 
 ## Running it
 
 ```bash
-./scripts/fetch-models.sh     # once — Piper voices, Whisper, Live2D  (~1.7 GB)
-cp .env.example .env          # once — add LLM_API_KEY
-./scripts/dev.sh              # start everything
-./scripts/dev.sh status       # what is up
+./scripts/fetch-models.sh   # once — Piper voices, Whisper, Live2D  (~1.7 GB)
+cp .env.example .env        # once — add LLM_API_KEY
+./scripts/teacher-up.sh     # speech :8001 · core :8004 · hermes :8642 · ui :3000
 ```
 
 | | |
 |---|---|
-| `http://127.0.0.1:3000/classroom` | the projector view |
-| `http://127.0.0.1:3000/control` | the teacher's panel — on the laptop screen, extended display |
+| `http://127.0.0.1:3000/classroom` | the room — projector view |
+| `http://127.0.0.1:3000/control` | the adult's console — laptop screen, never the projector |
 
-Services: `speech :8001` · `core :8004` · `ui :3000` · optional Hermes `:8642`.
-Set `BRIGHT_AGENT=hermes` for the Option B runtime, `scripted` for deterministic
-rehearsal, or `off` for the authored-only path. Legacy `BRIGHT_AGENT=1` maps to
-the older DirectAgent compatibility path, not the production primary.
+It is **a web application that runs on your own machine.** Nothing listens on the
+internet; every service binds `127.0.0.1`. On the finished appliance the only
+difference is that Chromium starts itself in kiosk mode. Full reasoning:
+[design/runtime-topology.md](design/runtime-topology.md).
 
 ---
 
-## Where things are
+## The principles
 
-```
-docs/
-├── 1-vision/      why this exists. Changes rarely. The north star governs everything.
-├── 2-decisions/   choices made, with evidence. Read before re-litigating one.
-├── 3-design/      how it works. Architecture, topology, what we reuse and why.
-├── 4-build/       what we are doing. Plans, open questions, and two LIVING docs.
-├── 5-research/    external research and code-grounded audits.
-└── journals/      concise records of decisions, deviations, and lessons learned.
-```
-
-### 1-vision
-| | |
-|---|---|
-| [north-star.md](1-vision/north-star.md) | **The bible.** Thesis, who the real user is, five non-negotiable principles, the locked stack, pedagogy, definition of success |
-
-### 2-decisions
-| | |
-|---|---|
-| [hermes-over-openclaw.md](2-decisions/hermes-over-openclaw.md) | Why one agent runtime, not two — with file:line evidence. Patterns worth borrowing from the loser |
-| [fact-check-gpt-brief.md](2-decisions/fact-check-gpt-brief.md) | The original GPT brief, claim by claim: 25 verdicts, and the two that could have burned days |
-| [option-b-classroom-runtime.md](2-decisions/option-b-classroom-runtime.md) | **Current runtime decision.** Hermes sidecar, Core/MCP authority, speech ownership, privacy, failure policy, and local-Gemma seam |
-
-### 3-design
-| | |
-|---|---|
-| [architecture.md](3-design/architecture.md) | Two control tiers, the tool contract, event bus, identity fusion, speech, content model, ownership boundaries |
-| [runtime-topology.md](3-design/runtime-topology.md) | Web-first / local-first / appliance-final. Two screens one backend, service map, Stage layers, boot sequence |
-| [reusing-airi-and-friends.md](3-design/reusing-airi-and-friends.md) | What to take from each cloned repo, and what to leave |
-
-### 4-build
-| | |
-|---|---|
-| [autonomous-classroom-roadmap.md](4-build/autonomous-classroom-roadmap.md) | 🔴 **LIVING execution order.** Teacher-loop first: Hermes text → station → voice → AIRI → class → Gemma → giveaway |
-| [option-b-implementation-status.md](4-build/option-b-implementation-status.md) | Implementation handoff snapshot. Superseded on *order of work* by the 2026-08-16 roadmap |
-| [state-of-the-project.md](4-build/state-of-the-project.md) | Historical (2026-08-11). Not the current picture |
-| [tracker.md](4-build/tracker.md) | Historical (2026-08-11). Hermes harness “not this week” is stale |
-| [phase-1-plan.md](4-build/phase-1-plan.md) | Historical Phase-1 plan |
-| [execution-plan.md](4-build/execution-plan.md) | Adversarial review; Hermes 800-line adapter trigger still valid |
-| [open-questions.md](4-build/open-questions.md) | Spikes; treat as background, not this week’s queue |
-
-### 5-research
-| | |
-|---|---|
-| [2026-08-11-edge-stack-viability.md](5-research/2026-08-11-edge-stack-viability.md) | Gemma-on-Intel throughput, ASR/TTS options, constrained decoding. **Contains one correction issued the same day by direct measurement** |
-| [PROMPT-avatar-decision.md](5-research/PROMPT-avatar-decision.md) | Ready-to-run deep-research prompt: which avatar format, and which character for Vietnamese children |
-| [2026-08-12-codebase-exploration.md](5-research/2026-08-12-codebase-exploration.md) | Code-grounded audit of the interrupted implementation; historical observations, not runtime doctrine |
-| [2026-08-12-cto-autonomous-classroom-audit.md](5-research/2026-08-12-cto-autonomous-classroom-audit.md) | CTO audit of product, architecture, classroom validity, appliance, local Gemma, governance and competition evidence |
-| [2026-08-16-teacher-loop-roadmap.md](5-research/2026-08-16-teacher-loop-roadmap.md) | Why teacher-loop-first: small-model tools, TBLT vs chatbot, child-data law, Gemma/OpenVINO |
-
-### Journals
-| | |
-|---|---|
-| [260812-autonomous-classroom-roadmap.md](journals/260812-autonomous-classroom-roadmap.md) | Decision record: autonomous classroom as release unit, Option B retained, evidence-gated execution |
-| [260813-ideal-composed-evidence.md](journals/260813-ideal-composed-evidence.md) | One hosted synthetic adult composed turn: exact evidence, privacy observation and remaining room gates |
-| [260816-teacher-loop-roadmap.md](journals/260816-teacher-loop-roadmap.md) | Locked teacher-loop-first execution order; 1:1 WIP parked |
-
-### Outside `docs/`
-| | |
-|---|---|
-| [`packages/contracts/PROTOCOL.md`](../packages/contracts/PROTOCOL.md) | **The wire contract.** Lives with the code because code must not drift from it. Change this *before* changing any implementation |
-
----
-
-## The five principles
-
-1. **NS-1** — The lesson runs even when the LLM is dead. `classroom-core` is a complete program without one.
-2. **NS-2** — Two control tiers. The reflex tier (<100 ms) never routes through a model.
-3. **NS-3** — The agent acts on semantics, never on the DOM. Core validates every proposal; streamed assistant text is the single adaptive voice source.
+1. **NS-1** — The AI is the teacher. If it dies: notify, keep the room, restart the AI. No cassette.
+2. **NS-2** — Two control tiers. Reflex I/O never waits on the model. Pedagogy is the agent.
+3. **NS-3** — The agent acts on semantics, never on the DOM. Typed tools. No HTML.
 4. **NS-4** — The runtime is replaceable; the contract is not.
-5. **NS-5** — Chat history is not the source of truth. State lives in Core, in a schema.
-
----
-
-## Status
-
-```
-✅  protocol/runtime floor Protocol v3; Core runs a lesson with Hermes dead
-✅  Option B live boundary one terminal tool on pinned Hermes 0.20.0+bright.2
-⚠️  Layer 1 teacher brain  10/10 live MCP on hosted MiMo (2026-08-16); 25 min × 3 not proven
-🔴  Layers 2–7            text station, voice, AIRI, 20–40, local Gemma, giveaway — later
-```
-
-Current work is Layer 1 only. See [autonomous-classroom-roadmap.md](4-build/autonomous-classroom-roadmap.md).
-
-Agent evidence excludes four live-provider tests. The Chromium v3 test is a mocked
-browser contract flow, not real audio or Hermes evidence. Test counts in older build
-documents are historical snapshots; use repository commands and release gates at the
-commit being evaluated.
+5. **NS-5** — Chat history is not the source of truth. Durable facts live in the DB.
+6. **NS-6** — The profession is data, not code. Teaching lives in skills, not Python.
+7. **NS-7** — The deployment declares itself. Software never names a language or a subject.

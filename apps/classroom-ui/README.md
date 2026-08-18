@@ -1,6 +1,6 @@
 # classroom-ui
 
-The two screens of the Bright classroom (docs/3-design/runtime-topology.md §1):
+The two screens of the Bright classroom (docs/design/runtime-topology.md §1):
 
 | Route | Who sees it | What it is |
 |---|---|---|
@@ -35,7 +35,7 @@ pnpm build:mock   # a shippable demo build with the fixtures baked in
 
 For the demo: Chrome fullscreen (`F11`), or `chrome --kiosk
 http://127.0.0.1:3000/classroom`. That is the whole Phase 1 packaging story
-(docs/3-design/runtime-topology.md §7).
+(docs/design/runtime-topology.md §7).
 
 ### Configuration
 
@@ -147,7 +147,7 @@ kind → props map, because `SceneProps` is a bare union whose discriminant
 **The store is a pure reflection of server events.** Every mutator is called
 from `bus/wiring.ts` and nowhere else. The UI never advances the lesson, grades
 an answer, or picks the next scene — it renders state and emits interactions
-(docs/3-design/runtime-topology.md §4, rule 2). Optimistic press feedback is deliberately kept in
+(docs/design/runtime-topology.md §4, rule 2). Optimistic press feedback is deliberately kept in
 component-local state so this stays literally true.
 
 **Never patch across a gap.** `WsBus` tracks `seq` per connection. On a gap it

@@ -1,7 +1,7 @@
 """The `TeacherAgent` seam.
 
 This module is the entire insurance policy for the offline promise
-(docs/4-build/phase-1-plan.md §3). Everything model-related goes through
+(docs/archive/phase-1-plan.md §3). Everything model-related goes through
 `TeacherAgent`. Swapping remote MiMo for a local model, or for Hermes,
 must be a config change plus one class — never a refactor.
 
@@ -85,7 +85,7 @@ class Done(BaseModel):
       no_action  — the model produced nothing actionable; core continues the
                    lesson_run as if the agent were absent
       error      — anything failed. Core falls back to the lesson_run default.
-                   **Never retried in front of a class** (docs/3-design/architecture.md §3).
+                   **Never retried in front of a class** (docs/design/architecture.md §3).
     """
 
     type: Literal["done"] = "done"

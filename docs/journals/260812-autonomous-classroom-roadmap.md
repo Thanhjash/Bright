@@ -11,7 +11,7 @@ status: complete
 
 Bright's North Star remains one autonomous AI teacher running a 35–45 minute lesson for 20–40 children around a shared board. Option B is now being implemented as the stable product seam: Core owns classroom authority, Hermes proposes one bounded teaching move, Stage owns speech playback, and dedicated ASR turns assigned speech into correlated text. Local Gemma remains a provider change behind Hermes, not a reason to delay the product spine.
 
-The persistent execution roadmap is [`docs/4-build/autonomous-classroom-roadmap.md`](../4-build/autonomous-classroom-roadmap.md). This repository has no `plans/` directory; this journal records implementation learning rather than duplicating that roadmap.
+The persistent execution roadmap is [`docs/STATE.md`](../STATE.md). This repository has no `plans/` directory; this journal records implementation learning rather than duplicating that roadmap.
 
 ## What happened
 

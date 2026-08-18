@@ -25,7 +25,17 @@ from fastapi.responses import JSONResponse, Response
 ToolExecutor = Callable[[str, dict[str, Any]], Awaitable[Any]]
 
 PROTOCOL_VERSION = "2025-06-18"
-MUTATING_TOOLS = frozenset({"classroom_propose_move"})
+MUTATING_TOOLS = frozenset({
+    "classroom_propose_move",
+    "present",
+    "write_board",
+    "show_image",
+    "show_exercise",
+    "play_clip",
+    "say",
+    "record_evidence",
+    "open_response",
+})
 
 
 class TurnRejected(RuntimeError):
@@ -70,27 +80,20 @@ class TurnRegistry:
     ) -> TurnEntry:
         if not turn_id or turn_id in self._turns:
             raise ValueError("turn_id must be non-empty and unique")
-        runner = getattr(self.core, "runner", None)
-        current = getattr(runner, "current", None)
-        controller = getattr(self.core, "session_controller", None)
-        assignment = None
-        session_id = getattr(self.core, "session_id", None)
-        if controller is not None and session_id:
-            assignment = controller.assignments.current_for_activity(
-                session_id,
-                getattr(current, "id", ""),
-                getattr(runner, "_generation", 0),
-            )
+        # A turn is scoped to the session and the learner it was opened for.
+        # The activity/generation fields survive from the retired lesson-graph
+        # player: they stay on the entry so the wire shape does not move, and
+        # they are simply unset now that nothing walks a graph.
         entry = TurnEntry(
             turn_id=turn_id,
             executor=executor,
             expires_at=time.monotonic() + (ttl_s or self.default_ttl_s),
             state_version=int(self.core.store.state_version),
             decision_revision=int(getattr(self.core.store, "decision_revision", 0)),
-            session_id=session_id,
-            activity_id=getattr(current, "id", None),
-            activity_generation=getattr(runner, "_generation", None),
-            response_turn_id=getattr(assignment, "response_turn_id", None),
+            session_id=getattr(self.core, "session_id", None),
+            activity_id=None,
+            activity_generation=None,
+            response_turn_id=None,
             student_id=student_id,
             moves=dict(moves or {}),
         )
@@ -123,26 +126,14 @@ class TurnRegistry:
             raise TurnRejected("unknown or expired turn_id")
         if not validate_scope:
             return entry
-        runner = getattr(self.core, "runner", None)
-        current = getattr(runner, "current", None)
         if int(getattr(self.core.store, "decision_revision", 0)) != entry.decision_revision:
             raise TurnRejected("turn decision_revision is stale")
         if getattr(self.core, "session_id", None) != entry.session_id:
             raise TurnRejected("turn session is stale")
-        if getattr(current, "id", None) != entry.activity_id:
-            raise TurnRejected("turn activity is stale")
-        if getattr(runner, "_generation", None) != entry.activity_generation:
-            raise TurnRejected("turn activity generation is stale")
-        controller = getattr(self.core, "session_controller", None)
-        if controller is not None and entry.response_turn_id is not None:
-            assignment = controller.assignments.current_for_activity(
-                str(entry.session_id), str(entry.activity_id), int(entry.activity_generation or 0)
-            )
-            if assignment is None or assignment.response_turn_id != entry.response_turn_id:
-                raise TurnRejected("turn response capability is stale")
-        elif getattr(self.core, "student_id", None) != entry.student_id:
-            # Legacy single-learner seam only. Autonomous attribution is bound
-            # by responseTurnId above, never by this process-level field.
+        if getattr(self.core, "student_id", None) != entry.student_id:
+            # Single-learner scope. When evidence gains a subject (see the
+            # roadmap in docs/STATE.md), attribution binds per response and this
+            # process-level check stops being the authority.
             raise TurnRejected("turn learner scope is stale")
         return entry
 
@@ -205,22 +196,116 @@ def _schema(properties: dict[str, Any], required: list[str]) -> dict[str, Any]:
 
 TOOLS: tuple[dict[str, Any], ...] = (
     {
-        "name": "classroom_propose_move",
-        "description": "Choose one offered move and one short non-evaluative teacher line. This ends the turn.",
+        "name": "read_library",
+        "description": "Read one markdown file from the curriculum library (relative path).",
+        "inputSchema": _schema(
+            {"path": {"type": "string", "minLength": 1, "maxLength": 256}},
+            ["path"],
+        ),
+    },
+    {
+        "name": "search_library",
+        "description": "Search markdown under the curriculum library. Returns paths, snippets, asset:// ids.",
+        "inputSchema": _schema(
+            {"query": {"type": "string", "minLength": 1, "maxLength": 256}},
+            ["query"],
+        ),
+    },
+    {
+        "name": "write_board",
+        "description": (
+            "Write chalkboard markdown. Only these draw as chalk: `#`, `##` or `###` "
+            "headings; `-` or `1.` list items, with a space after the marker; "
+            "**bold** and *italic*. Anything else prints as literal punctuation on "
+            "the projector. Max 400 characters, 8 lines. No HTML or URLs."
+        ),
+        "inputSchema": _schema(
+            {"text": {"type": "string", "minLength": 1, "maxLength": 400}},
+            ["text"],
+        ),
+    },
+    {
+        "name": "read_board",
+        "description": "See what is currently on the board: writing, pictures, and the last clip.",
+        "inputSchema": _schema({}, []),
+    },
+    {
+        "name": "show_image",
+        "description": "Put one picture (asset) or two (left, right) on the board.",
         "inputSchema": _schema(
             {
-                "move_id": {"type": "string", "minLength": 1, "maxLength": 128},
+                "asset": {"type": "string"},
+                "left": {"type": "string"},
+                "right": {"type": "string"},
+            },
+            [],
+        ),
+    },
+    {
+        "name": "show_exercise",
+        "description": (
+            "Show a choice, vocabulary, or roleplay exercise on the board. "
+            "content is validated for structure only -- Core never judges whether "
+            "an answer is pedagogically right."
+        ),
+        "inputSchema": _schema(
+            {
+                "kind": {
+                    "type": "string",
+                    "enum": ["choice", "vocabulary", "roleplay"],
+                },
+                "content": {"type": "object"},
+            },
+            ["kind", "content"],
+        ),
+    },
+    {
+        "name": "play_clip",
+        "description": "Play a short library audio clip and optionally show its transcript.",
+        "inputSchema": _schema(
+            {
+                "asset": {"type": "string", "minLength": 1, "maxLength": 256},
+                "transcript": {"type": "string", "maxLength": 200},
+            },
+            ["asset"],
+        ),
+    },
+    {
+        "name": "say",
+        "description": "Speak one short non-evaluative teacher sentence to the learner.",
+        "inputSchema": _schema(
+            {
                 "teacher_line": {
                     "type": "string",
                     "minLength": 1,
-                    "maxLength": 180,
-                    "description": (
-                        "Exactly one short non-evaluative child-facing sentence; "
-                        "end with one period and use no other .!? punctuation"
-                    ),
+                    "maxLength": 220,
                 },
             },
-            ["move_id", "teacher_line"],
+            ["teacher_line"],
+        ),
+    },
+    {
+        "name": "record_evidence",
+        "description": (
+            "Record categorical evidence for exactly one named learner. Never "
+            "include the learner's raw words, and never call this for a choral "
+            "or unattributable response. "
+            "mode is name, point, or ask — not off-topic, and not a substitute for outcome."
+        ),
+        "inputSchema": _schema(
+            {
+                "student_id": {"type": "string", "minLength": 1, "maxLength": 128},
+                "objective_id": {"type": "string", "minLength": 1, "maxLength": 128},
+                "outcome": {
+                    "type": "string",
+                    "enum": ["correct", "wrong", "uncertain", "near"],
+                },
+                "mode": {
+                    "type": "string",
+                    "enum": ["name", "point", "ask", "off-topic"],
+                },
+            },
+            ["student_id", "objective_id", "outcome"],
         ),
     },
 )

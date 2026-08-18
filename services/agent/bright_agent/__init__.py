@@ -2,7 +2,7 @@
 
 Decides what to teach next. Owns the model call and nothing else:
 state lives in classroom-core, rendering lives in the UI, the avatar
-lives in airi-bridge. See docs/4-build/phase-1-plan.md §3.
+lives in airi-bridge. See docs/archive/phase-1-plan.md §3.
 """
 
 from .act import ActEmitter, act_event, format_act, format_delay, make_act, to_text_stream

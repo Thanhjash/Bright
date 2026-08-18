@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 320" width="320" height="320" role="img" aria-label="blue">
+  <rect width="320" height="320" rx="32" fill="#3d7ee8"/>
+  <text x="160" y="180" font-size="140" text-anchor="middle" dominant-baseline="middle">🟦</text>
+  <text x="160" y="272" font-family="system-ui, sans-serif" font-size="42" font-weight="600" fill="#1a1a1a" text-anchor="middle">blue</text>
+</svg>

@@ -1,6 +1,6 @@
 """The five tools the model may call, and the executor seam.
 
-docs/4-build/phase-1-plan.md §4 · docs/3-design/architecture.md-architecture.md §3 · NS-3.
+docs/archive/phase-1-plan.md §4 · docs/design/architecture.md-architecture.md §3 · NS-3.
 
 Design rule (do not "improve" this): the agent **proposes within a
 constrained option set**; it does not compose from a large primitive

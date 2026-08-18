@@ -1,6 +1,6 @@
 """The system prompt and the turn-context renderer.
 
-Budget discipline (docs/4-build/phase-1-plan.md §4): MiMo already spends ~250 prompt tokens on
+Budget discipline (docs/archive/phase-1-plan.md §4): MiMo already spends ~250 prompt tokens on
 a hidden preamble and reports `cached_tokens`. So:
 
   * SYSTEM_PROMPT is a module constant — byte-identical on every turn, so

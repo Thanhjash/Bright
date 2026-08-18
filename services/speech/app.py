@@ -35,7 +35,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel, Field
 
-from asr import AsrProvider, FasterWhisperProvider
+from asr import AsrProvider, FasterWhisperProvider, parse_languages
 
 log = logging.getLogger("speech")
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
@@ -64,12 +64,42 @@ WHISPER_DIR = Path(os.environ.get("WHISPER_DIR", ROOT / "models" / "whisper"))
 #
 # The resident model is now swappable at runtime via POST /admin/model, so this
 # is the *startup* default, not a restart-locked decision. See tests/room/.
+#
+# LANGUAGE — measured on the running :8001 service, 2026-08-18, load avg 13.8
+# (absolute times inflated by contention; read them as relative, not literal):
+#
+#   1.7s Vietnamese clip, auto language-ID   -> detected es (Spanish) p=0.57
+#                                                "Sin chao, costa un contei la min!"
+#   same clip, language=vi forced            -> "Xin chào cô Tahu, con Tây là mình."
+#   1.4s English clip, auto language-ID      -> detected en p=0.94 (correct)
+#   same clip, language=en forced            -> same text, ~35% faster (no detect pass)
+#
+# Whisper's own language-ID argmax is unreliable on the length of utterance a
+# classroom actually produces — a 1.7s Vietnamese greeting lost to Spanish
+# outright. DO NOT trust bare auto-detect. The fix (asr.py FasterWhisperProvider):
+# when no language is forced, detect once and CLAMP to whichever language in
+# the deployment's allowed set (ASR_LANGUAGES below) scored highest, instead of
+# trusting the raw global argmax. Confirmed on this build: for the same clips,
+# clamping to {en, vi} recovers vi/en correctly even when the unclamped top-1
+# guess is wrong. Falls back to the first allowed language if detection itself
+# is unavailable or errors — a degraded transcript beats a 500 in a classroom.
+#
+# CAVEAT (repeated for a second reason): these are Piper synthetic clips, not
+# a child speaking. They confirm the clamp mechanism works; they do not
+# validate accuracy on real classroom Vietnamese/English code-switching.
 WHISPER_MODEL = os.environ.get("WHISPER_MODEL", "small.en")
 WHISPER_COMPUTE = os.environ.get("WHISPER_COMPUTE", "int8")
 WHISPER_THREADS = int(os.environ.get("WHISPER_THREADS", "0")) or (os.cpu_count() or 4)
 HOST = os.environ.get("SPEECH_HOST", "127.0.0.1")
 PORT = int(os.environ.get("SPEECH_PORT", "8001"))
 MAX_ASR_UPLOAD_BYTES = int(os.environ.get("ASR_MAX_UPLOAD_BYTES", str(20 * 1024 * 1024)))
+# NS-7: the deployment declares itself; this service never names a language.
+# ASR_LANGUAGES is the deployment-declared allowed set for auto language-ID
+# (defaults to en,vi — this appliance's current two languages). classroom-core
+# reads the real home/school/target languages from content/library/index.md
+# and can override per-request via the `languages` form field below; the
+# speech service has no business reading the library itself.
+ASR_LANGUAGES = os.environ.get("ASR_LANGUAGES", "en,vi")
 
 # voice id -> piper onnx filename
 VOICES: dict[str, str] = {
@@ -306,6 +336,7 @@ async def transcriptions(
     request: Request,
     file: UploadFile = File(...),
     language: str | None = Form(default=None),
+    languages: str | None = Form(default=None),
     model: str | None = Form(default=None),  # noqa: ARG001 — OpenAI-compat, ignored
 ) -> JSONResponse:
     request_started = time.perf_counter()
@@ -321,13 +352,19 @@ async def transcriptions(
     # Read the model reference once: a concurrent /admin/model swap must not be
     # able to change it underneath a running transcription.
     provider: AsrProvider = _state["asr"]
+    # Per-request `languages` (comma-separated) overrides the deployment
+    # default ASR_LANGUAGES; classroom-core passes the real declared set once
+    # it knows it. Ignored entirely when `language` is forced.
+    allowed_languages = parse_languages(languages or ASR_LANGUAGES)
     queued = time.perf_counter()
     async with _asr_lock:
         queue_ms = round((time.perf_counter() - queued) * 1000)
         if await request.is_disconnected():
             raise HTTPException(499, "client disconnected before inference")
         inference = asyncio.create_task(
-            asyncio.to_thread(provider.transcribe, audio, language=language)
+            asyncio.to_thread(
+                provider.transcribe, audio, language=language, languages=allowed_languages
+            )
         )
         try:
             asr_result = await asyncio.shield(inference)

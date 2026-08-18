@@ -47,7 +47,15 @@ const LIVENESS_TICK_MS = 1_000
 /** Events allowed through while we are waiting for a snapshot. Both are
  *  whole-value and orthogonal to scene state, and both matter to the operator
  *  precisely when things are going wrong. */
-const PASSES_SNAPSHOT_GATE = new Set<string>(['error', 'mode.changed'])
+const PASSES_SNAPSHOT_GATE = new Set<string>([
+  'error',
+  'mode.changed',
+  'speech.say',
+  'speech.turn.started',
+  'speech.text.delta',
+  'speech.turn.ended',
+  'speech.cancel',
+])
 
 export interface WsBusOptions {
   url: string
@@ -301,6 +309,8 @@ export class WsBus implements Bus {
           const missed = event.seq - this.#inSeq - 1
           this.#inSeq = event.seq
           this.requestSnapshot(`seq gap: missed ${missed} event(s) before ${event.seq}`)
+          if (PASSES_SNAPSHOT_GATE.has(event.type))
+            this.#emitter.emit(event)
           return
         }
       }

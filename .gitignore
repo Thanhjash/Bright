@@ -38,3 +38,17 @@ data/*.db
 data/*.db-wal
 data/*.db-shm
 **/data/bright.db*
+
+# Third-party textbook assets (Global Success — Vietnam Education Publishing
+# House / Macmillan). Imported from the source drop by
+# scripts/import-textbook-assets.sh. Fine to use for the prototype; NOT ours to
+# redistribute, and not something a donated appliance may ship as-is.
+content/media/gs3/
+
+# The teammate's raw textbook drop: Global Success Grade 3 scans + the whole
+# 108-track audio programme, ~370 MB, VEPH/Macmillan copyright. Prototype
+# input only, never redistributed -- same reason content/media/gs3/ is ignored.
+# scripts/import-textbook-assets.sh is the durable record of what we take from
+# it and how the panels are cut.
+Changemakers - Inputs/
+Changemakers - Inputs.zip

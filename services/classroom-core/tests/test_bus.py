@@ -122,3 +122,14 @@ def test_payload_passthrough(bus: EventBus, payload):
     a = bus.subscribe()
     bus.publish("error", payload)
     assert drain(a)[0]["payload"] == payload
+
+
+def test_unknown_event_type_does_not_punch_a_seq_hole(bus: EventBus):
+    """Teacher used to publish board.present. Event() rejected it AFTER next_seq()."""
+    a = bus.subscribe()
+    sent = bus.publish("board.present", {"layout": "image"})
+    assert sent == 0
+    bus.publish("speech.turn.started", {"speechTurnId": "t1", "source": "agent"})
+    frames = drain(a)
+    assert [f["type"] for f in frames] == ["speech.turn.started"]
+    assert frames[0]["seq"] == 1

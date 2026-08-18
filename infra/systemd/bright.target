@@ -1,6 +1,6 @@
 [Unit]
 Description=Bright AI Classroom
-Documentation=file:///opt/bright/current/docs/3-design/runtime-topology.md
+Documentation=file:///opt/bright/current/docs/design/runtime-topology.md
 
 # One handle for the whole appliance, so a human command is
 #   systemctl restart bright.target

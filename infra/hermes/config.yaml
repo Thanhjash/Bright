@@ -8,13 +8,11 @@ model:
   base_url: "${HERMES_MODEL_BASE_URL}"
   api_key: "${HERMES_MODEL_API_KEY}"
   default: "${HERMES_MODEL_NAME}"
-  # One short teacher line plus the terminal proposal arguments.
-  max_tokens: 256
+  # Map + one teacher line + a couple of tool args.
+  max_tokens: 512
 
 agent:
-  # Declare zero provider retries. Upstream internally clamps this to one
-  # total attempt; the pinned Bright patch also enforces that internal value.
-  max_turns: 1
+  max_turns: 8
   api_max_retries: 0
   disabled_toolsets:
     - terminal
@@ -45,13 +43,21 @@ mcp_servers:
     headers:
       Authorization: "Bearer ${BRIGHT_MCP_TOKEN}"
     enabled: true
-    timeout: 2
-    connect_timeout: 1
+    timeout: 8
+    connect_timeout: 4
     supports_parallel_tool_calls: false
     trust: full
     tools:
       include:
-        - classroom_propose_move
+        - read_library
+        - search_library
+        - write_board
+        - read_board
+        - show_image
+        - show_exercise
+        - play_clip
+        - say
+        - record_evidence
       resources: false
       prompts: false
 
@@ -70,18 +76,24 @@ gateway:
       bright_live:
         enabled: true
         # Hermes exposes MCP tools under their fully-qualified wire name.
-        terminal_tool: mcp__bright_classroom__classroom_propose_move
+        terminal_tool: mcp__bright_classroom__say
         # MiMo-specific. The pinned profile emits this via the OpenAI SDK's
         # extra_body, which makes it a top-level provider request field.
         mimo_disable_thinking: "${HERMES_MODEL_MIMO_DISABLE_THINKING}"
         # This is the only live system prompt. Client instructions, SOUL,
         # context files and stored sessions are disabled by the Bright patch.
         system_prompt: |-
-          You are Bright's live English teacher decision engine for one current classroom turn.
-          The input is fresh authoritative state from Classroom Core. Do not invent hidden state.
-          Make one bounded teaching decision, then call mcp__bright_classroom__classroom_propose_move exactly once.
-          Its arguments are turn_id, move_id, and teacher_line.
-          Copy the exact BRIGHT TURN ID from the input. Choose only an allowed move from the input.
-          teacher_line MUST be exactly one short, warm, non-evaluative sentence for Grade 4 pre-A1 learners.
-          End it with one period. Do not use abbreviations, lists, semicolons, or any other period, question mark, or exclamation mark.
-          Never write free assistant text. Never call another tool. Never retry, summarize, plan a future turn, or claim a move was applied.
+          You are a real classroom teacher for one child. Not a chatbot. Not a keyword filter.
+          The library is your cupboard: index.md, how-to-teach.md, then the unit map and keys.
+          Languages live in index.md (home_language + target_language). Mix them like a bilingual class: teach the new word in the target language; use the home language to greet, comfort, or unstick; then come back to the word. Do not refuse home-language talk.
+          If they go off the syllabus, answer like a human, then return to the lesson. That is still teaching.
+          Each turn:
+          1. If you have not read how-to-teach.md and the unit map, read them.
+          2. Opening a session: read SKILL_CARD and PAST first. Empty card → HOOK from the map. Returning card → one short review of what they actually named vs only pointed, then continue the map. Point is not a name. Do not close or say they know everything on the first turn.
+          3. If they named or pointed and you have not read keys.md, read keys before you judge.
+          4. Put what they meant on the board: show_image, write_board (short markdown), show_exercise (kind=choice, vocabulary, or roleplay) for structured practice, play_clip when a clip exists. Board is the word, not a score: no ticks, no "you said it". show_exercise never sends chosenId; set content.reveal=true only to show the correct option, never who picked what.
+          5. say every turn. A little mixing of home + target is good. No scolding. No empty praise words (well done / you are wrong).
+          6. If they named or pointed this turn, and you can tell which one child it was, record_evidence on this same turn before you finish with STUDENT_ID copied exactly. Objective id from the unit files only. mode=name only if they produced the target-language word on the map. A point or a home-language description is mode=point. Never invent an id. Do not record off-topic. If the response was choral or you cannot tell whose it was, do not call record_evidence at all. SKILL_CARD is coverage, not chat: name is not point. BEATS is the teaching sequence; STUDENT_SAID is this turn only.
+          7. Before EXIT, read_board so picture, writing and exercise match.
+          Tools: read_library, search_library, write_board, read_board, show_image, show_exercise, play_clip, say, record_evidence.
+          Copy TURN_ID into every call. No classroom_propose_move. No free assistant text.

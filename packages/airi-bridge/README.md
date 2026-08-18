@@ -62,7 +62,7 @@ npm run typecheck
 
 | Thing | Why it is not in the package |
 |---|---|
-| **A Live2D model** | Licensing is an open decision (see `docs/4-build/tracker.md` P1). Every path is injected. `models/live2d/haru_greeter_t03` is present for development; its `bright-model.json` records `commercialUse: RESTRICTED`. Do not ship it to a school before that is resolved. |
+| **A Live2D model** | Licensing is an open decision (see `docs/archive/tracker.md` P1). Every path is injected. `models/live2d/haru_greeter_t03` is present for development; its `bright-model.json` records `commercialUse: RESTRICTED`. Do not ship it to a school before that is resolved. |
 | **`live2dcubismcore.min.js`** | Live2D's licence forbids redistribution, so it is not on npm and cannot be bundled. Pass its URL to `<Live2DAvatar cubismCore>` / `ensureCubismCore()`, or load it with a `<script>` tag. |
 | **A TTS function** | `(text: string) => Promise<ArrayBuffer>`, injected. The app picks Piper, a hosted API, whatever. |
 | **`<think>` stripping** | PROTOCOL.md §5.2 requires reasoning content to be removed *before* text reaches the chunker. That belongs upstream, in `hermes-adapter` / `classroom-core`, where the provider's reasoning format is known. This package does not guess. |
@@ -238,12 +238,12 @@ Worse, the two key spaces overlap: `"F05"` lowercased is `"f05"`, which is the `
 | `beat-sync.ts` (359 lines) | reacts to music. A classroom does not need it. The plugin slot is still there |
 | `expression-controller.ts` (282 lines) | AIRI's own expression store and blending. Bright drives expressions through `emotion-channel.ts` + the model's own Cubism expression manager, which is simpler and config-driven. AIRI ships `live2dExpressionEnabled = false` by default, so the ported auto-blink plugin's "expression OFF" branch **is** its production behaviour — fidelity is preserved |
 | `eye-tracking.ts` | needs a camera. Phase 2 |
-| VRM / MMD / Spine renderers | Live2D only, per `docs/4-build/phase-1-plan.md` §7 |
+| VRM / MMD / Spine renderers | Live2D only, per `docs/archive/phase-1-plan.md` §7 |
 | `Model.vue`'s theme drop-shadow, model-reload broadcast channel, runtime-motion upload | AIRI product features, not Bright's |
 
 ### About AIRI's `patches/pixi-live2d-display.patch`
 
-`docs/3-design/reusing-airi-and-friends.md` warns that `stage-ui-live2d` needs it. Reading it: it only teaches the unpatched `FileLoader`/`ZipLoader` to skip `items_pinned_to_model.json` and to stop URI-encoding archive paths. `live2d-zip-loader.ts` overrides `createSettings` on both loaders and already does this. **Bright runs `pixi-live2d-display@0.4.0` unpatched.**
+`docs/design/reusing-airi-and-friends.md` warns that `stage-ui-live2d` needs it. Reading it: it only teaches the unpatched `FileLoader`/`ZipLoader` to skip `items_pinned_to_model.json` and to stop URI-encoding archive paths. `live2d-zip-loader.ts` overrides `createSettings` on both loaders and already does this. **Bright runs `pixi-live2d-display@0.4.0` unpatched.**
 
 ---
 

@@ -4,8 +4,8 @@ Decides **what to teach next**. It is the only component in Bright that talks to
 model, and the only outbound network call in the system.
 
 It does not hold state, render anything, or touch the DOM. It proposes; `classroom-core`
-disposes. See [docs/4-build/phase-1-plan.md §3–§4](../../docs/4-build/phase-1-plan.md),
-[docs/3-design/architecture.md-architecture.md §3](../../docs/3-design/architecture.md-architecture.md), NS-2/NS-3.
+disposes. See [docs/archive/phase-1-plan.md §3–§4](../../docs/archive/phase-1-plan.md),
+[docs/design/architecture.md-architecture.md §3](../../docs/design/architecture.md-architecture.md), NS-2/NS-3.
 
 ```
 classroom-core ──TurnContext──►  TeacherAgent.turn()  ──AgentEvent stream──► classroom-core
@@ -43,7 +43,7 @@ Three invariants a caller may rely on:
    arrive as `Done(reason="error")`.
 2. **Single attempt, always.** No retry, no tool-repair loop, no reprompt.
    `Done(reason="error")` means *fall back to the `lesson_run` default now* — thirty
-   children are waiting (docs/3-design/architecture.md §3).
+   children are waiting (docs/design/architecture.md §3).
 3. **`Done(reason="no_action")`** means the model produced nothing actionable. Core
    continues as if the agent were absent.
 
@@ -119,7 +119,7 @@ back-pressure) is `packages/airi-bridge`'s job, not ours.
 
 ## The five tools
 
-`bright_agent/tools.py`, exactly the surface in docs/4-build/phase-1-plan.md §4 — sized for a 4.5B model,
+`bright_agent/tools.py`, exactly the surface in docs/archive/phase-1-plan.md §4 — sized for a 4.5B model,
 not for MiMo.
 
 ```
@@ -244,14 +244,14 @@ Reusable as-is: `prompt.py` (the prompt is the pedagogy, not the transport),
 (guards belong on our side of the boundary regardless of runtime), `act.py`.
 
 Two things to check when that day comes, both already flagged in the docs:
-**disable Hermes' multi-attempt tool-repair loop** (docs/3-design/architecture.md §3 — it is a 3× latency
+**disable Hermes' multi-attempt tool-repair loop** (docs/design/architecture.md §3 — it is a 3× latency
 spike in front of a class), and verify it passes MiMo's non-standard `thinking` field
 through untouched.
 
 `LocalAgent` (Phase 3) is cheaper still: `DirectAgent` with `LLM_BASE_URL` pointed at
 OVMS or llama.cpp. When that serving layer exposes grammar-constrained decoding, add
 the GBNF/JSON-schema grammar built from the same `available_actions` ids that
-`build_tools` already produces — docs/3-design/architecture.md §3 requires an invalid id to be
+`build_tools` already produces — docs/design/architecture.md §3 requires an invalid id to be
 *impossible to emit*, and today's `enum` is only a strong hint plus a hard reject.
 
 ---
@@ -260,11 +260,11 @@ the GBNF/JSON-schema grammar built from the same `available_actions` ids that
 
 1. **Tool schemas are 44 % of the prompt** (~650 of ~1 480 tokens) and the volatile
    `action_id` enum lives inside them, so changing the action set costs cache. Fixing
-   it means moving the choice out of the tool schema entirely (docs/3-design/architecture.md §3 "Tier C" —
+   it means moving the choice out of the tool schema entirely (docs/design/architecture.md §3 "Tier C" —
    constrained JSON in one completion). Worth measuring against the small model before
    Phase 3, not now.
 2. **`enum` is not constrained decoding.** Rejection is our only real guarantee today.
-   The hard requirement in docs/3-design/architecture.md §3 is unmet until the serving layer supports it.
+   The hard requirement in docs/design/architecture.md §3 is unmet until the serving layer supports it.
 3. **The model usually speaks via `classroom_say`, so the `TextDelta` stream is often
    empty.** Inline ACT tokens the model writes end up inside the `say` argument, and
    core — not this service — hands that text to the speech pipeline. Both paths reach

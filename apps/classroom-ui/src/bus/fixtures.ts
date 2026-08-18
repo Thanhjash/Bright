@@ -3,7 +3,7 @@
  *
  * Purpose: let the whole UI be developed and demoed with no backend at all,
  * and exercise every scene kind the Stage can render, including the stubs.
- * It is throwaway content (docs/4-build/phase-1-plan.md §10, P3) — the shape is what matters.
+ * It is throwaway content (docs/archive/phase-1-plan.md §10, P3) — the shape is what matters.
  *
  * These are `Scene`s exactly as classroom-core would send them, so anything
  * that renders here renders identically against the real bus.

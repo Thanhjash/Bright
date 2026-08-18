@@ -1,6 +1,6 @@
 """Does this provider support grammar-constrained decoding?
 
-docs/3-design/architecture.md §3 states a **hard requirement**: an invalid
+docs/design/architecture.md §3 states a **hard requirement**: an invalid
 `action_id` must be *impossible to emit*, not merely rejected. Today the
 `enum` in the tool schema is a strong hint plus a hard reject
 (README "Known weaknesses" #2). This script answers, reproducibly, whether

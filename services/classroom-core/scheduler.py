@@ -1,4 +1,4 @@
-"""Background work -- the three jobs from docs/4-build/phase-1-plan.md §6.
+"""Background work -- the three jobs from docs/archive/phase-1-plan.md §6.
 
 ============================  ==========================  =======================
 job                           when                        does

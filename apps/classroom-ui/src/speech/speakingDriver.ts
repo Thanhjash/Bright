@@ -18,7 +18,15 @@ import { resolveAsset } from '../lib/assets'
 import { SPEECH_URL } from '../lib/env'
 import { useClassroom } from '../store/classroom'
 
-const VOICE = import.meta.env.VITE_TTS_VOICE ?? 'en'
+function pickVoice(text: string): 'en' | 'vi' {
+  const forced = import.meta.env.VITE_TTS_VOICE
+  if (forced === 'en' || forced === 'vi') return forced
+  const letters = text.replace(/\s+/g, '')
+  if (!letters) return 'en'
+  const latin = (letters.match(/[A-Za-z]/g) ?? []).length
+  const viet = (letters.match(/[ÀÁẢÃẠĂẰẮẲẴẶÂẦẤẨẪẬÈÉẺẼẸÊỀẾỂỄỆÌÍỈĨỊÒÓỎÕỌÔỒỐỔỖỘƠỜỚỞỠỢÙÚỦŨỤƯỪỨỬỮỰỲÝỶỸỴĐàáảãạăằắẳẵặâầấẩẫậèéẻẽẹêềếểễệìíỉĩịòóỏõọôồốổỗộơờớởỡợùúủũụưừứửữựỳýỷỹỵđ]/g) ?? []).length
+  return viet > latin ? 'vi' : 'en'
+}
 
 export type PlaybackStatus = 'completed' | 'cancelled' | 'failed'
 export type SpeechBehavior = 'queue' | 'interrupt' | 'replace'
@@ -81,7 +89,7 @@ async function tts(
   const res = await fetch(`${SPEECH_URL}/audio/speech`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ input: text, voice: VOICE }),
+    body: JSON.stringify({ input: text, voice: pickVoice(text) }),
     signal,
   })
   if (!res.ok) {
@@ -169,14 +177,20 @@ export function configureSpeechOutput(next: SpeechOutputCallbacks): () => void {
   }
 }
 
+export function hasSpeechTurn(speechTurnId: string): boolean {
+  return turns.has(speechTurnId)
+}
+
 export function startSpeech({
   speechTurnId,
   conversationTurnId,
   behavior = 'queue',
   audioAsset,
 }: SpeechStart): void {
-  if (!enabled || turns.has(speechTurnId))
+  if (turns.has(speechTurnId))
     return
+  if (!enabled)
+    configureSpeechOutput(callbacks)
   const turn = ensurePlayer().speak({
     turnId: speechTurnId,
     ownerId: conversationTurnId,
@@ -248,7 +262,9 @@ function startMouthLoop(): void {
     return
   const tick = () => {
     const value = player?.getMouthOpen() ?? 0
-    useClassroom.getState().setMouthOpen(Math.round(value * 100) / 100)
+    // Driver emits 0…0.7; Hiyori ParamMouthOpenY is 0…1. Stretch so speech reads.
+    const open = Math.min(1, Math.round((value / 0.62) * 100) / 100)
+    useClassroom.getState().setMouthOpen(open)
     raf = requestAnimationFrame(tick)
   }
   raf = requestAnimationFrame(tick)
@@ -280,11 +296,18 @@ export function isSpeechPlaying(): boolean {
   return player?.isSpeaking() ?? false
 }
 
+let unlockInstalled = false
+
 export function unlockAudioOnFirstGesture(): void {
-  if (typeof window === 'undefined' || !enabled)
+  if (typeof window === 'undefined' || unlockInstalled)
     return
+  unlockInstalled = true
   const unlock = () => {
-    ensurePlayer()
+    try {
+      ensurePlayer()
+    } catch {
+      // AudioContext may still be blocked; the next gesture retries.
+    }
     window.removeEventListener('pointerdown', unlock)
     window.removeEventListener('keydown', unlock)
   }

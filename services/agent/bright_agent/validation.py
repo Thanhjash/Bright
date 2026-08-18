@@ -1,6 +1,6 @@
 """Hard guards on what the model is allowed to propose.
 
-docs/3-design/architecture.md-architecture.md §3 — "Three hard rules for the tool layer" and
+docs/design/architecture.md-architecture.md §3 — "Three hard rules for the tool layer" and
 "One thing Hermes does that we must disable".
 
 Two rules, both absolute:

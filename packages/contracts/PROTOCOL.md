@@ -537,3 +537,15 @@ Opening a speech turn suppresses the mic. Core opens listening/timers only from
 the matching terminal playback ACK (plus the configured echo tail), never merely
 because it published text. Until measured full-duplex support exists, PTT is
 half-duplex and refuses capture while output is active.
+
+### 9.12 `choice.revealed` — Core never sends `chosenId`
+
+`ChoiceProps.revealed.chosenId` renders as a red cross on whatever the child
+picked (`ChoiceBoard.tsx`) — a per-child grade on a shared board, which
+invariant 6 (`docs/design/teaching-loop.md` §4) forbids. The teacher-agent
+MCP tool that drives this scene, `show_exercise`, has no `chosenId` in its
+schema, so it cannot reach the wire through that path. Core only ever
+publishes `revealed: { correctId }`, and only when the agent explicitly sets
+`content.reveal = true`. The mint tick on the correct option is the only
+verdict the board shows. See
+[2026-08-18-show-exercise-tool.md](../../docs/decisions/2026-08-18-show-exercise-tool.md).

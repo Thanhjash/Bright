@@ -9,16 +9,18 @@ from typing import Any
 
 import httpx
 import pytest
-from bright_contracts import AvailableAction
+from bright_contracts import AvailableAction, RecalledMemory
 
 from bright_agent.base import Done, TextDelta, ToolCall, ToolResult
 from bright_agent.hermes import (
     HermesAgent,
     HermesConfig,
     HermesProtocolError,
+    _validated_mcp_result,
     build_hermes_input,
     build_hermes_request,
     iter_sse_events,
+    render_teacher_turn,
 )
 
 from .conftest import make_ctx
@@ -78,8 +80,163 @@ def test_request_is_streaming_and_never_stored():
     assert body["store"] is False
     assert body["model"] == "classroom"
     assert "turn-123" in body["input"]
-    assert "tools" not in body, "Hermes tools come from its profile, never the client request"
-    assert "instructions" not in body, "the live prompt is server-owned and cannot drift per request"
+
+
+def test_teacher_request_has_no_move_menu(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setenv("BRIGHT_TEACHER_AGENT", "1")
+    ctx = make_ctx()
+    ctx.last_interaction.detail = "that yellow one"
+    body = build_hermes_request(HermesConfig(model="classroom"), ctx, "turn-teach")
+    text = render_teacher_turn(ctx, "turn-teach")
+    assert body["store"] is False
+    assert "that yellow one" in text
+    assert "banana.svg" not in text
+    assert "apple.svg" not in text
+    assert "classroom_propose_move" in text
+    assert "how-to-teach.md" in text
+    assert "units/" in text and "map.md" in text
+    assert "offered_move_ids" not in text
+    assert "SKILL_CARD=" in text
+    assert "PAST=" in text
+    assert "BEATS=" in text
+    ctx.recalled = [
+        RecalledMemory(text="SKILL_CARD=colour-recognise-red name:1/2 last=near", when="now"),
+        RecalledMemory(text="PAST=2026-08-16 colour-recognise-red name near", when="now"),
+    ]
+    remembered = render_teacher_turn(ctx, "turn-teach")
+    assert "SKILL_CARD=colour-recognise-red name:1/2 last=near" in remembered
+    assert "PAST=2026-08-16 colour-recognise-red name near" in remembered
+    assert "review what they named vs only pointed" in remembered
+
+
+def test_teacher_heartbeat_is_not_student_speech(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setenv("BRIGHT_TEACHER_AGENT", "1")
+    ctx = make_ctx()
+    ctx.last_interaction.detail = "[heartbeat]"
+    text = render_teacher_turn(ctx, "turn-hb")
+    assert "EVENT=heartbeat" in text
+    assert "STUDENT_SAID=" in text
+    assert "STUDENT_SAID=[heartbeat]" not in text
+    assert "HEARTBEAT_OK" in text
+    ctx.last_interaction.detail = "[sat_down]"
+    wake = render_teacher_turn(ctx, "turn-wake")
+    assert "EVENT=class_start" in wake
+    assert "Begin teaching" in wake
+
+
+async def test_teacher_loop_accepts_read_then_say(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setenv("BRIGHT_TEACHER_AGENT", "1")
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content)
+        assert body["store"] is False
+        assert "STUDENT_SAID=" in body["input"]
+        read = {
+            "type": "response.output_item.added",
+            "item": {
+                "id": "fc_read",
+                "type": "function_call",
+                "name": "mcp__bright_classroom__read_library",
+                "call_id": "call_read",
+                "arguments": json.dumps(
+                    {"turn_id": "turn-teach", "path": "units/market-food/map.md"}
+                ),
+            },
+        }
+        read_out = {
+            "type": "response.output_item.added",
+            "item": {
+                "type": "function_call_output",
+                "call_id": "call_read",
+                "output": [
+                    {
+                        "type": "input_text",
+                        "text": json.dumps({"structuredContent": {"ok": True, "path": "units/market-food/map.md"}}),
+                    }
+                ],
+            },
+        }
+        say = {
+            "type": "response.output_item.added",
+            "item": {
+                "id": "fc_say",
+                "type": "function_call",
+                "name": "mcp__bright_classroom__say",
+                "call_id": "call_say",
+                "arguments": json.dumps(
+                    {"turn_id": "turn-teach", "teacher_line": "This is an apple."}
+                ),
+            },
+        }
+        say_out = {
+            "type": "response.output_item.added",
+            "item": {
+                "type": "function_call_output",
+                "call_id": "call_say",
+                "output": [
+                    {
+                        "type": "input_text",
+                        "text": json.dumps({"structuredContent": {"ok": True}}),
+                    }
+                ],
+            },
+        }
+        return httpx.Response(
+            200,
+            content=stream_body(
+                created(),
+                ("response.output_item.added", read),
+                ("response.output_item.added", read_out),
+                ("response.output_item.added", say),
+                ("response.output_item.added", say_out),
+                completed(),
+            ),
+            headers={"content-type": "text/event-stream"},
+        )
+
+    agent = make_agent(handler)
+    agent.prepare_turn("turn-teach")
+    events = [event async for event in agent.turn(make_ctx())]
+    names = [event.name for event in events if isinstance(event, ToolCall)]
+    assert names == ["read_library", "say"]
+    assert [event.text for event in events if isinstance(event, TextDelta)] == [
+        "This is an apple."
+    ]
+    done = events[-1]
+    assert isinstance(done, Done) and done.reason == "complete"
+
+
+def test_mcp_result_accepts_top_level_ok_without_structured_content():
+    ok, payload, err = _validated_mcp_result(
+        {
+            "type": "function_call_output",
+            "output": [{"type": "input_text", "text": json.dumps({"ok": True, "path": "units/market-food/map.md"})}],
+        }
+    )
+    assert ok is True and err is None
+    assert payload["path"] == "units/market-food/map.md"
+
+
+def test_mcp_result_accepts_content_text_envelope():
+    ok, payload, err = _validated_mcp_result(
+        {
+            "type": "function_call_output",
+            "output": {
+                "content": [{"type": "text", "text": json.dumps({"ok": True, "applied": True})}],
+                "isError": False,
+            },
+        }
+    )
+    assert ok is True and err is None
+    assert payload["applied"] is True
+
+
+def test_mcp_result_does_not_abort_unknown_success_envelope():
+    ok, payload, err = _validated_mcp_result(
+        {"type": "function_call_output", "output": {"content": [{"type": "text", "text": "ok"}], "isError": False}}
+    )
+    assert ok is True and err is None
+    assert "content" in payload
 
 
 def test_live_input_uses_only_authoritative_state_and_opaque_move_capabilities():

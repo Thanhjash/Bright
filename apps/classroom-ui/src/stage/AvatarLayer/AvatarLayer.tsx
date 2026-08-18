@@ -1,7 +1,7 @@
 /**
  * The avatar's column on the Stage.
  *
- * It lives BESIDE the board, never on top of it (docs/3-design/runtime-topology.md §4): the board
+ * It lives BESIDE the board, never on top of it (docs/design/runtime-topology.md §4): the board
  * carries the pedagogy, the avatar carries presence. This layer owns nothing
  * but layout and the store subscription — swapping in the Live2D renderer
  * from packages/airi-bridge means changing the one `<Avatar>` line below.
@@ -45,11 +45,10 @@ import { Avatar, BINDING_URL } from './Avatar'
 /**
  * How far down the model we want the column's bottom edge to cut, as a
  * fraction of the model's own height. Measured against Hiyori Pro by rendering
- * her whole canvas: hair 0.07, skirt hem 0.58, knee 0.71, feet 0.96. 0.78 is
- * "below the knee" with the socks showing — present, grounded, not a floating
- * bust, and not so tall that her head leaves the top of the column.
+ * her whole canvas: hair 0.07, skirt hem 0.58, knee 0.71, feet 0.96.
+ * 0.60 cuts at the skirt — head in frame, little leg. 0.78 showed too much sock.
  */
-const TARGET_VISIBLE = 0.78
+const TARGET_VISIBLE = 0.60
 
 /**
  * Hiyori Pro's intrinsic canvas, 2976 × 4175, read from the loaded model. The
@@ -86,7 +85,7 @@ export function AvatarLayer() {
       {/* Floor shadow. On the OUTER wrapper: the inner box is mostly empty
           canvas above her head, and a gradient pinned to its bottom would sit
           under her knees instead of on the floor. */}
-      <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 h-[22%] bg-gradient-to-t from-ink-950/45 to-transparent" />
+      <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 h-[10%] bg-gradient-to-t from-black/20 to-transparent" />
       <div
         className="absolute inset-x-0 bottom-0"
         style={ratio === NO_COMPENSATION ? { top: 0 } : { aspectRatio: `1 / ${ratio}` }}

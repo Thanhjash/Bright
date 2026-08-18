@@ -1,24 +1,23 @@
 import type { ImageProps } from '@contracts'
-import { BoardShell, Picture } from './parts'
+import { Picture } from './parts'
 
-/** `image` — one picture, as big as the board allows, caption underneath. */
+/** Picture sits on the photographed chalkboard, not a navy card. */
 export function ImageBoard({ props }: { props: ImageProps }) {
   return (
-    <BoardShell>
-      <figure
-        key={props.asset}
-        className="animate-scene-in flex h-full w-full flex-col items-center justify-center gap-[2.4vh]"
-      >
-        <Picture
-          asset={props.asset}
-          className="min-h-0 w-full flex-1 rounded-[2rem] shadow-[0_2.4vh_6vh_-2vh_rgba(0,0,0,0.65)]"
-        />
-        {props.caption ? (
-          <figcaption className="t-board-sm text-center font-display font-extrabold text-balance text-cream">
-            {props.caption}
-          </figcaption>
-        ) : null}
-      </figure>
-    </BoardShell>
+    <figure
+      key={props.asset}
+      data-board="picture"
+      className="flex h-full w-full flex-col items-center justify-center gap-[1.4vh] px-[3%] py-[4%]"
+    >
+      <Picture
+        asset={props.asset}
+        className="min-h-0 w-auto max-h-[78%] max-w-[88%] object-contain drop-shadow-[0_8px_24px_rgba(0,0,0,0.45)]"
+      />
+      {props.caption ? (
+        <figcaption className="max-w-[90%] text-center font-display text-[clamp(1rem,1.8vw,1.7rem)] font-bold leading-snug text-cream/95">
+          {props.caption}
+        </figcaption>
+      ) : null}
+    </figure>
   )
 }

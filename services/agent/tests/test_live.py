@@ -6,7 +6,7 @@ Run with:  BRIGHT_RUN_LIVE_TESTS=1 pytest -m live -s
 These exist because two claims are load-bearing and cheap to regress:
   1. `"thinking": {"type": "disabled"}` as a TOP-LEVEL field actually
      suppresses reasoning. Nested, it silently does not, and the whole
-     completion budget is burned returning empty content (docs/4-build/phase-1-plan.md §0).
+     completion budget is burned returning empty content (docs/archive/phase-1-plan.md §0).
   2. Constrained `action_id` tool calling returns an id from the enum.
 """
 
@@ -89,13 +89,13 @@ async def test_thinking_nested_wrongly_is_not_how_it_works():
         print("[live] wrong-shape reasoning:", repr(msg.get("reasoning_content"))[:200])
         # The point of the test: this shape does NOT disable reasoning.
         leaked = bool(msg.get("reasoning_content")) or not (msg.get("content") or "").strip()
-        assert leaked, "extra_body-shaped thinking unexpectedly worked — re-read docs/4-build/phase-1-plan.md §0"
+        assert leaked, "extra_body-shaped thinking unexpectedly worked — re-read docs/archive/phase-1-plan.md §0"
     else:
         assert r.status_code >= 400
 
 
 async def test_tool_calling_returns_a_valid_action_id(agent, capsys):
-    """Constrained multiple choice — the whole design (docs/3-design/architecture.md §3)."""
+    """Constrained multiple choice — the whole design (docs/design/architecture.md §3)."""
     ctx = make_ctx()
     legal = {a.id for a in ctx.available_actions}
 
