@@ -94,31 +94,60 @@ export function RoomDock() {
     if (status.sessionOpen) setDock(speaking ? 'speaking' : 'listen')
   }, [setDock, speaking, status.sessionOpen])
 
-  // One clip, already endpointed by the gate. Same path a released button
-  // used to take: transcribe, then hand the words to Core.
+  // One clip at a time, newest wins.
+  //
+  // Whisper is single-threaded behind one lock in the speech service, and a
+  // clip costs 3-10s on this CPU. The gate can produce clips far faster than
+  // that. Measured on 2026-08-18 with no backpressure at all: the ASR queue
+  // grew 0 -> 3s -> 17s -> 116s -> **200s**, so by the end the teacher was
+  // answering something a child said three minutes earlier. Queue depth, not
+  // model speed, was the dominant latency.
+  //
+  // Two rules fix it. Never run two transcriptions at once, and while one is
+  // running keep only the LATEST clip that arrived -- an older clip is a
+  // staler answer, and a child who repeats themselves means the second try is
+  // the one they want heard.
+  const inFlight = useRef(false)
+  const pending = useRef<{ audio: Blob; durationMs: number } | null>(null)
+
   const submitClip = useCallback(async (clip: { audio: Blob; durationMs: number }) => {
+    if (inFlight.current) {
+      pending.current = clip          // drop whatever was queued before it
+      return
+    }
+    inFlight.current = true
     setDock('thinking')
     try {
       const heardText = (await transcribe(clip.audio)).text.trim()
-      if (!heardText) {
-        setDock('listen')
-        return
+      if (heardText) {
+        setHeard(heardText)
+        setHint(null)
+        const res = await fetch(`${CORE_HTTP}/teacher/turn`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ text: heardText }),
+        })
+        const body = await readJson(res)
+        if (!res.ok) throw new Error(JSON.stringify(body).slice(0, 180))
       }
-      setHeard(heardText)
-      setHint(null)
-      const res = await fetch(`${CORE_HTTP}/teacher/turn`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ text: heardText }),
-      })
-      const body = await readJson(res)
-      if (!res.ok) throw new Error(JSON.stringify(body).slice(0, 180))
       setDock('listen')
     } catch (err) {
-      setHint(err instanceof SttError ? err.message : 'The teacher needs a moment.')
+      // A clip with no speech in it is the normal case in a room with noise,
+      // not a fault worth shouting about on the projector.
+      if (err instanceof SttError && err.failure === 'empty') setHint(null)
+      else setHint(err instanceof SttError ? err.message : 'The teacher needs a moment.')
       setDock('listen')
+    } finally {
+      inFlight.current = false
+      const next = pending.current
+      pending.current = null
+      if (next) void submitClipRef.current?.(next)
     }
   }, [setDock])
+
+  // `submitClip` recurses through a ref so the callback identity stays stable.
+  const submitClipRef = useRef<typeof submitClip | null>(null)
+  submitClipRef.current = submitClip
 
   // The room listens by itself. The gate never opens while she is speaking --
   // the Stage is the only loudspeaker, so an open mic during Piper output
@@ -145,18 +174,23 @@ export function RoomDock() {
   const copy = labelFor(phase, ready)
 
   return (
+    <>
+      {/* What the child said, echoed back. It lives at the TOP of the room --
+          her subtitle owns the bottom, and when both sat in the same corner
+          they overlapped on a real projector. Top = the class, bottom = the
+          teacher. */}
+      {heard ? (
+        <p
+          data-stage="heard"
+          className="pointer-events-none absolute left-1/2 top-[2.4vh] z-[29] max-w-[52%] -translate-x-1/2 truncate rounded-full bg-ink-950/78 px-6 py-2 font-display text-[clamp(0.95rem,1.4vw,1.3rem)] text-cream/90 ring-1 ring-cream/15"
+        >
+          {heard}
+        </p>
+      ) : null}
     <div
       data-stage="dock"
       className="pointer-events-none absolute inset-x-0 bottom-0 z-[28] flex flex-col items-center gap-3 px-[4vw] pb-[3.2vh] pt-8"
     >
-      {heard ? (
-        <p
-          data-stage="heard"
-          className="pointer-events-none max-w-[36rem] truncate rounded-full bg-ink-950/70 px-5 py-2 font-display text-[clamp(0.95rem,1.4vw,1.25rem)] text-cream/90"
-        >
-          I heard: {heard}
-        </p>
-      ) : null}
       {hint ? (
         <p className="pointer-events-none max-w-[36rem] text-center font-display text-[clamp(0.95rem,1.4vw,1.2rem)] text-amber">
           {hint}
@@ -202,6 +236,7 @@ export function RoomDock() {
         {copy.sub}
       </p>
     </div>
+    </>
   )
 }
 

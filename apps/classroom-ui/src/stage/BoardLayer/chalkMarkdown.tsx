@@ -107,10 +107,32 @@ function renderInline(text: string, keyBase: string): ReactNode[] {
 }
 
 /** Renders Core's narrow chalkboard grammar as chalk, never as raw punctuation. */
+/**
+ * Steps every size down when there is a lot on the board.
+ *
+ * Core allows 400 characters over 8 lines, and at the base scale that
+ * overflows the chalk rect and gets clipped by `overflow-hidden` on the board
+ * section -- observed live: the last line ("Giờ nói…") was sliced in half.
+ * A board a child cannot finish reading is worse than a slightly smaller one.
+ */
+function fitScale(blocks: ChalkBlock[], text: string): number {
+  const lines = blocks.reduce((n, b) => n + (b.kind === 'list' ? b.items.length : 1), 0)
+  if (text.length > 240 || lines >= 7) return 0.62
+  if (text.length > 150 || lines >= 5) return 0.78
+  return 1
+}
+
 export function ChalkMarkdown({ text, textSizeClass }: { text: string; textSizeClass: string }) {
   const blocks = parseChalkBlocks(text)
+  const scale = fitScale(blocks, text)
   return (
-    <div className="flex max-w-[26ch] flex-col items-center gap-[1.4vh] text-center">
+    <div
+      // `transform`, not `font-size`: every size below is a clamp() in rem/vw,
+      // which does not inherit from a parent em, so scaling the font size here
+      // would silently do nothing.
+      className="flex max-w-[26ch] flex-col items-center gap-[1.2vh] text-center"
+      style={{ transform: `scale(${scale})`, transformOrigin: 'center' }}
+    >
       {blocks.map((block, i) => {
         const key = `b-${i}`
         if (block.kind === 'rule') {

@@ -165,7 +165,13 @@ start_speech_if_ready() {
   # garbage. `small` is the multilingual sibling of the benchmarked `small.en`;
   # large-v3-turbo is NOT the answer here -- see the timing table in
   # services/speech/app.py (11.5s/call vs 3.35s, same accuracy on our samples).
-  export WHISPER_MODEL="${WHISPER_MODEL:-small}"
+  # Measured on this laptop, idle, one short English clip ("Hello. I am Minh."):
+  #   small  3836ms  "Hello, I am Min."     correct
+  #   base   1687ms  "Hello, I'm Min."      correct, 2.3x faster
+  #   tiny    681ms  "Hello, I'm Ben."      WRONG -- heard a different child
+  # base is the floor at which the name is still right. tiny is not a speed
+  # win, it is a wrong answer delivered sooner.
+  export WHISPER_MODEL="${WHISPER_MODEL:-base}"
   start_one speech "$SPEECH_PY" "$ROOT/services/speech/app.py"
 }
 
