@@ -92,13 +92,17 @@ def test_teacher_request_has_no_move_menu(monkeypatch: pytest.MonkeyPatch):
     assert "that yellow one" in text
     assert "banana.svg" not in text
     assert "apple.svg" not in text
-    assert "classroom_propose_move" in text
+    # The prohibition on `classroom_propose_move` was dropped from the prompt:
+    # the tool is not in mcp_server.TOOLS, so `tools/call` already rejects it.
+    # Forbidding a tool that cannot be called costs tokens on every round-trip
+    # and teaches the model a name it should never have learned.
+    assert "classroom_propose_move" not in text
     assert "how-to-teach.md" in text
     assert "units/" in text and "map.md" in text
     assert "offered_move_ids" not in text
-    assert "SKILL_CARD=" in text
-    assert "PAST=" in text
-    assert "BEATS=" in text
+    # Empty memory fields are omitted rather than sent as bare keys; the
+    # populated case is asserted immediately below.
+    assert "SKILL_CARD=" not in text
     ctx.recalled = [
         RecalledMemory(text="SKILL_CARD=colour-recognise-red name:1/2 last=near", when="now"),
         RecalledMemory(text="PAST=2026-08-16 colour-recognise-red name near", when="now"),
@@ -115,8 +119,10 @@ def test_teacher_heartbeat_is_not_student_speech(monkeypatch: pytest.MonkeyPatch
     ctx.last_interaction.detail = "[heartbeat]"
     text = render_teacher_turn(ctx, "turn-hb")
     assert "EVENT=heartbeat" in text
-    assert "STUDENT_SAID=" in text
-    assert "STUDENT_SAID=[heartbeat]" not in text
+    # An empty field is not information and is omitted; what matters is that
+    # the wake token never reaches her as something a child said.
+    assert "STUDENT_SAID" not in text
+    assert "[heartbeat]" not in text
     assert "HEARTBEAT_OK" in text
     ctx.last_interaction.detail = "[sat_down]"
     wake = render_teacher_turn(ctx, "turn-wake")

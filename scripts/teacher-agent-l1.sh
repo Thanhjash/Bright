@@ -77,6 +77,14 @@ persist_loopback() {
 load_environment() {
   persist_loopback
   HERMES_MODEL_PROVIDER="${HERMES_MODEL_PROVIDER:-custom}"
+  # Hermes has a first-class OpenRouter provider that resolves its key from
+  # OPENROUTER_API_KEY. Passing an OpenRouter base_url through provider=custom
+  # is rejected with "No LLM provider configured", so detect the host and use
+  # the real provider instead of fighting the router.
+  if [[ "${LLM_BASE_URL:-}" == *openrouter.ai* ]]; then
+    HERMES_MODEL_PROVIDER=openrouter
+    export OPENROUTER_API_KEY="${OPENROUTER_API_KEY:-${LLM_API_KEY:-}}"
+  fi
   HERMES_MODEL_BASE_URL="${HERMES_MODEL_BASE_URL:-${LLM_BASE_URL:-}}"
   HERMES_MODEL_API_KEY="${HERMES_MODEL_API_KEY:-${LLM_API_KEY:-}}"
   HERMES_MODEL_NAME="${HERMES_MODEL_NAME:-${LLM_MODEL:-}}"

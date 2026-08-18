@@ -76,6 +76,14 @@ _SCRIPT_RANGES: tuple[tuple[str, int, int], ...] = (
 )
 
 
+# Romanised Chinese wears Latin clothes. DeepSeek opened a lesson with
+# "Mǐnggué zō bànguàng" -- pinyin, so _SCRIPT_RANGES sees only "latin" and lets
+# it through. The caron and the macron are the tell: pinyin uses ǎ ǐ ǒ ǔ ě and
+# ā ē ī ō ū, and Vietnamese uses neither. Vietnamese tone marks are acute,
+# grave, hook, tilde and dot-below, none of which appear here.
+_PINYIN_TONES = frozenset("āēīōūǖáǎǐǒǔǚàǀěĂăĀĒĪŌŪǍǏǑǓĚ") - frozenset("ĂăÀàÁá")
+
+
 def _script_of(ch: str) -> str | None:
     """The writing system of one character, or None for script-neutral text.
 
@@ -110,6 +118,8 @@ def _alien_script(text: str) -> str | None:
     """The first writing system in `text` that this appliance does not teach."""
     allowed = _library_scripts()
     for ch in text:
+        if ch in _PINYIN_TONES and "han" not in allowed:
+            return "romanised chinese"
         script = _script_of(ch)
         if script and script not in allowed:
             return script

@@ -284,35 +284,53 @@ def render_teacher_turn(ctx: TurnContext, turn_id: str) -> str:
     token = " ".join(said.split())
     event = {"[sat_down]": "class_start", "[heartbeat]": "heartbeat"}.get(token)
     student_said = "" if event else said
-    lines = [
-        f"TURN_ID={turn_id}",
-        f"STUDENT_ID={student_id}",
-        f"UNIT={unit}",
-        f"EVENT={event or 'student'}",
-        f"STUDENT_SAID={student_said}",
-        f"WRITING={writing}",
-        f"IMAGES={images}",
-        f"CLIP={clip}",
-        f"EXERCISE={exercise}",
-        f"LAST_SAY={last_line}",
-        f"SKILL_CARD={skill_card}",
-        f"PAST={past}",
-        f"BEATS={beats}",
-        f"READS={reads}",
-        "If READS has no how-to-teach.md, read_library how-to-teach.md.",
-        "If READS has no skills index, read_library skills/index.md. Open a skill only when it applies.",
-        f"If READS has no map, read_library {map_path}.",
-        "If they named or pointed and READS has no keys.md, read keys.md before you judge.",
-        f"When you are checking what landed rather than teaching something new, read "
-        f"units/{unit}/exercises.md if READS has no exercises, and put the check up with "
-        f"show_exercise. They answer by speaking; the board never takes a touch.",
-        "Mix home_language and target_language from index.md. End this turn with say.",
-        "If SKILL_CARD is not empty, review what they named vs only pointed, then continue the map. Do not EXIT on the open. Point is not a name.",
-        "BEATS is the teaching sequence. STUDENT_SAID is this turn only. Do not quote old child words.",
-        "EXERCISE is what show_exercise last put on the board, and whether it is revealed. Do not call show_exercise again just to check.",
-        "read_board before EXIT. Copy TURN_ID and STUDENT_ID into every call that needs them "
-        "(STUDENT_ID into record_evidence). No invented objective ids. No classroom_propose_move.",
+
+    # Only what changed. An empty field is not information, and every line here
+    # is re-sent on every round-trip of every turn.
+    state = [
+        ("TURN_ID", turn_id),
+        ("STUDENT_ID", student_id),
+        ("UNIT", unit),
+        ("EVENT", event or "student"),
+        ("STUDENT_SAID", student_said),
+        ("WRITING", writing),
+        ("IMAGES", images),
+        ("CLIP", clip),
+        ("EXERCISE", exercise),
+        ("LAST_SAY", last_line),
+        ("SKILL_CARD", skill_card),
+        ("PAST", past),
+        ("BEATS", beats),
     ]
+    lines = [f"{key}={value}" for key, value in state if str(value).strip()]
+
+    # Core knows what she has already read, so Core resolves the conditionals.
+    # Asking the model to evaluate five "if READS has no X" rules costs tokens,
+    # costs reasoning, and produced malformed calls in the field -- it sent
+    # read_library with no `path` at all. Naming the exact paths cannot do that.
+    already = {r.strip() for r in reads.split(",") if r.strip()}
+    wanted = ["how-to-teach.md", "skills/index.md", map_path]
+    if said and not event:
+        wanted.append(f"units/{unit}/keys.md" if unit else "keys.md")
+    todo = [path for path in wanted if path not in already]
+    if todo:
+        lines.append("READ_NOW=" + ", ".join(todo))
+    if already:
+        lines.append("ALREADY_READ=" + ", ".join(sorted(already)))
+
+    if skill_card.strip():
+        # Only when there is a card to read. An instruction that does not apply
+        # this turn is noise the model still has to process.
+        lines.append(
+            "SKILL_CARD is coverage, not chat: review what they named vs only "
+            "pointed, then continue the map. A point is not a name."
+        )
+    lines.append(
+        "Put every tool call you already know you need in ONE message; a turn "
+        "costs one round-trip per message, and a child waits through each one."
+    )
+    lines.append("End this turn with say.")
+
     if event == "class_start":
         lines.append(
             "The adult started class. Begin teaching from the unit map. End this turn with say."

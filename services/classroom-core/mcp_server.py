@@ -197,7 +197,11 @@ def _schema(properties: dict[str, Any], required: list[str]) -> dict[str, Any]:
 TOOLS: tuple[dict[str, Any], ...] = (
     {
         "name": "read_library",
-        "description": "Read one markdown file from the curriculum library (relative path).",
+        "description": (
+            "Read one markdown file from the curriculum library. `path` is required "
+            "and is a path relative to the library root, exactly as READ_NOW spells "
+            "it, e.g. 'how-to-teach.md' or 'units/<unit>/map.md'."
+        ),
         "inputSchema": _schema(
             {"path": {"type": "string", "minLength": 1, "maxLength": 256}},
             ["path"],
