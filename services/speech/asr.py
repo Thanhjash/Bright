@@ -129,6 +129,26 @@ class FasterWhisperProvider:
             infer_ms=round((finished - decoded) * 1000),
         )
 
+    # NOTE -- deliberate deviation from the commissioned research.
+    #
+    # "Offline bilingual classroom speech IO for Bright" says plainly: *do not
+    # run a language detector first and then force the entire recording*, because
+    # that "converts a multilingual decoder into a one-language policy".
+    #
+    # We do detect, but we do not overrule the decoder with a free choice: we
+    # restrict its own detection to the languages this deployment declares.
+    # Measured 2026-08-18 on a 1.7 s Vietnamese clip, unrestricted:
+    #   detected es (p=0.57) -> "¡Sin chao, costa un conteí la min!"
+    # Restricted to {en, vi} the same clip lands on vi (p=1.0) and transcribes.
+    # Whisper emits a language token either way, so this does not remove a
+    # freedom the decoder had -- it removes ~100 languages the classroom does
+    # not contain.
+    #
+    # The research's real warning still stands and is NOT solved here: forcing
+    # one language per utterance cannot transcribe a sentence that switches
+    # mid-way ("con muốn nói hello"). That needs a code-switch model -- the
+    # research names NVIDIA Parakeet CTC 0.6B Vietnamese-English as challenger B
+    # -- and Bright's own mixed-child corpus to choose between them.
     def _clamp_language(self, pcm: Any, languages: Sequence[str]) -> str:
         """Detect once, then pick whichever *allowed* language scored highest.
 
