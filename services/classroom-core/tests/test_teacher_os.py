@@ -665,3 +665,38 @@ def test_the_board_refuses_a_script_this_classroom_cannot_read() -> None:
         assert fine["ok"] is True, fine
 
     asyncio.run(run())
+
+
+def test_speaking_and_chalking_are_one_call_but_not_one_string() -> None:
+    """She writes while she talks, and the words are usually different.
+
+    Speaking and chalking are one physical act, so they belong in one call --
+    that is the whole reason `board_text` lives on `say`. But a teacher says
+    "look at this one together" and writes just the word, so the two must not
+    be forced to share a string.
+
+    Everything else she can do -- a picture, a clip, an exercise -- is a
+    DIFFERENT act and stays a different tool. A merged tool was tried on
+    2026-08-19 and failed exactly there: one malformed sub-field killed the
+    speech too, and the model then repeated the call until the circuit breaker
+    took the room out of the turn. In a classroom with no adult in the loop,
+    that is a teacher standing silent in front of children.
+    """
+    core, frames = _stage_core()
+    os_ = TeacherOS(core, unit_id="gs3-u1-hello", learner_id="learner-1")
+
+    async def run() -> None:
+        spoken = await os_.execute(
+            "say", {"teacher_line": "Look at this one together.", "board_text": "banana"}
+        )
+        assert spoken["ok"] is True, spoken
+        assert os_.last_writing == "banana"
+        assert os_.last_say == "Look at this one together."
+        assert _published_props(frames)["text"] == "banana"
+
+        # Most lines need no board, and must not disturb the one already there.
+        plain = await os_.execute("say", {"teacher_line": "Now you try."})
+        assert plain["ok"] is True, plain
+        assert os_.last_writing == "banana", "a silent line must not wipe the board"
+
+    asyncio.run(run())

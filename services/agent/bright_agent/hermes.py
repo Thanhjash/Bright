@@ -348,6 +348,11 @@ def render_teacher_turn(ctx: TurnContext, turn_id: str) -> str:
         "When the period is over, or the unit's exit is met, close it yourself: "
         "open close-a-period and set closing on your last say."
     )
+    lines.append(
+        "Chalk with board_text on the same say when the class needs to SEE the "
+        "words -- usually not the words you speak: say \"look at this one together\" "
+        "and write just the word. Most lines need no board at all."
+    )
     lines.append("The turn ends when you say. Say something every turn.")
     lines.extend(volatile)
 

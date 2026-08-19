@@ -609,6 +609,22 @@ class TeacherOS:
             reason = _check_teacher_line(line)
             if reason:
                 return {"ok": False, "reason": reason}
+            # Speaking and chalking are ONE physical act -- she writes while she
+            # talks -- so they belong in one call. Everything else she can do
+            # (a picture, a clip, an exercise) is a different act and stays a
+            # different tool: if one of those is malformed, she can still speak
+            # and the lesson limps forward. A merged tool was tried on
+            # 2026-08-19 and failed exactly there: one bad sub-field killed the
+            # speech too, and a strong model then repeated the call until the
+            # circuit breaker took the room out. In an unattended classroom that
+            # is a teacher standing silent in front of children.
+            board_text = _clean_board_markdown(str(arguments.get("board_text") or ""))
+            if board_text:
+                self.last_writing = board_text
+                self.last_present = {"layout": "text", "slots": {"main": board_text}}
+                self._mark_board("writing")
+                self._push_stage()
+
             self.last_say = line
             self.last_say_at = time.time()
             # She tells us whether she just asked something. Core does not

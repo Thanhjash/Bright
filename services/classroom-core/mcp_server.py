@@ -285,6 +285,16 @@ TOOLS: tuple[dict[str, Any], ...] = (
                     "minLength": 1,
                     "maxLength": 220,
                 },
+                "board_text": {
+                    "type": "string",
+                    "maxLength": 400,
+                    "description": (
+                        "Chalk this on the board while you speak. Usually NOT the same "
+                        "words as teacher_line -- you might say \"look at this word "
+                        "together\" and write just the word. Omit it to leave the board "
+                        "alone; most lines do not need the board."
+                    ),
+                },
                 "closing": {
                     "type": "boolean",
                     "description": (
