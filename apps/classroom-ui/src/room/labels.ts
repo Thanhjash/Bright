@@ -29,6 +29,13 @@ export const ROOM_LABELS = {
   waking: { cta: 'Cô đang tới bảng', sub: '' },
   comingReady: { cta: 'Cô sắp bắt đầu', sub: 'She opens the class herself' },
   comingWaiting: { cta: 'Đang chuẩn bị lớp', sub: 'Waiting for the teacher' },
+  /**
+   * Something on the board did not render. The class sees this, so it says
+   * nothing about protocols, versions or JSON -- a child cannot act on any of
+   * that, and neither can the adult in the room. The detail goes to the
+   * console and to /teacher/status, where someone who can act on it will look.
+   */
+  boardFault: { cta: 'Bảng đang trục trặc một chút', sub: 'She keeps teaching — the board will come back' },
 } as const satisfies Record<string, RoomLabel>
 
 /** Microphone faults. Shown to the adult who can act on them, on a projector. */

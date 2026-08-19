@@ -13,6 +13,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { CORE_HTTP } from '../lib/env'
+import { ROOM_LABELS } from '../room/labels'
 import { createMicRecorder } from '../speech/micRecorder'
 import { createVoiceGate } from '../speech/voiceGate'
 import { SttError, transcribe } from '../speech/stt'
@@ -176,9 +177,7 @@ export function RoomDock() {
         ? 'bg-amber'
         : 'bg-coral'
 
-  const copy = deaf
-    ? { cta: 'Cô chưa nghe được', sub: 'The room cannot hear — check the microphone' }
-    : labelFor(phase, ready)
+  const copy = deaf ? ROOM_LABELS.deaf : labelFor(phase, ready)
 
   return (
     <>
@@ -253,23 +252,22 @@ function labelFor(phase: DockPhase, ready: boolean): { cta: string; sub: string 
   // The room listens by itself now, so nothing here may instruct anyone to
   // press, hold or release: there is no button, and a child has no keyboard.
   // Both languages, because the class reads Vietnamese and is learning English.
+  // The words live in room/labels.ts, the one file a Laos school replaces.
+  // Nothing here reads, parses or branches on the text (NS-7).
   switch (phase) {
     case 'speaking':
-      return { cta: 'Cô đang nói', sub: 'Listen' }
+      return ROOM_LABELS.speaking
     case 'hearing':
-      return { cta: 'Cô đang nghe con', sub: "I'm listening" }
+      return ROOM_LABELS.hearing
     case 'thinking':
-      return { cta: 'Cô đang nghĩ', sub: 'One moment' }
+      return ROOM_LABELS.thinking
     case 'listen':
-      return { cta: 'Tới lượt con nói', sub: 'Your turn — just speak' }
+      return ROOM_LABELS.listening
     case 'fault':
-      return { cta: 'Cô đang kiểm tra lớp', sub: 'She will start again herself' }
+      return ROOM_LABELS.fault
     case 'waking':
-      return { cta: 'Cô đang tới bảng', sub: '' }
+      return ROOM_LABELS.waking
     default:
-      return {
-        cta: ready ? 'Cô sắp bắt đầu' : 'Đang chuẩn bị lớp',
-        sub: ready ? 'She opens the class herself' : 'Waiting for the teacher',
-      }
+      return ready ? ROOM_LABELS.comingReady : ROOM_LABELS.comingWaiting
   }
 }

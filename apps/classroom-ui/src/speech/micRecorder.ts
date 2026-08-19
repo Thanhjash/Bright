@@ -16,7 +16,7 @@
  * set below Whisper's 30-second window because audio past that is discarded by
  * the model anyway.
  */
-
+import { MIC_LABELS } from '../room/labels'
 export type MicFailure =
   /** the user (or a policy) said no */
   | 'denied'
@@ -165,19 +165,9 @@ export function createMicRecorder(onDeviceFailure?: (failure: MicFailure) => voi
     } catch (cause) {
       const name = (cause as { name?: string } | null)?.name
       if (name === 'NotAllowedError' || name === 'SecurityError') {
-        throw new MicError(
-          'denied',
-          'Micro đang bị chặn. Cho phép micro cho trang này trên thanh địa chỉ rồi thử lại. '
-          + '(The microphone is blocked.)',
-          { cause },
-        )
+        throw new MicError('denied', MIC_LABELS.blocked, { cause })
       }
-      throw new MicError(
-        'unavailable',
-        'Không tìm thấy micro. Kiểm tra đã cắm chưa, và không có ứng dụng nào đang giữ nó. '
-        + '(No microphone was available.)',
-        { cause },
-      )
+      throw new MicError('unavailable', MIC_LABELS.missing, { cause })
     }
 
     failureReported = null
