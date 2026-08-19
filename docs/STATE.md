@@ -103,16 +103,24 @@ as `STUDENT_SAID` for the current turn (NS-5). No raw child speech in SQL.
 
 ## 3b. The gap, stated as the north star states it
 
-[NORTH-STAR.md](NORTH-STAR.md) §2 models the teacher's **working day**. Bright
-currently implements one box of five:
+[NORTH-STAR.md](NORTH-STAR.md) §2 models the teacher's **working day**.
+**Updated 2026-08-19 — four of five boxes now exist:**
 
 ```
 BEFORE      prepare for a period nobody has arrived at yet     ❌ absent
-ARRIVAL     notice a person, greet them                        ❌ a button
-THE PERIOD  open, teach, judge, adapt, pace, close             ⚠️ turn loop only
-CLOSE       end it herself, on time                            ❌ not modelled
+ARRIVAL     notice a person, greet them                        ✅ presence gate
+THE PERIOD  open, teach, judge, adapt, pace, close             ✅ turn loop + rhythm
+CLOSE       end it herself, on time                            ✅ say(closing)
 AFTER       write up evidence; it changes next time            ✅ evidence writes
 ```
+
+Only **BEFORE** is missing, and it is missing for one reason: nothing in the
+system knows when a class is. That is the day clock below, not a gap in the
+teaching loop.
+
+Within THE PERIOD, the rhythm is no longer a single constant: she waits ~7s
+after asking (one nudge, then the long floor), reads PERIOD_MINUTES to judge
+when time is up, and an interrupted period resumes instead of restarting.
 
 And one of three clocks is missing entirely:
 
@@ -120,7 +128,7 @@ And one of three clocks is missing entirely:
 |---|---|---|
 | Reflex < 100 ms | Core | ✅ |
 | Turn, seconds | `pulse_teacher` | ✅ built and **already running** |
-| **Day, minutes → hours** | `scheduler.py` | ⚠️ the socket is wired; **nothing is plugged into it** |
+| **Day, minutes → hours** | `scheduler.py` | ⚠️ the socket is wired; **nothing is plugged into it**. This is the last missing clock, and it is what BEFORE needs |
 
 ### How close this actually is — traced 2026-08-18
 
