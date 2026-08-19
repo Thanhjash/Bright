@@ -366,6 +366,8 @@ def render_teacher_turn(ctx: TurnContext, turn_id: str) -> str:
         wanted.insert(1, "skills/prepare-a-period/SKILL.md")
     elif event == "class_start":
         wanted.insert(1, "skills/open-a-period/SKILL.md")
+    elif event == "floor":
+        wanted.insert(1, "skills/take-the-floor/SKILL.md")
     if said and not event:
         wanted.insert(0, f"units/{unit}/keys.md" if unit else "keys.md")
         wanted.insert(1, "skills/judge-a-response/SKILL.md")
@@ -429,23 +431,9 @@ def render_teacher_turn(ctx: TurnContext, turn_id: str) -> str:
         "near and uncertain are honest answers: an honest gap is worth more "
         "than a confident guess about a child."
     )
-    if this_period.strip():
-        # She read put-up-an-exercise and exercises.md and still never called
-        # show_exercise -- twice, across whole periods. So the barrier is not
-        # knowing; it is having no shape to copy at the moment it applies. A
-        # small model imitates. THIS_PERIOD is a count of Core's own rows, and
-        # what to do about it stays hers.
-        lines.append(
-            "THIS_PERIOD counts what they have already tried. After a few rounds "
-            "on the same thing, saying it again teaches less than finding out "
-            "whether it landed. One message: show_exercise(kind, content copied "
-            "whole from the unit's exercises.md) + say(teacher_line)."
-        )
     lines.append(
-        "Running a drill, or playing a clip? Put wake_in_s on your say and the "
-        "room hands you the next beat -- that is how an activity lasts more "
-        "than one exchange. A choral round is: model it, wake in 8, listen, "
-        "model it again."
+        "wake_in_s on a say has the room hand you the next beat even if nobody "
+        "speaks -- that is how an activity lasts more than one exchange."
     )
     lines.append(
         "If your line asks the class for something, set awaiting_answer on say. "
@@ -464,11 +452,6 @@ def render_teacher_turn(ctx: TurnContext, turn_id: str) -> str:
         "not put it on the board, and a class asked to choose between things "
         "they cannot see just hears noise. BOARD=empty means they are looking "
         "at a blank projector."
-    )
-    lines.append(
-        "A turn can be YOUR move, not only a reply: play the recording, run the "
-        "class through it together again, put up an exercise from the unit's "
-        "exercises.md, change the picture, go back over the one they fumbled."
     )
     lines.append(
         "skills/index.md lists the rest of the procedures. Open one by name when "
@@ -497,29 +480,27 @@ def render_teacher_turn(ctx: TurnContext, turn_id: str) -> str:
             "with say. Do not answer HEARTBEAT_OK."
         )
     elif event == "floor":
-        # The last line she reads, on the turns where autonomy is the whole
-        # question. It used to be the heartbeat text below, whose FIRST clause
-        # offers HEARTBEAT_OK -- and Core then scored that a success, cleared
-        # the fault, and reset the silence clock, so doing nothing was the
-        # cheapest, safest, most recently-read option available. 84 heartbeats,
-        # 0 teaching moves. There is no escape hatch here because there is
-        # nothing to escape: nobody is thinking, the floor is hers.
+        # The situation, and nothing about how to teach in it. What to actually
+        # DO is `skills/take-the-floor/SKILL.md`, which READ_NOW names on this
+        # event -- NS-6: the profession is authored markdown a teacher can edit,
+        # never a string literal in a Python file only an engineer can reach.
+        #
+        # No escape hatch, because there is nothing to escape: nobody is
+        # thinking. The heartbeat text below used to serve this case, and its
+        # first clause offered HEARTBEAT_OK, which Core then scored a success --
+        # 84 heartbeats, 0 teaching moves.
         lines.append(
             "Nobody is speaking and you are not waiting for anyone -- the floor "
-            "is yours. This is the move you would make in a real classroom "
-            "while the room is quiet: run the round again with a different "
-            "picture, play the recording, put up an exercise, go back to the "
-            "one they fumbled, or start the next thing in your PLAN. Put "
-            "wake_in_s on your say to be handed the beat after this one. Do not "
-            "answer HEARTBEAT_OK -- that is for a class that is thinking, and "
-            "this is not one."
+            "is yours, and the next move is one you choose. Do not answer "
+            "HEARTBEAT_OK: that is for a class that is thinking, and this is "
+            "not one."
         )
     elif event == "heartbeat":
         lines.append(
             "You asked the class something and they have gone quiet -- they are "
             "thinking. Do not talk over them. If they still have time, reply "
             "HEARTBEAT_OK and call nothing else. If the wait has gone on too "
-            "long, help: scaffold down, or model the answer once and ask again."
+            "long, help them; skills/index.md says which procedure that is."
         )
     return "\n".join(lines)
 

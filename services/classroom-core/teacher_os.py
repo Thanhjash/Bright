@@ -1813,6 +1813,9 @@ async def pulse_teacher(core: Any, *, force: bool = False, reason: str = "tick")
     # child speaking is the one thing that brings her back, because that is a
     # class she can reach after all.
     if getattr(os_, "escalated", False):
+        # Logged once a tick on purpose: an adult reading the service log
+        # should be able to see that the room is waiting for them, not stuck.
+        log.info("pulse held: the room is waiting for the adult")
         return {
             "ok": True,
             "action": HEARTBEAT_OK,

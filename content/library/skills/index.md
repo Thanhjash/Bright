@@ -11,6 +11,7 @@ Skills are the profession — they read the same for maths as for English. The
 |---|---|
 | `prepare-a-period` | a period is about to start, or you have no plan yet |
 | `open-a-period` | the class has just started, or a child has just arrived |
+| `take-the-floor` | nobody is speaking and you are not waiting for an answer |
 | `elicit-chorally` | you want the class to produce language — always before an individual |
 | `invite-an-individual` | one child, after the class has rehearsed together |
 | `put-up-an-exercise` | you want to check what landed after a choral round |
