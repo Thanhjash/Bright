@@ -74,8 +74,15 @@ LOOK UP    read_library  search_library  read_board
 CHANGE     write_board   show_image      show_exercise  play_clip
 INTEND     plan                                         ← hers; Core never reads it
 REMEMBER   record_evidence
-SPEAK      say                                          ← ends the turn
+SPEAK      say(…, wake_in_s?)                           ← ends the turn; may ask
+                                                          the room for the next beat
 ```
+
+**Length bounds never reach the wire.** The provider serving
+`google/gemma-4-26b-a4b-it` returns HTTP 422 for the entire request on
+`maxLength` in a tool schema, while Gemini accepted the identical schema all
+day. Core validates from the same dicts and the limit arrives as prose — see
+`wire_tools()` and `test_the_wire_schema_carries_no_length_bounds`.
 
 Order is deliberate and identical in `mcp_server.TOOLS`, `hermes.TEACHER_TOOLS`
 and the config include list: a model reads `tools/list` as a narrative, and the
@@ -104,6 +111,41 @@ One census line per turn records tool names, count and `board_touched` — count
 only, no words — so a model that quietly stops bundling or stops using the board
 is visible before a term of lessons has gone by. Raw child words appear only
 as `STUDENT_SAID` for the current turn (NS-5). No raw child speech in SQL.
+
+---
+
+## 2b. What a rehearsed period actually looks like — measured 2026-08-19
+
+`scripts/rehearse-period.py` drives a scripted pupil and scores the **period**,
+not the turn, because the failure it was written for is invisible per turn.
+
+Baseline, clean database, 12 pupil turns:
+
+```
+reads      how-to-teach.md, skills/index.md, map.md, keys.md
+clips      track-05                     she DID play a recording
+images     u1l1-dialogue-a              ONE picture, never changed
+exercises  -                            show_exercise: zero
+objectives greet-and-name               she did NOT leave Period 1
+outcomes   {correct: 1, near: 1, wrong: 1}    marking is honest
+skills opened: NONE
+```
+
+An earlier run in which she taught the whole three-lesson unit in six turns
+turned out to be **ten stale `correct` rows from previous testing**: coverage
+reported the unit mastered, so advancing was the rational move. That is fixed at
+the source — see [Core is a witness](decisions/2026-08-19-core-is-a-witness.md).
+
+What was fixed the same day: skills are named by Core in `READ_NOW` on a
+witnessed event; `say(wake_in_s)` lets an activity last more than one exchange;
+`exercises.md` payloads were not the shape `show_exercise` accepts, so a copied
+block was refused and she fell back to talking; `READ_NOW` is capped at two
+files a turn, because naming four on the opening turn spent the whole call
+budget on reading and the class heard silence.
+
+**Not yet re-measured live.** The OpenRouter account is out of paid credit (402)
+and has spent its free-tier day (429). Everything above is unit- and
+integration-verified; the full-lesson run is pending model access.
 
 ---
 

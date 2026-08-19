@@ -262,6 +262,17 @@ The operational rule is the same as everywhere else in this document: **if you
 cannot point at the observations behind it, it is not knowledge about a child —
 it is the model's opinion, and it does not get stored.**
 
+**And tier 1 can be a lie.** Measured 2026-08-19: every observation the teacher
+had ever recorded was `correct` + `mode=name` — including one for a child who
+had said only "Hello", and one for a child who had said "I don't understand".
+Coverage then reported the unit mastered and she stopped teaching it. Evidence
+is now anchored to a turn Core witnessed and to a child who actually spoke, and
+each row carries the real turn id so a false one is falsifiable afterwards
+instead of unfalsifiable forever. What Core may and may not refuse is
+[the witness line](decisions/2026-08-19-core-is-a-witness.md) — the short
+version being that Core may testify *no act occurred*, never *the act was
+insufficient*.
+
 ### Where she is up to
 
 Mid-period, she must know where she is: which unit, which objective, what is on
@@ -486,6 +497,7 @@ read_board      write_board      → the chalkboard: short markdown, never HTML
 show_image      show_exercise    → asset:// ids only, never a path
 play_clip
 plan                             → HER plan for the period; Core stores, never reads
+say(wake_in_s)                   → she asks the room for her own next beat
 record_evidence                  → categorical memory, never raw chat
 say                              → one teacher line; ends the turn
 ```
@@ -590,8 +602,16 @@ Both are markdown. Neither is code. Consequences that are binding:
   Python branch, the design is wrong. `tests/test_no_unit_pedagogy.py` exists to
   make that failure loud.
 - **Skills load progressively.** Names and one-line descriptions are cheap and
-  always present; a skill's body is read only when the teacher decides it is
-  relevant — the same discipline as reading a file in a repo instead of pasting
+  always present; a skill's body is read only when it is relevant.
+  **Measured 2026-08-19: "when the teacher decides it is relevant" did not
+  work.** Across a whole period she opened the index and not one skill body,
+  through two separate prompt instructions telling her to — because choosing
+  which one applies is exactly the judgement a small model will not spend while
+  a child is waiting. Core now *names* one in `READ_NOW`, selected by a
+  **witnessed event** (a period opening, an answer arriving), the same way it
+  already names `keys.md`. Core reads not a word of what is inside, so this is
+  path resolution and not pedagogy. Without it NS-6 is decorative: 490 authored
+  lines nothing ever reads — the same discipline as reading a file in a repo instead of pasting
   the whole repo into context. A 4B-class model cannot hold a profession in its
   system prompt, and should not have to.
 - **A skill is authorable by a teacher, not an engineer.** That is the whole
