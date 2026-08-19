@@ -143,9 +143,26 @@ block was refused and she fell back to talking; `READ_NOW` is capped at two
 files a turn, because naming four on the opening turn spent the whole call
 budget on reading and the class heard silence.
 
-**Not yet re-measured live.** The OpenRouter account is out of paid credit (402)
-and has spent its free-tier day (429). Everything above is unit- and
-integration-verified; the full-lesson run is pending model access.
+**Not yet re-measured live.** The OpenRouter account is out of paid credit
+(HTTP 402) *and* has spent its 50 free-tier requests for the day (HTTP 429,
+resets 00:00 UTC). Everything above is unit- and integration-verified;
+`tests/test_a_whole_period.py` drives a complete period — plan, recording,
+three pictures, an exercise, honest marking, a scheduled drill beat, her own
+close — through the real machinery with only the brain replaced.
+
+**To re-run the live lesson when there is model access:**
+
+```bash
+# .env is currently pointed at the free tier, which is also the family that
+# ships to the miniPC:  LLM_MODEL=google/gemma-4-26b-a4b-it:free
+./scripts/teacher-up.sh
+node tests/node/teacher_room_e2e.mjs                    # she opens the class
+python3 scripts/rehearse-period.py --pupil scripts/pupils/lesson1.txt
+node tests/node/projector_reads_as_a_classroom.mjs      # no model needed
+```
+
+The two Playwright runs need `PLAYWRIGHT_CORE` and `CHROME_PATH` set — see
+`.tools/run-headless.sh`.
 
 ---
 
