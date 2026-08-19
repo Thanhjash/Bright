@@ -641,6 +641,38 @@ def create_app(settings: Settings | None = None, core: Core | None = None) -> Fa
         got = await core_.jobs.prepare_next({})
         return got or {"ok": False, "error": "no prepare seam wired"}
 
+    @app.post("/teacher/pause")
+    async def teacher_pause(body: dict[str, Any] | None = None) -> dict[str, Any]:
+        """The adult holds the lesson.
+
+        NORTH-STAR §1: the facilitator is the safety authority in the room, and
+        that has been a sentence with no mechanism behind it. Every button on
+        /control sent a WebSocket frame that was not in CLIENT_EVENTS, so it was
+        rejected before any handler -- and there was no handler to reject it to.
+        """
+        core_ = get_core()
+        core_.paused_by_adult = {
+            "reason": str((body or {}).get("reason") or "facilitator_pause"),
+            "at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+        }
+        log.warning("[control] the adult paused the lesson")
+        return {"ok": True, "paused": core_.paused_by_adult}
+
+    @app.post("/teacher/resume")
+    async def teacher_resume() -> dict[str, Any]:
+        """The adult gives the room back. Also the only thing that clears an
+        escalation: she called for a person, and a person answering is the
+        event that ends it. A machine deciding it has waited long enough would
+        be the machine taking the role back."""
+        core_ = get_core()
+        core_.paused_by_adult = None
+        core_.escalation = None
+        os_ = getattr(core_, "teacher_os", None)
+        if os_ is not None:
+            os_.escalated = False
+        log.warning("[control] the adult resumed the lesson")
+        return {"ok": True}
+
     def readiness() -> tuple[dict[str, Any], bool]:
         """Return the product-facing readiness snapshot and verdict."""
         core_ = get_core()

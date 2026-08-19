@@ -153,3 +153,87 @@ def test_units_are_discovered_not_named(tmp_path: Path) -> None:
 
     assert list_units(root=root) == ["gs3-u1-hello"]
     assert list_units(root=tmp_path / "nothing-here") == []
+
+
+def test_the_profession_names_no_language_and_no_subject() -> None:
+    """NS-7: the deployment declares itself; software never names a language.
+
+    `how-to-teach.md` is CONDUCT, which NS-6 calls portable across every
+    subject, and `skills/` is the profession. Neither may name English,
+    Vietnamese, or a subject -- a school in Laos teaching maths replaces
+    `index.md` and adds unit files, and touches nothing here.
+
+    Reviewed 2026-08-20 and found in breach in five places, the worst a
+    verbatim child-facing script: *"I'm your AI English friend!"*. No test
+    looked at `content/` at all -- `test_no_unit_pedagogy.py` scans three
+    source files -- so the abstraction the same file already used ten lines
+    further down had simply not been applied to the rest of it.
+
+    `index.md` is exempt: naming the languages is precisely what it is for.
+    """
+    import re
+
+    from library import LIBRARY_ROOT
+
+    NAMED = ("english", "vietnamese", "maths", "mathematics", "h'mông", "hmong")
+    files = [LIBRARY_ROOT / "how-to-teach.md", LIBRARY_ROOT / "skills" / "index.md"]
+    files += sorted(LIBRARY_ROOT.glob("skills/*/SKILL.md"))
+
+    offenders = []
+    for path in files:
+        body = path.read_text(encoding="utf-8").lower()
+        for word in NAMED:
+            if re.search(rf"(?<![a-z]){re.escape(word)}(?![a-z])", body):
+                offenders.append(f"{path.relative_to(LIBRARY_ROOT)}: {word!r}")
+    assert not offenders, (
+        "the portable profession names a language or a subject: "
+        + "; ".join(offenders)
+        + ". Use target_language / school_language / home_language, which "
+        "index.md declares and how-to-teach.md already uses."
+    )
+
+
+def test_the_deployment_is_the_only_place_that_names_a_language() -> None:
+    """The other half of the same rule: `index.md` MUST name them, or the
+    abstraction above points at nothing."""
+    from library import LIBRARY_ROOT
+
+    body = (LIBRARY_ROOT / "index.md").read_text(encoding="utf-8").lower()
+    for field in ("home_language", "school_language", "target_language"):
+        assert field in body, f"index.md must declare {field}"
+
+
+def test_the_deployment_declares_its_own_day() -> None:
+    """NS-7 lists `timetable` among the things a deployment declares, and until
+    2026-08-20 nothing in the system knew what time a class was.
+
+    Worse than missing: the nightly preparation -- the one job justified
+    entirely by "nobody is waiting" -- ran on a hardcoded hour with the
+    scheduler pinned to UTC. 03:00 UTC is ten in the morning in Hà Giang, in
+    the middle of school. It had almost certainly never once run when it was
+    meant to.
+    """
+    from library import timetable
+
+    got = timetable()
+    assert got["timezone"], "the appliance must know which clock it keeps"
+    assert got["prepare_at"], "preparation needs an hour that is not hardcoded"
+    assert ":" in got["prepare_at"]
+
+    hour = int(got["prepare_at"].split(":")[0])
+    assert 0 <= hour <= 6, (
+        f"prepare_at is {got['prepare_at']} local -- preparation is only "
+        "allowed to be slow because nobody is waiting, which stops being true "
+        "once the building is open"
+    )
+
+
+def test_a_room_with_no_declared_day_still_runs(tmp_path) -> None:
+    """A school that has not filled the timetable in is not a broken school.
+    The room still opens when someone appears; it simply cannot know in advance
+    that a class is coming."""
+    from library import timetable
+
+    (tmp_path / "index.md").write_text("# no timetable here\n", encoding="utf-8")
+    got = timetable(root=tmp_path)
+    assert got == {"timezone": None, "prepare_at": None, "periods": []}

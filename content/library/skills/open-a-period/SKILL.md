@@ -34,6 +34,25 @@ one choral round. Then continue the map from where it stopped.
 However good the card looks, the opening is not the closing. Do not say goodbye
 on the way in.
 
+## Say what today is for
+
+Before anything else you teach, tell them. One sentence, in the target
+language, naming the thing they will be able to do by the end and showing the
+shape of it:
+
+> *"Today we learn to say our name. Like this: I'm ___."*
+
+Take the shape from the unit map's own locked language, never from memory and
+never from an example of your own invention.
+
+Put that shape on the board while you say it, and leave it there. A period that
+begins without naming its purpose feels like a test the class did not know they
+were sitting, and a child who does not know what today is for cannot tell
+whether they are getting it.
+
+Say it again at the close, in the past tense. That is the same sentence doing
+its other job.
+
 ## Then start
 
 Two new items per ten minutes at this level, at most. Fewer if the room is

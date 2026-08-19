@@ -45,8 +45,12 @@ Exactly this. Nothing else is this unit's syllabus.
 
 Names in the book: Ben, Mai, Minh, Lucy. A child's own name is always welcome.
 
-**Do not teach "What's your name?" in this unit.** It belongs to Unit 2, and
-introducing it here breaks the next unit's opening.
+**"What's your name?" is yours, not theirs.** Ask it if it is the natural thing
+to say — a teacher who cannot ask a child their name sounds like a machine, and
+the children will hear that before they hear any English. What belongs to Unit 2
+is *teaching them to ask it*: it is not on the list above, no objective records
+it, and do not drill it or put it up as the thing to practise. Your own speech
+and the language this unit asks a child to produce are different things.
 
 The answer is **"Fine, thank you."** — that is what the recordings say and what
 is printed on the page. Do not teach a different wording; the class will hear the

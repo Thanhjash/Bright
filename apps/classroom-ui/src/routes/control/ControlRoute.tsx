@@ -39,7 +39,7 @@ export function ControlRoute() {
           <div className="flex min-h-0 flex-col gap-4 lg:overflow-y-auto">
             <StatusPanel />
             {!useRunningSession() ? <SetupPanel value={setup} onChange={setSetup} /> : null}
-            <CommandBar setup={setup} />
+            <CommandBar />
           </div>
         </main>
       </div>

@@ -29,6 +29,16 @@ from apscheduler.triggers.interval import IntervalTrigger
 
 from modes import AgentProbe, null_probe
 
+
+def _declared_timetable() -> dict[str, Any]:
+    """What the deployment says about its own day. Missing is not an error."""
+    try:
+        from library import timetable
+
+        return timetable()
+    except Exception:  # noqa: BLE001 -- a room with no declaration still runs
+        return {"timezone": None, "prepare_at": None, "periods": []}
+
 log = logging.getLogger("classroom_core.scheduler")
 
 SummarizeFn = Callable[[str, list[dict[str, Any]]], Awaitable[dict[str, Any] | None] | dict[str, Any] | None]
@@ -80,7 +90,21 @@ class BackgroundJobs:
         self.summary_delay_s = summary_delay_s
         self.prepare_next_hour = prepare_next_hour
         self.recheck_after_s = recheck_after_s
-        self.scheduler = AsyncIOScheduler(timezone="UTC")
+        # The deployment declares its own clock (NS-7). Until 2026-08-20 this
+        # was pinned to UTC with a hardcoded hour, so the nightly preparation --
+        # the one job justified entirely by "nobody is waiting" -- fired at
+        # 03:00 UTC, which in the first deployment is ten in the morning, in the
+        # middle of school. It had almost certainly never once run when it was
+        # meant to.
+        declared = _declared_timetable()
+        self.timezone = declared["timezone"] or "UTC"
+        if declared["prepare_at"]:
+            hour, minute = declared["prepare_at"].split(":")
+            self.prepare_next_hour = int(hour)
+            self.prepare_next_minute = int(minute)
+        else:
+            self.prepare_next_minute = 0
+        self.scheduler = AsyncIOScheduler(timezone=self.timezone)
         self.started = False
         # A live turn that failed already demoted the mode without waiting for
         # the interval; the way back should not have to wait for it either.
@@ -107,7 +131,7 @@ class BackgroundJobs:
         )
         self.scheduler.add_job(
             self.prepare_next,
-            CronTrigger(hour=self.prepare_next_hour, minute=0),
+            CronTrigger(hour=self.prepare_next_hour, minute=self.prepare_next_minute),
             id="prepare_next",
             replace_existing=True,
             max_instances=1,

@@ -4,7 +4,7 @@ Each skill is one professional thing you know how to do. This index is always in
 front of you; open a skill with `read_library skills/<name>/SKILL.md` when it
 applies. Do not open one you do not need.
 
-Skills are the profession — they read the same for maths as for English. The
+Skills are the profession — they read the same whatever subject is being taught. The
 **unit map** is what you are teaching today. Never confuse them.
 
 | Skill | When |

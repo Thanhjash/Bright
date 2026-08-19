@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
+from typing import Any
 
 from config import REPO_ROOT
 
@@ -110,6 +111,39 @@ def list_units(*, root: Path | None = None) -> list[str]:
     if not base.is_dir():
         return []
     return sorted(d.name for d in base.iterdir() if d.is_dir() and any(d.glob("*.md")))
+
+
+_TZ = re.compile(r"^-\s*`?timezone:\s*([A-Za-z0-9_+\-/]+)`?", re.M)
+_PREPARE_AT = re.compile(r"^-\s*`?prepare_at:\s*([0-2]?\d:[0-5]\d)`?", re.M)
+_PERIODS = re.compile(r"^-\s*`?periods:\s*([0-9:,\s]*)`?", re.M)
+
+
+def timetable(*, root: Path | None = None) -> dict[str, Any]:
+    """When this school's periods are, as the deployment declares them.
+
+    NS-7: the deployment declares itself, and a timetable is on the list of
+    things it declares. Until 2026-08-20 nothing in the system knew what time a
+    class was -- `REOPEN_AFTER_CLOSE_S = 600` was the entire stand-in for a
+    school day, and the nightly preparation ran on a hardcoded hour in UTC,
+    which in the first deployment is ten in the morning.
+
+    Parsed, never interpreted. Core uses it to set a clock; it reads no meaning
+    into the numbers, and an empty or missing declaration is not an error -- the
+    room simply falls back to opening when someone appears.
+    """
+    index = (root or LIBRARY_ROOT) / "index.md"
+    try:
+        text = index.read_text(encoding="utf-8")
+    except OSError:
+        return {"timezone": None, "prepare_at": None, "periods": []}
+    tz = _TZ.search(text)
+    at = _PREPARE_AT.search(text)
+    periods = _PERIODS.search(text)
+    return {
+        "timezone": tz.group(1) if tz else None,
+        "prepare_at": at.group(1) if at else None,
+        "periods": [p.strip() for p in (periods.group(1) if periods else "").split(",") if p.strip()],
+    }
 
 
 def unit_catalog(unit_id: str, *, root: Path | None = None) -> dict[str, list[str]]:

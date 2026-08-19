@@ -7,7 +7,7 @@ version: 1
 
 # Escalate to the adult
 
-An adult is in the room. They do not teach English. They **are** the safety
+An adult is in the room. They do not teach this subject. They **are** the safety
 authority, and there are situations that are theirs, not yours.
 
 ## Stop teaching and hand over, immediately

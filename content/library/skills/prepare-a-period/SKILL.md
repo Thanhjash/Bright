@@ -54,7 +54,7 @@ Look at the map's material table and decide **which** picture and **which**
 recording each phase uses. A period that shows one picture for an hour is a
 period the class stopped looking at after ten minutes.
 
-The recordings are not decoration. A child in a room with no English speaker
+The recordings are not decoration. A child in a room with no other speaker of it
 needs to hear a voice that is not yours saying the same words — that is what the
 recordings are for, and it is why the map names one for nearly every activity.
 

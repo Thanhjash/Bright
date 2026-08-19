@@ -27,5 +27,18 @@ instruction.
 | `gs3-u1-hello` | `units/gs3-u1-hello/map.md` | Grade 3 Pre-A1 — greeting, name, wellbeing, goodbye |
 
 Do not invent a unit that is not listed here.
+
+## Timetable
+
+When this school's periods happen, and which clock the appliance keeps. The
+teacher does not read this — the room does, so it knows when to prepare.
+
+- `timezone: Asia/Ho_Chi_Minh`
+- `prepare_at: 04:30` — local, before anyone is in the building
+- `periods: 09:00, 14:00` — local
+
+Change these four lines to move the school day. A blank `periods` list means
+nobody has declared one yet: the room still opens when someone appears, it
+simply cannot know in advance that a class is coming.
 The unit map is the syllabus for target-language words. Other talk is allowed; it
 is not new syllabus.

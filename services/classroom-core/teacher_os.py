@@ -1683,6 +1683,7 @@ def teacher_status_payload(core: Any) -> dict[str, Any]:
         # The one thing on this page that is not observability: she has stopped
         # teaching and is asking for a person.
         "escalation": getattr(core, "escalation", None),
+        "pausedByAdult": getattr(core, "paused_by_adult", None),
     }
 
 
@@ -1812,6 +1813,18 @@ async def pulse_teacher(core: Any, *, force: bool = False, reason: str = "tick")
     # and therefore an alarm nobody reads. The room stays exactly as it is; a
     # child speaking is the one thing that brings her back, because that is a
     # class she can reach after all.
+    # The adult has taken the room. Nothing the teacher does may reach it until
+    # a person gives it back -- that is what "the facilitator is the safety
+    # authority" means when it is a mechanism rather than a sentence.
+    if getattr(core, "paused_by_adult", None):
+        return {
+            "ok": True,
+            "action": HEARTBEAT_OK,
+            "phase": "fault",
+            "reason": "paused_by_the_adult",
+            "silenceMs": int(silence * 1000),
+        }
+
     if getattr(os_, "escalated", False):
         # Logged once a tick on purpose: an adult reading the service log
         # should be able to see that the room is waiting for them, not stuck.
