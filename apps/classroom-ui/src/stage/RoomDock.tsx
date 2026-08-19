@@ -241,22 +241,27 @@ export function RoomDock() {
 }
 
 function labelFor(phase: DockPhase, ready: boolean): { cta: string; sub: string } {
+  // Whose turn is it? That is the only question this chrome answers, and in a
+  // classroom it is the one thing a child cannot work out from the board alone.
+  // The room listens by itself now, so nothing here may instruct anyone to
+  // press, hold or release: there is no button, and a child has no keyboard.
+  // Both languages, because the class reads Vietnamese and is learning English.
   switch (phase) {
-    case 'waking':
-      return { cta: 'The teacher is coming to the board', sub: '' }
     case 'speaking':
-      return { cta: 'Listen', sub: 'Wait until she finishes' }
+      return { cta: 'Cô đang nói', sub: 'Listen' }
     case 'hearing':
-      return { cta: 'Listening…', sub: 'Release when you are done' }
+      return { cta: 'Cô đang nghe con', sub: "I'm listening" }
     case 'thinking':
-      return { cta: 'Thinking…', sub: 'Stay with the board' }
+      return { cta: 'Cô đang nghĩ', sub: 'One moment' }
     case 'listen':
-      return { cta: 'Hold to speak', sub: 'Spacebar works too' }
+      return { cta: 'Tới lượt con nói', sub: 'Your turn — just speak' }
     case 'fault':
-      return { cta: 'The teacher is checking the room', sub: 'She will start again herself' }
+      return { cta: 'Cô đang kiểm tra lớp', sub: 'She will start again herself' }
+    case 'waking':
+      return { cta: 'Cô đang tới bảng', sub: '' }
     default:
       return {
-        cta: ready ? 'The teacher is coming' : 'Waking the room',
+        cta: ready ? 'Cô sắp bắt đầu' : 'Đang chuẩn bị lớp',
         sub: ready ? 'She opens the class herself' : 'Waiting for the teacher',
       }
   }

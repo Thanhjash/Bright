@@ -130,7 +130,11 @@ export function ChalkMarkdown({ text, textSizeClass }: { text: string; textSizeC
       // `transform`, not `font-size`: every size below is a clamp() in rem/vw,
       // which does not inherit from a parent em, so scaling the font size here
       // would silently do nothing.
-      className="flex max-w-[26ch] flex-col items-center gap-[1.2vh] text-center"
+      // Width in %, never `ch`: `ch` on this wrapper resolves against the inherited
+      // 16px, not the clamped board size, so `26ch` was ~208px on a ~1050px board
+      // and broke "Fine, thank you." across three lines. SubtitleBar carries the
+      // same warning; it was learned there first.
+      className="flex w-full max-w-[92%] flex-col items-center gap-[1.4vh] text-center"
       style={{ transform: `scale(${scale})`, transformOrigin: 'center' }}
     >
       {blocks.map((block, i) => {

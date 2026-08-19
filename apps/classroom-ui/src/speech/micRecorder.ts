@@ -148,7 +148,8 @@ export function createMicRecorder(onDeviceFailure?: (failure: MicFailure) => voi
     if (typeof MediaRecorder === 'undefined' || !navigator.mediaDevices?.getUserMedia) {
       throw new MicError(
         'unsupported',
-        'This browser cannot record audio here. A microphone needs https:// or localhost.',
+        'Trình duyệt này không ghi âm được ở đây — cần https:// hoặc localhost. '
+        + '(This browser cannot record audio here.)',
       )
     }
 
@@ -166,13 +167,15 @@ export function createMicRecorder(onDeviceFailure?: (failure: MicFailure) => voi
       if (name === 'NotAllowedError' || name === 'SecurityError') {
         throw new MicError(
           'denied',
-          'The microphone is blocked. Allow it for this page in the browser address bar, then try again.',
+          'Micro đang bị chặn. Cho phép micro cho trang này trên thanh địa chỉ rồi thử lại. '
+          + '(The microphone is blocked.)',
           { cause },
         )
       }
       throw new MicError(
         'unavailable',
-        'No microphone was available. Check it is plugged in and not held by another app.',
+        'Không tìm thấy micro. Kiểm tra đã cắm chưa, và không có ứng dụng nào đang giữ nó. '
+        + '(No microphone was available.)',
         { cause },
       )
     }
