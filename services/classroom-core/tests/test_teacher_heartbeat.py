@@ -230,3 +230,39 @@ def test_a_statement_gets_the_long_wait(monkeypatch) -> None:
     pulse = asyncio.run(pulse_teacher(core))
     assert fired == [], "no nudge is owed after a statement"
     assert pulse["action"] == teacher_os.HEARTBEAT_OK
+
+
+def test_an_interrupted_period_resumes_instead_of_starting_over(monkeypatch) -> None:
+    """Restart the teacher, never the lesson.
+
+    Pull the power mid-period and the room comes back. If she greets the class
+    a second time, a child watching learns that this is a machine. The open
+    session row is how the room remembers there was a lesson in progress, and
+    `[heartbeat]` tells her to look up and carry on rather than open a class
+    she is already teaching.
+    """
+    fired: list[str] = []
+
+    async def fake_turn(core, text):
+        fired.append(text)
+        return {"ok": True, "say": "Where were we — Fine, thank you."}
+
+    monkeypatch.setattr(teacher_os, "handle_teacher_turn", fake_turn)
+    monkeypatch.setattr(teacher_os, "hermes_up", lambda: True)
+    monkeypatch.setattr(teacher_os, "speech_up", lambda: True)
+    monkeypatch.setattr(teacher_os, "list_units", lambda: ["gs3-u1-hello"], raising=False)
+
+    interrupted = {"id": "sess-cut", "student_id": "learner-1", "lesson_id": "gs3-u1-hello"}
+    core = SimpleNamespace(
+        teacher_os=None,
+        capability_leases=SimpleNamespace(expire=lambda: None, stage_owner="stage-1"),
+        settings=None,
+        db=SimpleNamespace(find_open_session=lambda: interrupted),
+        store=SimpleNamespace(mode="OFFLINE"),
+    )
+
+    asyncio.run(pulse_teacher(core))
+
+    assert fired == ["[heartbeat]"], "she must look up, not greet the class again"
+    assert core.session_id == "sess-cut", "the same period, not a new one"
+    assert core.teacher_os.unit_id == "gs3-u1-hello"

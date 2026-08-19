@@ -160,3 +160,36 @@ def test_observation_mode_is_optional_and_migrated(tmp_path):
     assert again.migrate() == []
     assert again.list_observations(student_id="s01")[1]["mode"] == "point"
     again.close()
+
+
+def test_only_a_recently_interrupted_period_is_resumable(tmp_path) -> None:
+    """Yesterday's unclosed lesson is abandoned, not interrupted.
+
+    The live database holds dozens of sessions nobody ever closed. Resuming the
+    newest of those on a morning boot would drop a class into the middle of a
+    lesson from days ago, which is worse than starting fresh. The age bound is
+    what separates "the power went out five minutes ago" from "this row was
+    left behind".
+    """
+    import datetime as dt
+
+    from db import open_database
+
+    database = open_database(tmp_path / "bright.db")
+    fresh = database.start_session(student_id="learner-1", lesson_id="gs3-u1-hello")
+
+    found = database.find_open_session()
+    assert found is not None and found["id"] == fresh
+
+    # Same row, but the window is now narrower than its age.
+    assert database.find_open_session(within_s=0.0) is None
+
+    # An old unclosed row is never offered, however many there are.
+    stale = dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=3)
+    database.start_session(student_id="learner-1", lesson_id="gs3-u1-hello", session_id="old")
+    with database._lock:  # noqa: SLF001 -- the test is about what the query returns
+        database._conn.execute(
+            "UPDATE sessions SET started_at = ? WHERE id = 'old'", (stale.isoformat(),)
+        )
+    again = database.find_open_session()
+    assert again is not None and again["id"] == fresh, "the old row must never win"

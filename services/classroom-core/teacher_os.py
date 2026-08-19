@@ -736,6 +736,36 @@ def _close_open_teacher_sessions(db: Any, *, learner_id: str, unit_id: str) -> N
         ender(session_id)
 
 
+def resume_teacher_session(core: Any) -> TeacherOS | None:
+    """Re-attach to a period that was interrupted, instead of starting a new one.
+
+    "Restart the teacher, never the lesson." A child watching the screen should
+    not be able to tell that anything happened; greeting the class a second time
+    is the tell that this is a machine.
+
+    What survives is what lives in the database: which unit, which learner, and
+    every observation already recorded -- so SKILL_CARD and PAST come back
+    intact and she continues from what they actually did. What does not survive
+    is the board and the in-RAM beats. She is told to look up, not to open a
+    class, so she reorients rather than re-greets.
+    """
+    db = getattr(core, "db", None)
+    finder = getattr(db, "find_open_session", None)
+    if not callable(finder):
+        return None
+    row = finder()
+    if not row:
+        return None
+    unit_id = str(row.get("lesson_id") or "")
+    learner_id = str(row.get("student_id") or "")
+    if not unit_id or not learner_id:
+        return None
+    core.student_id = learner_id
+    core.session_id = row["id"]
+    core.teacher_os = TeacherOS(core, unit_id=unit_id, learner_id=learner_id)
+    return core.teacher_os
+
+
 def start_teacher_session(core: Any, *, unit_id: str, learner_id: str, learner_name: str) -> TeacherOS:
     core.db.upsert_student(learner_id, learner_name, learner_name)
     _close_open_teacher_sessions(core.db, learner_id=learner_id, unit_id=unit_id)
@@ -1033,10 +1063,17 @@ async def _open_on_presence(core: Any, *, reason: str) -> dict[str, Any] | None:
     learner_id = str(getattr(settings, "default_learner_id", "") or "learner-1")
     learner_name = str(getattr(settings, "default_learner_name", "") or "Minh")
     try:
-        start_teacher_session(
-            core, unit_id=units[0], learner_id=learner_id, learner_name=learner_name
-        )
-        result = await handle_teacher_turn(core, "[sat_down]")
+        # An interrupted period is resumed, not replaced. `[heartbeat]` tells her
+        # to look up and carry on; `[sat_down]` would make her greet a class she
+        # is already teaching.
+        resumed = resume_teacher_session(core)
+        opening = "[heartbeat]"
+        if resumed is None:
+            start_teacher_session(
+                core, unit_id=units[0], learner_id=learner_id, learner_name=learner_name
+            )
+            opening = "[sat_down]"
+        result = await handle_teacher_turn(core, opening)
     except Exception as exc:  # noqa: BLE001 -- the room outlives the brain
         core.teacher_os = None
         core.last_teacher_fault = {"error": f"could not open the class: {exc}"}

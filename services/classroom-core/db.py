@@ -13,6 +13,7 @@ from __future__ import annotations
 import json
 import math
 import re
+import datetime as _dt
 import sqlite3
 import threading
 import time
@@ -314,6 +315,29 @@ class Database:
             )
             self._conn.commit()
         return session_id
+
+    def find_open_session(self, *, within_s: float = 7200.0) -> dict[str, Any] | None:
+        """The most recent session nobody closed, if it is recent enough to resume.
+
+        A period that ends properly is closed. A period that ends because the
+        power went out is not, and that row is how the room remembers there was
+        a lesson in progress.
+
+        The age bound is the whole point. This database currently holds 33
+        unclosed sessions, most of them days old -- those are abandoned, not
+        interrupted. Switching the appliance on in the morning and continuing
+        yesterday's lesson mid-sentence would be worse than starting fresh. Two
+        hours is longer than any period and shorter than overnight.
+        """
+        cutoff = _dt.datetime.now(_dt.timezone.utc) - _dt.timedelta(seconds=within_s)
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT id, student_id, lesson_id, started_at FROM sessions "
+                "WHERE ended_at IS NULL AND started_at >= ? "
+                "ORDER BY started_at DESC LIMIT 1",
+                (cutoff.isoformat(),),
+            ).fetchone()
+        return dict(row) if row else None
 
     def end_session(self, session_id: str, mode: str | None = None) -> dict[str, Any] | None:
         with self._lock:
