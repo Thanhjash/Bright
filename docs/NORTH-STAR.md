@@ -47,7 +47,7 @@ analogy is load-bearing rather than decorative:
 |---|---|
 | a large repo it did not write | a curriculum library: syllabus maps, keys, images, clips |
 | reads a map, then opens the file it needs | `index.md` → unit `map.md` → `keys.md`, only when needed |
-| a small set of typed tools that really act | 8 tools: read/search library, board, image, clip, say, evidence |
+| a small set of typed tools that really act | 9 tools: read/search library, board, image, exercise, clip, say, evidence |
 | skills — reusable procedures it looks up | how to open a period, how to elicit, how to scaffold down |
 | talks to a human directly | talks to a child directly |
 | a harness that keeps running between tasks | a working day: prepare, teach, mark, prepare again |
@@ -93,7 +93,7 @@ final event name, and they reorder two things:
 
 **1. Running locally on Intel hardware is part of the argument, not a later phase.**
 
-Phase 1 deliberately used a hosted model (MiMo) to take plumbing off the critical path, and that was right for building. But an entry to an *Intel* programme that calls a cloud API has thrown away its own strongest claim. **OpenVINO + Gemma 4 on an Intel edge device is the showcase**, and SP-1/SP-2 are promoted from background plumbing to part of the submission.
+Phase 1 deliberately used a hosted model to take plumbing off the critical path, and that was right for building. (MiMo, then Gemini 3.7 Flash — both bridges, neither the destination.) But an entry to an *Intel* programme that calls a cloud API has thrown away its own strongest claim. **OpenVINO + Gemma 4 on an Intel edge device is the showcase**, and SP-1/SP-2 are promoted from background plumbing to part of the submission.
 
 The architecture is ready for it: Bright calls the Hermes sidecar rather than a
 provider endpoint. Hosted → local changes the pinned Hermes classroom profile

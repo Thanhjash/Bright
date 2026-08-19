@@ -96,7 +96,7 @@ as `STUDENT_SAID` for the current turn (NS-5). No raw child speech in SQL.
 | 3 Voice | ✅ wiring closed 2026-08-18 | Stage speaks `say` via Piper; ASR → `/teacher/turn`. Piper picks en/vi **per line by script**, which is not real bilingual — see §7 |
 | 4 Body + room | 🔴 **NOW** | Live2D + wall + board on Stage: done. **Autonomy: not done.** RoomDock buttons survive only until the presence gate replaces them |
 | 5 Class of 20–40 | ⬜ | fairness, camera → `student_id` only |
-| 6 Local Gemma | ⬜ | swap the Hermes provider profile. Hosted MiMo now, **max 1 concurrent turn** (429 on overlap) |
+| 6 Local Gemma | ⬜ | swap the Hermes provider profile. Hosted **Gemini 3.7 Flash via OpenRouter** now (§3e). MiMo's one-concurrent-run limit is gone with it — `max_concurrent_runs` is 4, and Core's `_TURN_LOCK` is what keeps her from speaking twice |
 | 7 Giveaway | ⬜ | Hiyori licence, locale-as-config, consent, appliance image |
 
 ---
@@ -142,7 +142,8 @@ run with no human involved:
 | **The pulse already knows how to stay quiet** | `pulse_teacher` returns `HEARTBEAT_OK` without spending a model turn unless silence ≥ 45 s and ≥ 20 s since the last pulse (`teacher_os.py:634-672`) |
 | **A day-clock socket already exists** | `scheduler.py:108-114` runs a `prepare_next` cron at 03:00 via APScheduler — and it calls `AgentSeam.prepare_next`, which is **a no-op by default** (`scheduler.py:43-53`). The hook was built and never filled |
 
-**The single blocker:** `start_teacher_session()` has exactly one caller —
+**The single blocker — RESOLVED 2026-08-19, kept for the trace:**
+`start_teacher_session()` had exactly one caller —
 `POST /teacher/session` (`app.py:747-755`) — and the only thing that sends that
 request in the kiosk path is the `Start class` button
 (`RoomDock.tsx:100`, `onClick` at line 242).
@@ -152,8 +153,8 @@ and does nothing, because no session exists and only a human click can create
 one. Closing that is roughly: *if no session, and the stage lease is held, and
 Hermes and speech are up → open the session and fire `[sat_down]` yourself.*
 
-The rest of Layer 4 autonomy — open-mic instead of hold-to-talk — is genuinely
-new work: `micRecorder.ts` is strictly press/release, and `captureEndpoint.ts:4`
+The rest of Layer 4 autonomy — open-mic instead of hold-to-talk — **is done**
+(`voiceGate.ts`). When this was written it was: `micRecorder.ts` is strictly press/release, and `captureEndpoint.ts:4`
 explicitly disclaims being VAD. **No VAD exists anywhere.**
 
 ---
@@ -562,7 +563,7 @@ Whisper). Vite HMR covers the UI. **One hosted turn at a time.**
 ## 6. Map of the live code
 
 ```text
-services/classroom-core/teacher_os.py   TeacherOS, 8 tools, pulse_teacher, status
+services/classroom-core/teacher_os.py   TeacherOS, 9 tools, pulse_teacher, close_period, status
 services/classroom-core/library.py      read/search library, unit_catalog
 services/classroom-core/app.py          /teacher/*, heartbeat loop in lifespan
 services/classroom-core/bus.py          refuses unknown EventType before seq
@@ -617,7 +618,10 @@ There is no second teacher in the tree any more. See §3c.
   pedagogy. The bilingual research recommends VieNeu-TTS v3 Turbo (Apache-2.0,
   ONNX INT8) as the replacement. **This is a pending decision, not open
   research** — see [research/external/](research/external/).
-- **Whisper `small.en` invents words** on clips under ~1 s (`BANANO`, `Happy!`).
+- **Whisper invents words** on clips under ~1 s (`BANANO`, `Happy!`) — the voice
+  gate discards anything shorter. The resident model is `base` (multilingual)
+  since 2026-08-19: `small` was 2.3x slower for the same words, `tiny` heard
+  "Ben" for "Minh".
 - **Hiyori: use the unpacked runtime**, `models/live2d/hiyori_pro_zh/runtime/…model3.json`
   (~4.8 MB). The 33 MB zip triggers a Chrome "Network error" on Windows.
 - **Live2D must not remount** when `scene.update` arrives — `AvatarLayer` stays
@@ -654,5 +658,5 @@ Do not create a branch, commit, or merge to `main` unless the owner asks.
 | Avatar licence — Hiyori is Live2D sample material, and donating at scale is distribution | Unresolved. Layer 7. Demo first, per owner |
 | Fallback language hardcoded to Vietnamese | `index.md` declares `home_language` / `target_language`; the TTS/ASR side does not honour it yet |
 | Ecological validity — passing every gate while failing with real children | Unaddressed |
-| MiMo API key rotation before any public demo | Pending |
-| Whisper on real child L2 speech | No model validated for this; `small.en` is a demo choice, not a production claim |
+| API key rotation before any public demo | **Two now.** The MiMo key, and an OpenRouter key that was pasted into a chat transcript on 2026-08-19. Rotate both |
+| Whisper on real child L2 speech | No model validated for this; `base` is a demo choice, not a production claim. Mixed VI/EN in one sentence fails outright — "Chuối" is heard as "Joy" |
