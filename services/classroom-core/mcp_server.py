@@ -26,6 +26,7 @@ ToolExecutor = Callable[[str, dict[str, Any]], Awaitable[Any]]
 
 PROTOCOL_VERSION = "2025-06-18"
 MUTATING_TOOLS = frozenset({
+    "call_the_adult",
     "plan",
     "write_board",
     "show_image",
@@ -422,6 +423,51 @@ TOOLS: tuple[dict[str, Any], ...] = (
                 },
             },
             ["student_id", "objective_id", "outcome"],
+        ),
+    },
+    {
+        "name": "call_the_adult",
+        # The eleventh tool, and NS-3 says that needs a decision doc:
+        # docs/decisions/2026-08-19-she-can-call-the-adult.md
+        #
+        # NORTH-STAR §1 has listed five situations since the beginning where she
+        # must stop teaching and hand the room over -- danger, a child in
+        # distress, a disclosure, broken equipment, a class she cannot reach --
+        # and `skills/escalate-to-the-adult/SKILL.md` tells her exactly how. She
+        # has never been able to do it: `say` reaches the loudspeaker and the
+        # board reaches the projector, and neither reaches the adult. Doctrine
+        # with no hand attached is not a safety policy, it is a wish.
+        "description": (
+            "Stop teaching and hand the room to the adult. Use it for danger, a "
+            "child in distress, anything a child discloses that worries you, "
+            "equipment you have already retried once, or a class you cannot "
+            "reach however you change the pacing. Read "
+            "skills/escalate-to-the-adult/SKILL.md first -- it says what to say "
+            "to the class while you wait. The adult sees this, the class does "
+            "not; keep the class's own language for say."
+        ),
+        "inputSchema": _schema(
+            {
+                "reason": {
+                    "type": "string",
+                    "enum": [
+                        "danger",
+                        "distress",
+                        "disclosure",
+                        "equipment",
+                        "cannot_reach_the_class",
+                    ],
+                },
+                "detail": {
+                    "type": "string",
+                    "description": (
+                        "One short line for the adult, in the school language, "
+                        "saying what to do. Never a child's words, never a name. "
+                        "At most 200 characters."
+                    ),
+                },
+            },
+            ["reason"],
         ),
     },
     {

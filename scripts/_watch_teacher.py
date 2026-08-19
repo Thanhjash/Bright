@@ -37,6 +37,11 @@ if plan:
         plan, 96, subsequent_indent=" " * 18
     )
 
+esc = d.get("escalation")
+if esc:
+    out += ("\n  \033[31m*** CO GOI NGUOI LON ***\033[0m " + str(esc.get("reason"))
+            + "\n  " + textwrap.fill(str(esc.get("detail") or ""), 96, subsequent_indent=" " * 2))
+
 fault = d.get("lastFault")
 if fault:
     out += "\n  \033[31mloi:\033[0m " + json.dumps(fault, ensure_ascii=False)[:180]

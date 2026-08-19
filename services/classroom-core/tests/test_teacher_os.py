@@ -1202,3 +1202,59 @@ def test_the_authored_exercises_are_the_call_itself() -> None:
             assert got["ok"] is True, (block.get("kind"), got)
 
     asyncio.run(run())
+
+
+def test_she_can_finally_call_the_adult() -> None:
+    """NORTH-STAR §1 has listed five hand-over situations since the beginning
+    and `skills/escalate-to-the-adult` tells her exactly how -- and until now
+    she had no hand that reached a person. `say` goes to the loudspeaker and
+    the board goes to the projector; neither is the adult.
+
+    Doctrine with no mechanism is not a safety policy, it is a wish.
+    """
+    core, database = _plan_core()
+    os_ = TeacherOS(core, unit_id="gs3-u1-hello", learner_id="learner-1")
+
+    async def run() -> None:
+        bad = await os_.execute("call_the_adult", {"reason": "because I am bored"})
+        assert bad["ok"] is False, "the list is short on purpose"
+
+        got = await os_.execute("call_the_adult", {
+            "reason": "cannot_reach_the_class",
+            "detail": "Lớp không trả lời. Cô nhờ thầy cô xem giúp ạ.",
+        })
+        assert got["ok"] is True, got
+        assert core.escalation["reason"] == "cannot_reach_the_class"
+        assert os_.escalated is True
+
+        # She stopped -- but the period is NOT closed. A lesson handed to an
+        # adult is not a period this class has had, and the room must still
+        # show what the children were looking at when the adult walks in.
+        assert getattr(core, "teacher_os", "untouched") == "untouched"
+        assert getattr(core, "last_close_at", None) is None
+
+        # And she can still speak, because the class needs one calm line.
+        after = await os_.execute("say", {"teacher_line": "Let's wait a moment together."})
+        assert after["ok"] is True
+
+    asyncio.run(run())
+    database.close()
+
+
+def test_an_escalation_carries_no_child_words() -> None:
+    """The adult is a person reading a line on a laptop, and everything else
+    she writes is checked for URLs, markup and grade words. This is not the
+    exception."""
+    core, database = _plan_core()
+    os_ = TeacherOS(core, unit_id="gs3-u1-hello", learner_id="learner-1")
+
+    async def run() -> None:
+        got = await os_.execute("call_the_adult", {
+            "reason": "equipment",
+            "detail": "see http://fix.example.com for the manual",
+        })
+        assert got["ok"] is False
+        assert "URL" in got["reason"] or "markup" in got["reason"]
+
+    asyncio.run(run())
+    database.close()

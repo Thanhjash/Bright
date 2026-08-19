@@ -315,7 +315,7 @@ someone appears, not yet when the clock says nine.
 | **Notices presence** | a person appears → she greets them. No button, no adult | ✅ the presence gate opens the class when the Stage claims the audio lease; an interrupted period is resumed, not re-greeted |
 | **Knows the time** | a timetable in the deployment says when periods are; she wakes for them | ❌ nothing in the system knows what time class is |
 | **Prepares before class** | reads the roster and prior evidence, picks the period's purpose, stages material — *before* anyone arrives | ✅ 2026-08-19. She reads the unit and the class's evidence and writes the period's plan; she cannot speak or reach the projector while the room is empty, [enforced in Core, not asked for in a prompt](decisions/2026-08-19-prepare-is-ours-not-hermes.md) |
-| **Runs a whole period unattended** | paces it, handles the unscripted, closes it herself | ⚠️ turn loop works; pacing and closing unproven |
+| **Runs a whole period unattended** | paces it, handles the unscripted, closes it herself | ❌ **measured 2026-08-19 and worse than "unproven"**: with nobody answering she re-models the same three phrases, invents asset ids, and reaches for `close-a-period` having run out of ideas. She now has `NO_REPLY` to notice it and [a way to call the adult](decisions/2026-08-19-she-can-call-the-adult.md), which the doctrine has demanded from the start |
 | **Judges and remembers** | categorical evidence per learner, not a transcript | ✅ built (`observations` → `SKILL_CARD`) |
 | **Recovers on its own** | model death, bad tool call, lost I/O → notify + restart, keep the room | ⚠️ policy locked; restart path partly built |
 | **Manages a class, not a learner** | fair callouts, attributed evidence, 20–40 children | ❌ Layer 5 |
@@ -489,7 +489,7 @@ The agent does **not** generate HTML. It does **not** call `eval()`. It does not
 
 The live agent uses a **small typed tool set** against the library and the
 room, the way a coding agent uses read/search/edit/run against a repo. There are
-ten, and adding an eleventh requires a decision doc:
+eleven, and adding a twelfth requires a decision doc:
 
 ```
 read_library    search_library   → maps, units, keys, asset:// ids
@@ -499,6 +499,7 @@ play_clip
 plan                             → HER plan for the period; Core stores, never reads
 say(wake_in_s)                   → she asks the room for her own next beat
 record_evidence                  → categorical memory, never raw chat
+call_the_adult                   → stop teaching, hand the room to a person
 say                              → one teacher line; ends the turn
 ```
 

@@ -512,3 +512,42 @@ def test_the_nudge_budget_belongs_to_the_question_not_the_sentence() -> None:
         assert os_.nudged_once is False
 
     asyncio.run(run())
+
+
+def test_an_alarm_that_repeats_every_twelve_seconds_is_an_alarm_nobody_reads() -> None:
+    """Once she has handed the room over, she waits.
+
+    Measured 2026-08-19: she called the adult on three consecutive floor turns,
+    twelve seconds apart. The room must stop giving her the floor -- she is not
+    teaching now, she is waiting for a person, and only a person ends that.
+
+    A child speaking DOES end it, because a class that answers is a class she
+    could reach after all.
+    """
+    calls: list[str] = []
+
+    async def fake_turn(core, text):
+        calls.append(text)
+        return {"ok": True, "say": "Let's wait together.", "action": "say"}
+
+    import pytest  # noqa: PLC0415
+
+    os_ = TeacherOS(SimpleNamespace(), unit_id="gs3-u1-hello", learner_id="learner-1")
+    os_.last_say_at = time.time() - 60
+    os_.started_at = time.time() - 200
+    os_.escalated = True
+    core = SimpleNamespace(teacher_os=os_, capability_leases=None)
+
+    monkey = pytest.MonkeyPatch()
+    monkey.setattr(teacher_os, "handle_teacher_turn", fake_turn)
+    monkey.setattr(teacher_os, "hermes_up", lambda: True)
+    try:
+        got = asyncio.run(pulse_teacher(core, reason="tick"))
+        assert calls == [], "she must not be handed the floor while waiting"
+        assert got["reason"] == "waiting_for_the_adult"
+
+        # The room is NOT torn down -- the adult walks into what the children
+        # were looking at, and the period can be picked up.
+        assert core.teacher_os is os_
+    finally:
+        monkey.undo()

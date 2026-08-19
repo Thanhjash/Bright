@@ -33,7 +33,7 @@ def _system_prompt_tools(text: str) -> set[str]:
 
 def test_every_tool_name_agrees_across_mcp_server_and_config_yaml() -> None:
     mcp_names = {tool["name"] for tool in TOOLS}
-    assert len(mcp_names) == 10
+    assert len(mcp_names) == 11
 
     text = CONFIG_YAML.read_text(encoding="utf-8")
     assert mcp_names == _include_list(text)

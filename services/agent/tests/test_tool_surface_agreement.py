@@ -29,7 +29,7 @@ def _system_prompt_tools(text: str) -> set[str]:
 
 
 def test_every_tool_name_agrees_across_hermes_and_config_yaml() -> None:
-    assert len(TEACHER_TOOLS) == 10
+    assert len(TEACHER_TOOLS) == 11
 
     text = CONFIG_YAML.read_text(encoding="utf-8")
     assert set(TEACHER_TOOLS) == _include_list(text)

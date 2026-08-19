@@ -47,6 +47,7 @@ TEACHER_TOOLS = frozenset(
         "play_clip",
         "plan",
         "record_evidence",
+        "call_the_adult",
         "say",
     }
 )
@@ -256,6 +257,8 @@ def render_teacher_turn(ctx: TurnContext, turn_id: str) -> str:
     periods_held = ""
     this_period = ""
     board_empty = ""
+    no_reply = ""
+    assets = ""
     student_id = ""
     writing = ""
     images = ""
@@ -276,6 +279,10 @@ def render_teacher_turn(ctx: TurnContext, turn_id: str) -> str:
             this_period = text[len("THIS_PERIOD=") :]
         elif text.startswith("BOARD=empty"):
             board_empty = "empty"
+        elif text.startswith("NO_REPLY="):
+            no_reply = text[len("NO_REPLY=") :]
+        elif text.startswith("ASSETS="):
+            assets = text[len("ASSETS=") :]
         elif text.startswith("student_id="):
             student_id = text[len("student_id=") :]
         elif text.startswith("writing="):
@@ -316,6 +323,8 @@ def render_teacher_turn(ctx: TurnContext, turn_id: str) -> str:
         ("PERIOD_MINUTES", period_minutes),
         ("THIS_PERIOD", this_period),
         ("BOARD", board_empty),
+        ("NO_REPLY", no_reply),
+        ("ASSETS", assets),
         ("UNIT", unit),
         ("EVENT", event or "student"),
         ("STUDENT_SAID", student_said),
@@ -365,6 +374,14 @@ def render_teacher_turn(ctx: TurnContext, turn_id: str) -> str:
     # 2026-08-19, show_exercise was called zero times across two whole periods.
     # THIS_PERIOD is a count of Core's own rows, so naming the skill on it is
     # a path lookup on a witnessed fact -- Core still reads none of it.
+    if no_reply.strip():
+        # `elicit-chorally` already says "Almost nobody -> do not repeat a third
+        # time. Something is missing, not quiet." She has never opened it,
+        # because nothing named it -- and NO_REPLY is the first witnessed fact
+        # that can. `escalate-to-the-adult` is the other half: the north star
+        # lists class-wide disengagement as a hand-over, not a thing to out-talk.
+        wanted.insert(0, "skills/elicit-chorally/SKILL.md")
+        wanted.insert(1, "skills/recover-a-wobble/SKILL.md")
     if this_period.strip():
         wanted.append("skills/put-up-an-exercise/SKILL.md")
         if unit:
@@ -374,13 +391,23 @@ def render_teacher_turn(ctx: TurnContext, turn_id: str) -> str:
     # other end of it; measured 2026-08-19, naming four files on the opening
     # turn spent the whole budget on reading and she never said anything at
     # all -- the class heard silence while she did her homework. The rest are
-    # still named, one turn later, and ALREADY_READ stops her re-reading.
+    # still named, one turn later, and OPENED_EARLIER keeps the list honest.
     if len(todo) > 2:
         lines.append("READ_NOW=" + ", ".join(todo[:2]) + " (the rest next turn)")
     elif todo:
         lines.append("READ_NOW=" + ", ".join(todo))
     if already:
-        lines.append("ALREADY_READ=" + ", ".join(sorted(already)))
+        # NOT "you have these". The hot path runs `store: false`, so a file's
+        # contents survive exactly one turn -- by turn two she holds none of it.
+        # Presenting the list as settled was an assertion about her memory that
+        # is false by construction, and it is why she invented asset ids: she
+        # remembered that pictures existed, not what they were called, and was
+        # told she had already looked them up. Core witnessed the read; it did
+        # not witness retention.
+        lines.append(
+            "OPENED_EARLIER=" + ", ".join(sorted(already))
+            + " -- you no longer hold these; re-open one whenever you need what is inside."
+        )
 
     if skill_card.strip():
         # Only when there is a card to read. An instruction that does not apply

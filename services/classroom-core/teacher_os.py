@@ -21,6 +21,11 @@ from library import LibraryError, read_library, search_library, unit_catalog
 log = logging.getLogger("bright.teacher")
 
 OUTCOMES = frozenset({"correct", "wrong", "uncertain", "near"})
+# NORTH-STAR §1. Short on purpose: a teacher who escalates constantly is not
+# autonomous either.
+ESCALATION_REASONS = frozenset(
+    {"danger", "distress", "disclosure", "equipment", "cannot_reach_the_class"}
+)
 MODES = frozenset({"name", "point", "ask"})
 ATTEMPT_MODES = frozenset({"name", "point"})
 # Case-insensitive. A class-wide answer is not one learner's evidence.
@@ -466,6 +471,12 @@ class TeacherOS:
     turn_refusals: list[str] = field(default_factory=list)
     turn_board_skips: list[str] = field(default_factory=list)
     turn_chalked: bool = False
+    # Moves she has made since anyone last answered her. Reset by a child
+    # speaking, incremented by each say she gets out.
+    moves_since_reply: int = 0
+    # She has handed the room to the adult and is waiting. The period is NOT
+    # closed -- it is paused, and only a person ends it.
+    escalated: bool = False
     # WHICH file, WHICH track, WHICH picture -- not just how many tools. Tool
     # names alone could not answer the first question the failing lesson raised:
     # did she open keys.md before judging, or never open it at all?
@@ -823,6 +834,7 @@ class TeacherOS:
 
             self.last_say = line
             self.last_say_at = time.time()
+            self.moves_since_reply += 1
             # She tells us whether she just asked something. Core does not
             # guess it from a question mark -- "Now you try" expects an answer
             # and carries no "?", while "How are you?" modelled aloud does not.
@@ -894,6 +906,34 @@ class TeacherOS:
             revision = saver(session_id, self.unit_id, text)
             self.plan = text
             return {"ok": True, "applied": True, "revision": revision}
+
+        if name == "call_the_adult":
+            reason = str(arguments.get("reason") or "").strip()
+            if reason not in ESCALATION_REASONS:
+                return {"ok": False, "reason": "reason must be one of " + ", ".join(sorted(ESCALATION_REASONS))}
+            detail = " ".join(str(arguments.get("detail") or "").split())[:200]
+            # The same free-text rules as everything else she writes -- an
+            # escalation is read by a person, and a URL or a grade word has no
+            # business in one either.
+            if detail:
+                bad = _check_free_text(detail, min_len=1, max_len=200, label="detail")
+                if bad:
+                    return {"ok": False, "reason": bad}
+            core = self.core
+            core.escalation = {
+                "reason": reason,
+                "detail": detail,
+                "unitId": self.unit_id,
+                "at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+            }
+            # She stops. NOT a period close: closing writes an ended session and
+            # counts as a period held, and a lesson abandoned to the adult is
+            # not a period this class has had. The room stays exactly as it is
+            # -- board, picture, session -- so the adult walks into what the
+            # children were looking at, and so the period can be resumed.
+            self.escalated = True
+            log.warning("teacher escalation reason=%s unit=%s", reason, self.unit_id)
+            return {"ok": True, "applied": True}
 
         if name == "record_evidence":
             # Core is a WITNESS, not a marker. Every refusal below is a fact
@@ -1266,6 +1306,42 @@ def _session_recall(os_: TeacherOS) -> list[Any]:
                 when="now",
             )
         )
+    # How long she has been talking to nobody. Core holds both marks already;
+    # this is the same species of fact as PERIOD_MINUTES.
+    #
+    # Without it a silent room is invisible to her: LAST_SAY is the whole of her
+    # injected self-history, so every turn where nobody answers is her FIRST
+    # such turn. Measured 2026-08-19, four minutes of silence: she cycled the
+    # same three phrases -- "Hello. I'm Ben." / "Hello! I'm..." / "Hello, I'm..."
+    # -- and then reached for close-a-period, because she had genuinely run out
+    # of ideas she could remember having had.
+    #
+    # It is also what makes the north star's escalation trigger -- "class-wide
+    # disengagement that pacing changes have not fixed" -- expressible at all.
+    if os_.last_student_at:
+        quiet_min = int((time.time() - os_.last_student_at) / 60)
+    else:
+        quiet_min = int((time.time() - os_.started_at) / 60)
+    if os_.moves_since_reply >= 2:
+        notes.append(
+            RecalledMemory(
+                text=f"NO_REPLY={os_.moves_since_reply} moves, {quiet_min} min",
+                when="now",
+            )
+        )
+    # Exactly the asset:// ids this unit prints, read off disk. She is stateless
+    # between turns (`store: false`), so the map's material table is gone from
+    # her context the moment the turn ends -- she remembers that pictures exist
+    # and not what they are called, and invents ids Core then refuses. Listing
+    # what is really there is a fact Core witnessed; which one to show is hers.
+    catalog = os_.catalog()
+    if catalog["assets"]:
+        notes.append(
+            RecalledMemory(
+                text="ASSETS=" + ", ".join(a[len("asset://"):] for a in catalog["assets"]),
+                when="now",
+            )
+        )
     notes.append(RecalledMemory(text="student_id=" + os_.learner_id, when="now"))
     # An empty board is a fact, and it was invisible: the writing/images/exercise
     # lines are omitted when empty, so "nothing is up" and "I was not told" read
@@ -1437,6 +1513,9 @@ async def _handle_teacher_turn(core: Any, text: str) -> dict[str, Any]:
     os_.turn_student_text = "" if event else text
     if event is None:
         os_.last_student_at = time.time()
+        os_.moves_since_reply = 0
+        # Someone answered. Whatever she could not reach, she has reached now.
+        os_.escalated = False
     prior_say = os_.last_say
     said = None
     error = None
@@ -1601,6 +1680,9 @@ def teacher_status_payload(core: Any) -> dict[str, Any]:
         # A scheduled job that fails at 03:00 and tells nobody is the
         # papered-over failure the doctrine calls a defect.
         "lastPrepare": getattr(core, "last_prepare", None),
+        # The one thing on this page that is not observability: she has stopped
+        # teaching and is asking for a person.
+        "escalation": getattr(core, "escalation", None),
     }
 
 
@@ -1724,6 +1806,21 @@ async def pulse_teacher(core: Any, *, force: bool = False, reason: str = "tick")
     # Whichever silence this is, Core witnessed which -- she set awaiting_answer
     # herself on her last say. Core is not deciding what to teach; it is
     # reporting which of two states it saw, the same way it reports BOARD=empty.
+    # She has handed the room over and is waiting for a person. Do not keep
+    # giving her the floor: measured 2026-08-19, she called the adult on three
+    # consecutive turns, which is an alarm that repeats every twelve seconds
+    # and therefore an alarm nobody reads. The room stays exactly as it is; a
+    # child speaking is the one thing that brings her back, because that is a
+    # class she can reach after all.
+    if getattr(os_, "escalated", False):
+        return {
+            "ok": True,
+            "action": HEARTBEAT_OK,
+            "phase": "fault",
+            "reason": "waiting_for_the_adult",
+            "silenceMs": int(silence * 1000),
+        }
+
     # She asked, the early nudge went, and still nothing came back. A real
     # teacher does not stand at the front of the room waiting indefinitely --
     # she models the answer, runs it chorally, tries another way. So the wait
