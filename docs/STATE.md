@@ -1,6 +1,6 @@
 # STATE — the one living document
 
-**Updated:** 2026-08-18
+**Updated:** 2026-08-19
 **This file is the only living execution doc.** It replaces the former
 `HANDOFF.md`, `autonomous-classroom-roadmap.md` and `teacher-agent-status.md`,
 all three of which now sit in [`archive/`](archive/).
@@ -57,7 +57,7 @@ not for instruction. Never cook from it.
 content/library/       curriculum — index, conduct, skills, units
 content/media/         asset://… images + clips
 Hermes sidecar :8642   the teacher
-Bright MCP             her hands — 9 typed tools
+Bright MCP             her hands — 10 typed tools
 classroom-core :8004   the OS — I/O, clock, DB, reject, restart
 Stage /classroom       THE room. Board + speaker + body. The only page children see
 packages/airi-bridge   the body (Live2D + lipsync) — nothing else
@@ -591,7 +591,7 @@ Whisper). Vite HMR covers the UI. **One hosted turn at a time.**
 ## 6. Map of the live code
 
 ```text
-services/classroom-core/teacher_os.py   TeacherOS, 9 tools, pulse_teacher, close_period, status
+services/classroom-core/teacher_os.py   TeacherOS, 10 tools, pulse_teacher, prepare_period, close_period, status
 services/classroom-core/library.py      read/search library, unit_catalog
 services/classroom-core/app.py          /teacher/*, heartbeat loop in lifespan
 services/classroom-core/bus.py          refuses unknown EventType before seq

@@ -6,7 +6,7 @@
 > **The bible does not track execution.** What is actually wired, and what to do
 > next, lives in exactly one place: [STATE.md](STATE.md).
 
-**Updated:** 2026-08-18
+**Updated:** 2026-08-19
 **Status:** direction locked — a real teacher agent (library + typed tools), not a lesson graph
 
 **Standing doctrine:**
@@ -47,7 +47,7 @@ analogy is load-bearing rather than decorative:
 |---|---|
 | a large repo it did not write | a curriculum library: syllabus maps, keys, images, clips |
 | reads a map, then opens the file it needs | `index.md` → unit `map.md` → `keys.md`, only when needed |
-| a small set of typed tools that really act | 9 tools: read/search library, board, image, exercise, clip, say, evidence |
+| a small set of typed tools that really act | 10 tools: read/search library, board, image, exercise, clip, **her own plan**, say, evidence |
 | skills — reusable procedures it looks up | how to open a period, how to elicit, how to scaffold down |
 | talks to a human directly | talks to a child directly |
 | a harness that keeps running between tasks | a working day: prepare, teach, mark, prepare again |
@@ -63,7 +63,7 @@ Everything she is made of, and the one rule that governs each part:
 | Part | What it is | The rule |
 |---|---|---|
 | **Brain** | Hermes, running a small model — hosted now, local Gemma later | replaceable. The contract around it is not (NS-4) |
-| **Hands** | 9 typed tools over MCP: read/search the library, board, image, exercise, clip, say, evidence | Core executes them and may refuse. She never touches a filesystem, a URL or the DOM (NS-3) |
+| **Hands** | 10 typed tools over MCP: read/search the library, board, image, exercise, clip, plan, say, evidence | Core executes them and may refuse. She never touches a filesystem, a URL or the DOM (NS-3) |
 | **Library** | the curriculum: unit maps, keys, practice, media | markdown is the truth. An index is disposable |
 | **Skills** | how to do professional things — open, elicit, scaffold, judge, close, prepare | data, not code. Portable across every subject (NS-6) |
 | **Playbook** | the active unit's map — what this period is for | a map she reads, never a graph she walks |
@@ -202,9 +202,12 @@ AFTER       She writes up what she saw as evidence, and that changes what
             she prepares next time.
 ```
 
-**Only "THE PERIOD" exists today**, and only while a human holds it open. Every
-other box is currently performed by a person or not at all. Closing those boxes
-*is* the product.
+**All five boxes now exist** (2026-08-19), and none of them needs a human to
+hold it open: the presence gate opens the class, the nightly job prepares it,
+`say(closing)` ends it, and evidence writes update what she prepares next. What
+is still missing is not a box but a **timetable** — she prepares at 03:00 and on
+demand, and wakes when someone appears, but nothing yet tells her *"class is at
+nine."* Progress against each box: [STATE.md](STATE.md) §the working day.
 
 ### She is a process, not a function
 
@@ -263,8 +266,10 @@ it is the model's opinion, and it does not get stored.**
 
 Mid-period, she must know where she is: which unit, which objective, what is on
 the board, what she has already tried, who has answered and who has not. Today
-that lives partly in Core's session state and partly as `BEATS` — the last few
-teaching moves — in RAM.
+that lives partly in Core's session state and, since 2026-08-19, as **`PLAN` —
+the plan she wrote for the period herself**, in SQL. It replaced `BEATS`, a RAM
+log Core kept *about* her from which she had to re-infer her own intention every
+turn. Core stores the plan and hands it back; Core never reads it.
 
 RAM is not good enough for a room where the power cuts. NS-5 says classroom
 state lives in the database, and the consequence is a release gate we have not
@@ -283,23 +288,22 @@ NS-5, and it is what lets her resume without a chat log.
 |---|---|---|---|---|
 | **Reflex** | < 100 ms | Core, deterministic | a tap highlights, audio starts, a timer ticks | ✅ built |
 | **Turn** | seconds | the teacher pulse | someone spoke, or the room has been quiet long enough that a teacher would look up | ✅ built, unproven in a room |
-| **Day** | minutes → hours | the scheduler | class is in twenty minutes; prepare. Class is over; mark it up | ⚠️ **a cron hook exists and does nothing** |
+| **Day** | minutes → hours | the scheduler | prepare the period before anyone arrives | ✅ built 2026-08-19 — `prepare_next` at 03:00, or `POST /teacher/prepare`. ⚠️ still fires on a fixed hour, not on a declared timetable |
 
-The day clock is the missing organ. Without it there is no *before* and no
-*after*, so the teacher can only ever react. **A teacher who cannot begin
-anything is not autonomous, however good her answers are.**
-
-The turn clock already ticks every ten seconds in production, beside a room that
-has already announced itself, and does nothing — because only a button can open
-a session. That is the whole distance between what is built and what is meant.
+The day clock was the missing organ, and it now runs: preparation happens
+before the room fills, and it is the only place an offline 4B model is allowed to
+be slow. What it still lacks is the **timetable** — it knows *how* to prepare,
+not *when* class is. **A teacher who cannot begin anything is not autonomous,
+however good her answers are**, and beginning is now half solved: she begins when
+someone appears, not yet when the clock says nine.
 
 ### What autonomy demands
 
 | Requirement | What it means concretely | Where we are |
 |---|---|---|
-| **Notices presence** | a person appears → she greets them. No button, no adult | ⚠️ presence *is* sensed (the Stage claims the audio lease by itself), but only a button opens the class |
+| **Notices presence** | a person appears → she greets them. No button, no adult | ✅ the presence gate opens the class when the Stage claims the audio lease; an interrupted period is resumed, not re-greeted |
 | **Knows the time** | a timetable in the deployment says when periods are; she wakes for them | ❌ nothing in the system knows what time class is |
-| **Prepares before class** | reads the roster and prior evidence, picks the period's purpose, stages material — *before* anyone arrives | ⚠️ a nightly `prepare_next` cron hook exists and is **a no-op**. The socket is wired; nothing is plugged in |
+| **Prepares before class** | reads the roster and prior evidence, picks the period's purpose, stages material — *before* anyone arrives | ✅ 2026-08-19. She reads the unit and the class's evidence and writes the period's plan; she cannot speak or reach the projector while the room is empty, [enforced in Core, not asked for in a prompt](decisions/2026-08-19-prepare-is-ours-not-hermes.md) |
 | **Runs a whole period unattended** | paces it, handles the unscripted, closes it herself | ⚠️ turn loop works; pacing and closing unproven |
 | **Judges and remembers** | categorical evidence per learner, not a transcript | ✅ built (`observations` → `SKILL_CARD`) |
 | **Recovers on its own** | model death, bad tool call, lost I/O → notify + restart, keep the room | ⚠️ policy locked; restart path partly built |
