@@ -520,8 +520,25 @@ Hermes, AIRI, and OpenVINO are all *swappable*. Those five are not.
 Classroom state lives in `classroom-core` (a schema'd DB), not in a model's context window. The model is *shown* state; it does not *own* state.
 
 Consequence: restarting the agent mid-class does not lose Core's live lesson state.
-Core now persists a controller checkpoint, but startup restore is not implemented;
-power-loss/Core-restart resume remains a release gate.
+**Implemented 2026-08-19:** the presence gate re-attaches to an open session and
+tells her to look up rather than greet a class she is already teaching. Bounded
+to two hours — a session left open on Tuesday is abandoned, not interrupted.
+
+#### What she heard, and what she thinks it meant, are two different records
+
+Bright owns unusually strong context: the unit's vocabulary, what is on the
+board, the exercise she just put up, the question she just asked. That context
+may inform how a response is **interpreted**. It must never rewrite the
+**transcript**.
+
+The failure this forbids is specific and quiet. A decoder biased toward the
+curriculum hears a child fumble and writes down the word the lesson expected —
+and then evidence of mastery exists for something the child never said. The
+child is marked as knowing it, the teacher moves on, and nobody finds out.
+
+So: keep the raw transcript as the raw transcript. Interpretation is a separate
+step with a separate name, and where the two disagree, the disagreement is the
+information — it is how you learn a child is struggling.
 
 ### NS-6 — The profession is data, not code
 

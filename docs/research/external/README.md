@@ -5,8 +5,19 @@ becomes binding only when a `decisions/` file adopts it.
 
 | Document | Adopted in |
 |---|---|
-| Offline bilingual classroom speech IO | pending — VieNeu-TTS is a decision waiting to be taken |
+| Offline bilingual classroom speech IO | ASR adopted (`faster-whisper small` multilingual, running). TTS **not** adopted — see below |
+| Code-switching inside one sentence | corrects the brief above; nothing adopted yet |
 | Practice, Assessment, and Evidence for an Autonomous Whole-Class Teacher | [evidence-and-practice](../../decisions/2026-08-18-evidence-and-practice.md) |
+
+## VieNeu-TTS is a candidate, not a solution
+
+The first survey called it "recommended". The follow-up downgraded it to
+**"must pass Bright acceptance testing"**, and that is the status to quote.
+Its engineering fit is excellent and its licence is unusually clean, but the
+exact thing Bright needs — that an intra-sentence VI↔EN switch keeps the same
+perceived speaker, accent and prosody — has not been independently
+demonstrated. Do not write "adopted" anywhere until it has.
+
 
 ## Lost: *Storage, Memory, and Retrieval for Bright*
 

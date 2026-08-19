@@ -36,9 +36,23 @@ Two failures we have measured or reasoned to:
    she mispronounces her own pedagogy. (`docs/STATE.md` §7.)
 2. **ASR.** Whisper emits one language token per utterance. We restrict
    detection to the languages the deployment declares, which fixed a real
-   failure (a Vietnamese clip decoded as Spanish), but it still forces **one**
-   language across the whole clip. A mid-sentence switch cannot be transcribed
-   correctly by construction.
+   failure (a Vietnamese clip decoded as Spanish).
+
+   > **Correction, 2026-08-19.** An earlier version of this brief said a
+   > mid-sentence switch "cannot be transcribed correctly by construction".
+   > **That is wrong**, and the answering research said so: the language token
+   > *conditions* decoding, it is not a vocabulary gate, and multilingual
+   > Whisper can emit English words after Vietnamese ones. The true statement
+   > is: *utterance-level conditioning can bias code-switched decoding, and
+   > Bright's mixed-speech accuracy is unmeasured.*
+   >
+   > Measured here on one concatenated clip ("This is a banana. Chuối. This is
+   > a banana."): auto and our clamp both gave *"This is a banana. **Joy**,
+   > this is a banana."*; forced `en` gave the same text ~1 s faster; forced
+   > `vi` lost the English entirely. So the clamp costs a detection pass and
+   > buys nothing measurable here, and mixed recognition fails under every
+   > policy. Concatenated Piper audio is not a person code-switching, so treat
+   > this as indicative, not evidence.
 
 ## The questions
 

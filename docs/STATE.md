@@ -257,6 +257,88 @@ It warms up to roughly a minute. **Moving off the token-plan tier is the single
 biggest remaining improvement, and it is a purchasing decision, not a code
 change.** Do not spend engineering time on turn latency before that is settled.
 
+## 3e. The brain, the rhythm and the record — 2026-08-19
+
+### The brain moved twice, by measurement
+
+MiMo (hosted, token-plan) stalled 180s at a time and wrote Han characters onto
+the projector. DeepSeek was faster and wrote pinyin instead. Both are
+Chinese-trained; the script guard caught both, and every catch costs a whole
+round-trip, so the leak was a latency bug as well as a safety one.
+
+Benchmarked with the **real** harness prompt and all nine tool schemas, five
+calls each:
+
+```
+model                          p50      p95   tools/msg  turn_id ok
+google/gemini-3.7-flash       1.85s    8.68s      6.6      5/5   <- shipped
+deepseek/deepseek-v4-flash   16.89s   29.80s      5.8      5/5
+google/gemini-2.5-flash-lite 20.04s   66.55s      2.2      2/5
+openai/gpt-5-nano                 —        —        —        —   reasoning mandatory
+```
+
+Teaching turns: **48–92s → 11–28s**, 2–3 round-trips instead of 3–8, zero
+Chinese across ten bilingual turns. Provider variance is wide; 11s was a good
+run, not the number to quote.
+
+**Gemini is a bridge, not the destination.** The endgame is Gemma on the
+appliance. Nothing in the tree may assume this provider.
+
+### Prompt-cache injection: built, measured, rejected
+
+Handing her `how-to-teach.md` + `skills/index.md` + the active map instead of
+spending a round-trip reading them is sound in principle — a coding agent does
+not `read_file` its own CLAUDE.md every session. It rests entirely on the
+prefix being cached.
+
+**It is not.** Three identical 4,163-token requests to gemini-3.7-flash through
+OpenRouter each reported `cached_tokens: 0`. The injection cost ~2,400 tokens
+on every call and bought back one round-trip once: turns went 41/11/14s →
+46/38/27s. Removed the same day.
+
+This is a fact about **one provider**. llama.cpp and OVMS keep a prefix KV
+cache, so the idea may well win on local Gemma — where round-trips are CPU we
+own and worth more, not less. Before rebuilding it, confirm
+`cached_tokens` is non-zero on a repeat call. The reasoning is kept where the
+code would have gone (`teacher_os.py`).
+
+### The four-condition ASR bake-off the research asked for
+
+One concatenated clip, "This is a banana. Chuối. This is a banana.":
+
+| condition | transcript | time |
+|---|---|---|
+| auto / our clamp | "This is a banana. **Joy**, this is a banana." | 2.9–3.9 s |
+| forced `en` | identical | **2.0 s** |
+| forced `vi` | "Tại sao? Tại sao?" — English lost | 4.4 s |
+
+The clamp costs ~1s for a detection pass and buys nothing measurable here. It
+is retained only against the failure it was built for — a Vietnamese clip
+decoded as Spanish — and is a candidate for removal once a real corpus exists.
+Mixed recognition fails under every policy: "Chuối" became "Joy" every time.
+Concatenated Piper audio is not a person code-switching; indicative only.
+
+**Corrected doctrine:** our own brief claimed a mid-sentence switch "cannot be
+transcribed correctly by construction". That is wrong. The language token
+conditions decoding; it is not a vocabulary gate.
+
+### The lesson has a rhythm now
+
+- **Wait like a teacher.** The map says "four seconds of wait after a
+  question"; the system waited 45. `say(awaiting_answer)` gives one nudge at
+  ~7s, then the long floor. She sets it — Core does not guess from a question
+  mark, because "Now you try" expects an answer and carries no "?".
+- **She closes her own period.** `say(closing)` ends the session after the
+  goodbye is spoken. There was no way to end one before, which is why the live
+  database holds 33 sessions nobody closed. The room then refuses to reopen for
+  ten minutes, or she would greet the same class three seconds later forever.
+- **An interrupted period resumes.** The presence gate re-attaches to an open
+  session and fires `[heartbeat]`, not `[sat_down]` — she looks up rather than
+  greeting a class she is already teaching. Bounded to two hours: longer than a
+  period, shorter than overnight, because a session left open on Tuesday is
+  abandoned, not interrupted. (`session_checkpoints` was the obvious home for
+  this and is a dead end — `save_session_checkpoint` has no callers at all.)
+
 ## 4. Roadmap to a complete demo
 
 **The bar:** a judge walks up to a machine nobody is touching, and watches a
