@@ -32,7 +32,12 @@ HERMES_PORT="${TEACHER_HERMES_PORT:-8642}"
 SPEECH_PORT="${SPEECH_PORT:-8001}"
 SPEECH_PY="${SPEECH_PY:-$ROOT/services/speech/.venv/bin/python}"
 PIPER_VOICE="${PIPER_VOICE:-$ROOT/models/piper/en_US-lessac-medium.onnx}"
-DATA_DIR="${BRIGHT_TEACHER_DATA_DIR:-$RUNTIME_DIR/data}"
+# The learner database lives at the repo path, because that is the one a person
+# opens by instinct. It used to sit under .runtime/, so anyone who ran Core by
+# hand -- or opened `data/bright.db` to debug -- silently read a different,
+# stale file and concluded persistence was broken. It happened here.
+# Gitignored either way (`data/*.db`); this is about not lying to the reader.
+DATA_DIR="${BRIGHT_TEACHER_DATA_DIR:-$ROOT/data}"
 
 say() { printf '%s\n' "$*"; }
 die() { printf 'teacher-agent: %s\n' "$*" >&2; exit 1; }
