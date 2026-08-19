@@ -781,9 +781,16 @@ def format_skill_memory(rows: list[dict[str, Any]]) -> tuple[str, str]:
 # ~2,400 extra tokens on EVERY call and bought back one round-trip on the
 # first turn only. Turns went 41/11/14s -> 46/38/27s. Worse, measured.
 #
-# Revisit only against a provider that demonstrably caches: check
-# `usage.prompt_tokens_details.cached_tokens` is non-zero on a repeat call
-# BEFORE building anything on top of it.
+# This is a finding about ONE provider, not a law. Revisit whenever the brain
+# changes, and especially for the local endgame: llama.cpp / OVMS keep the KV
+# cache for a shared prompt prefix between calls, so a stable injected block is
+# genuinely near-free there -- exactly the premise that failed here. On a local
+# Gemma the round-trip is also CPU we own, which makes cutting round-trips worth
+# MORE, not less.
+#
+# The check to run before rebuilding this, whatever the provider: confirm
+# `usage.prompt_tokens_details.cached_tokens` is non-zero on a repeat call (or
+# that the local runtime reports a prefix-cache hit) BEFORE building on it.
 def _session_recall(os_: TeacherOS) -> list[Any]:
     from bright_contracts import RecalledMemory
 
