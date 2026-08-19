@@ -31,10 +31,17 @@ PY
 }
 
 board_contents() {
-  printf '\n\033[35m=== what is on the board ===\033[0m\n'
-  curl -s --max-time 10 "$CORE/teacher/board" 2>/dev/null \
-    | python3 -m json.tool 2>/dev/null \
-    || echo "(no /teacher/board endpoint -- read it from the projector)"
+  # There is no /teacher/board endpoint and there never was; the board lives in
+  # the browser. /teacher/status carries enough to tell whether anything is on
+  # it, and the projector carries the rest.
+  printf '\n\033[35m=== the board ===\033[0m\n'
+  curl -s --max-time 10 "$CORE/teacher/status" | python3 -c '
+import json, sys
+s = json.load(sys.stdin)
+print("  something on the board:", "yes" if s.get("hasBoard") else "no")
+print("  last line:", (s.get("lastSay") or "(silent)")[:110])
+print("  watch it at http://127.0.0.1:3000/classroom")
+'
 }
 
 printf '\033[1m Bright -- lesson rehearsal \033[0m  core=%s\n' "$CORE"

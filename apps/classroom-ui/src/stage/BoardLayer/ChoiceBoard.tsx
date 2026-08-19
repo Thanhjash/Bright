@@ -1,7 +1,4 @@
-import { useEffect, useState } from 'react'
 import type { ChoiceProps } from '@contracts'
-import { useBus } from '../../bus'
-import { currentResponseCorrelation } from '../../store/classroom'
 import { BoardShell, MediaTile, Prompt, cx } from './parts'
 
 /**
@@ -12,24 +9,20 @@ import { BoardShell, MediaTile, Prompt, cx } from './parts'
  * arrives on the next `scene.update` and is the only source of truth for the
  * green tick and the red cross.
  */
+/**
+ * The options, shown. Not tapped.
+ *
+ * Children in this classroom answer by SPEAKING -- the room is a projector and
+ * nobody has a mouse. The tap handler and the hover lift were left over from
+ * the deleted lesson-graph player: `currentResponseCorrelation()` is
+ * permanently null without a `class.turn.assigned` event that Core no longer
+ * publishes, so a tap did nothing at all, silently, while the card rose to meet
+ * the finger. An affordance that promises a response it cannot give is worse
+ * than no affordance.
+ */
 export function ChoiceBoard({ props }: { props: ChoiceProps }) {
-  const bus = useBus()
-  const [pending, setPending] = useState<string | null>(null)
   const revealed = props.revealed
   const options = props.options ?? []
-
-  // Once the server has spoken, our optimistic state is no longer interesting.
-  useEffect(() => {
-    if (revealed) setPending(null)
-  }, [revealed])
-
-  function choose(optionId: string) {
-    if (revealed || pending) return
-    const correlation = currentResponseCorrelation()
-    if (!correlation) return
-    setPending(optionId)
-    bus.send('interaction.choice', { optionId, ...correlation })
-  }
 
   return (
     <BoardShell align="stretch" justify="between">
@@ -47,22 +40,12 @@ export function ChoiceBoard({ props }: { props: ChoiceProps }) {
           const dimmed = Boolean(revealed) && !isCorrect && !isChosenWrong
 
           return (
-            <button
+            <div
               key={option.id}
-              type="button"
-              disabled={Boolean(revealed)}
-              onPointerDown={() => choose(option.id)}
-              onKeyDown={(event) => {
-                if (event.key !== 'Enter' && event.key !== ' ') return
-                event.preventDefault()
-                choose(option.id)
-              }}
               style={{ animationDelay: `${i * 60}ms` }}
               className={cx(
                 'animate-rise card-surface relative flex min-h-0 overflow-hidden p-[2.2vh_1.2vw]',
                 'transition-[transform,box-shadow,background-color,border-color,opacity] duration-200 ease-out',
-                !revealed && 'cursor-pointer hover:-translate-y-[0.8vh] hover:border-sky/70',
-                pending === option.id && !revealed && 'scale-[0.95] border-sky bg-sky/20',
                 isCorrect &&
                   'border-mint bg-mint/18 shadow-[0_0_0_0.7vh_rgba(61,220,151,0.3)] -translate-y-[0.8vh]',
                 isChosenWrong && 'border-rose bg-rose/18',
@@ -72,7 +55,7 @@ export function ChoiceBoard({ props }: { props: ChoiceProps }) {
               <MediaTile item={option} />
               {isCorrect ? <Verdict tone="right" /> : null}
               {isChosenWrong ? <Verdict tone="wrong" /> : null}
-            </button>
+            </div>
           )
         })}
       </div>

@@ -26,15 +26,12 @@ ToolExecutor = Callable[[str, dict[str, Any]], Awaitable[Any]]
 
 PROTOCOL_VERSION = "2025-06-18"
 MUTATING_TOOLS = frozenset({
-    "classroom_propose_move",
-    "present",
     "write_board",
     "show_image",
     "show_exercise",
     "play_clip",
     "say",
     "record_evidence",
-    "open_response",
 })
 
 
@@ -265,7 +262,11 @@ TOOLS: tuple[dict[str, Any], ...] = (
     },
     {
         "name": "play_clip",
-        "description": "Play a short library audio clip and optionally show its transcript.",
+        "description": (
+            "Play a short library audio clip. `transcript` is SPOKEN as the "
+            "subtitle while it plays -- it does not appear on the board. To put "
+            "words on the board, write_board."
+        ),
         "inputSchema": _schema(
             {
                 "asset": {"type": "string", "minLength": 1, "maxLength": 256},

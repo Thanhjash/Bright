@@ -5,6 +5,7 @@
  * It is pointer-transparent by construction. Nothing here is ever tapped;
  * the board owns every interaction.
  */
+import { ModeBadge } from './ModeBadge'
 import { StudentName } from './StudentName'
 import { SubtitleBar } from './SubtitleBar'
 
@@ -17,6 +18,11 @@ export function OverlayLayer() {
         <div className="flex flex-wrap items-center gap-[1vw]">
           <StudentName />
         </div>
+        {/* Renders only in DEGRADED or OFFLINE. It was written and then never
+            mounted, so the room could silently lose capability mid-lesson with
+            nothing on screen to say so -- a papered-over failure, which the
+            failure doctrine calls a defect, not a kindness. */}
+        <ModeBadge />
         {/* Provider/model mode is facilitator information, not a child-facing
             failure. Classroom capability recovery is shown separately. */}
       </div>

@@ -71,7 +71,7 @@ const checks = {
   no_unreadable_script_on_screen:
     !spoken.some((t) => HAN.test(t)) && !scenes.some((s) => HAN.test(s.props)),
   fetched_a_real_asset: assetGets.some((a) => !a.startsWith('stage/')),
-  no_page_errors: consoleErrors.filter((e) => !e.includes('404')).length === 0,
+  no_page_errors: consoleErrors.length === 0,
 }
 result({
   pass: Object.values(checks).every(Boolean),

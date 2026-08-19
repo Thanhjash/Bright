@@ -49,6 +49,10 @@ export function RoomDock() {
   const [phase, setPhase] = useState<DockPhase>('asleep')
   const [heard, setHeard] = useState<string | null>(null)
   const [hint, setHint] = useState<string | null>(null)
+  // The dock's phase comes from /teacher/status, which knows nothing about the
+  // microphone. Without this the room went on saying "Tới lượt con nói" while
+  // the gate was dead and nothing was listening at all.
+  const [deaf, setDeaf] = useState(false)
   const mic = useRef(createMicRecorder())
   const phaseRef = useRef<DockPhase>('asleep')
 
@@ -156,6 +160,7 @@ export function RoomDock() {
     const recorder = mic.current
     const gate = createVoiceGate(recorder, {
       onClip: (clip) => { void submitClip(clip) },
+      onStateChange: (state) => setDeaf(state === 'error'),
       onError: (message) => setHint(message),
     })
     gate.start()
@@ -171,7 +176,9 @@ export function RoomDock() {
         ? 'bg-amber'
         : 'bg-coral'
 
-  const copy = labelFor(phase, ready)
+  const copy = deaf
+    ? { cta: 'Cô chưa nghe được', sub: 'The room cannot hear — check the microphone' }
+    : labelFor(phase, ready)
 
   return (
     <>

@@ -55,7 +55,18 @@ def minimal_core():
     return core
 
 
-async def test_turn_registry_deduplicates_one_terminal_proposal():
+async def test_turn_registry_replays_a_repeated_mutation_instead_of_doing_it_twice():
+    """A retried tool call must not teach the same thing twice.
+
+    Hermes retries on a dropped stream, so the same `write_board` can arrive
+    again with identical arguments. Replaying the first answer is what keeps a
+    network hiccup from writing the board twice, or -- far worse on the
+    equivalent path -- recording the same evidence twice against one child.
+
+    This used to be asserted against `classroom_propose_move`, which
+    `tools/call` rejects before the registry ever sees it, so it proved nothing
+    about anything that can actually happen.
+    """
     core = minimal_core()
     calls = 0
 
@@ -65,21 +76,14 @@ async def test_turn_registry_deduplicates_one_terminal_proposal():
         core.store.update_lesson(stage="RUNNING")
         return {"ok": True, "calls": calls}
 
-    core.turn_registry.register(
-        "secret", execute, student_id="s01", moves={"opaque-next": "next_activity"}
-    )
-    args = {"turn_id": "secret", "move_id": "opaque-next", "teacher_line": "Let's continue."}
-    first = await core.turn_registry.invoke("classroom_propose_move", args)
-    replay = await core.turn_registry.invoke("classroom_propose_move", args)
+    core.turn_registry.register("secret", execute, student_id="s01")
+    args = {"turn_id": "secret", "text": "# Hello"}
+
+    first = await core.turn_registry.invoke("write_board", args)
+    replay = await core.turn_registry.invoke("write_board", args)
 
     assert first == replay == {"ok": True, "calls": 1}
-    assert calls == 1
-    with pytest.raises(TurnRejected, match="terminal proposal already used"):
-        await core.turn_registry.invoke(
-            "classroom_propose_move",
-            {**args, "teacher_line": "Try the next one."},
-        )
-
+    assert calls == 1, "the second arrival must be answered from the first result"
 
 async def test_turn_registry_rejects_wrong_learner_and_retired_turn():
     core = minimal_core()

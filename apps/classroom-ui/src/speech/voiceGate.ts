@@ -52,6 +52,10 @@ import { useClassroom } from '../store/classroom'
  *  she stops. Push it much higher and endpointing visibly lags; push it much
  *  lower and this becomes a second animation loop, on a miniPC, purely to
  *  poll a number that barely moved. */
+/** How long to wait before trying the microphone again after it fails.
+ *  Too short and a denied permission spins; too long and a re-seated USB mic
+ *  stays dead for most of a lesson. */
+const RETRY_AFTER_ERROR_MS = 5000
 const POLL_MS = 40
 
 /** Trailing silence required before a captured utterance is considered
@@ -186,6 +190,7 @@ export function createVoiceGate(mic: MicRecorder, options: VoiceGateOptions): Vo
   let lastAboveCloseAt = 0
 
   let errorReported = false
+  let retryTimer: ReturnType<typeof setTimeout> | null = null
 
   function setState(next: VoiceGateState): void {
     if (currentState === next) return
@@ -341,18 +346,31 @@ export function createVoiceGate(mic: MicRecorder, options: VoiceGateOptions): Vo
       guardUntil = 0
       captureState = 'idle'
       setState('idle')
-      mic.prepare().then(() => {
-        if (!running) return
-        intervalId = setInterval(tick, POLL_MS)
-      }).catch((err: unknown) => {
-        running = false
-        reportError(err)
-        setState('error')
-      })
+      const arm = () => {
+        mic.prepare().then(() => {
+          if (!running) return
+          errorReported = false          // it recovered; let the next fault speak
+          intervalId = setInterval(tick, POLL_MS)
+        }).catch((err: unknown) => {
+          if (!running) return
+          reportError(err)
+          setState('error')
+          // Keep trying. A kiosk boots before the adult grants the microphone,
+          // and a USB mic can be re-seated mid-lesson. Failing once and staying
+          // deaf for the rest of the period is the worst outcome available:
+          // the dock would go on inviting the class to speak into nothing.
+          retryTimer = setTimeout(arm, RETRY_AFTER_ERROR_MS)
+        })
+      }
+      arm()
     },
 
     stop() {
       running = false
+      if (retryTimer !== null) {
+        clearTimeout(retryTimer)
+        retryTimer = null
+      }
       if (intervalId !== null) {
         clearInterval(intervalId)
         intervalId = null
