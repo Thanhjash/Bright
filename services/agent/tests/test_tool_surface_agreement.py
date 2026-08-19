@@ -28,8 +28,8 @@ def _system_prompt_tools(text: str) -> set[str]:
     return {name.strip() for name in match.group(1).split(",")}
 
 
-def test_nine_tool_names_agree_across_hermes_and_config_yaml() -> None:
-    assert len(TEACHER_TOOLS) == 9
+def test_every_tool_name_agrees_across_hermes_and_config_yaml() -> None:
+    assert len(TEACHER_TOOLS) == 10
 
     text = CONFIG_YAML.read_text(encoding="utf-8")
     assert set(TEACHER_TOOLS) == _include_list(text)

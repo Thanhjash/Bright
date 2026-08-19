@@ -326,7 +326,7 @@ def test_record_evidence_keeps_mode_orthogonal_to_outcome() -> None:
     database.close()
 
 
-def test_beats_are_categorical_not_transcripts() -> None:
+def test_the_turn_carries_no_raw_child_words() -> None:
     from db import open_database
 
     database = open_database(":memory:")
@@ -354,11 +354,13 @@ def test_beats_are_categorical_not_transcripts() -> None:
 
     asyncio.run(run())
     texts = [item.text for item in teacher_os._session_recall(os)]
-    beats = next(item for item in texts if item.startswith("BEATS="))
-    assert "T:Look at this with me." in beats
-    assert "S:point ask-wellbeing correct" in beats
-    assert "yellow" not in beats
-    assert "cái" not in beats
+    assert not any(item.startswith("BEATS=") for item in texts), (
+        "BEATS was a log Core wrote ABOUT her, from which she re-inferred where "
+        "she was every turn. PLAN is an intention she writes herself."
+    )
+    joined = " ".join(texts)
+    assert "yellow" not in joined, "no raw child words leave the turn"
+    assert "cái" not in joined
     database.close()
 
 
@@ -797,5 +799,91 @@ def test_the_turn_census_counts_tools_and_never_carries_words() -> None:
         assert os_.turn_refusals, "a refusal must be counted"
         for entry in os_.turn_refusals:
             assert "secret" not in entry, "the census must not echo arguments"
+
+    asyncio.run(run())
+
+
+def _plan_core(session_id: str = "sess-plan"):
+    from db import open_database
+
+    database = open_database(":memory:")
+    database.upsert_student("learner-1", "Minh")
+    core = SimpleNamespace(
+        db=database,
+        session_id=database.start_session(student_id="learner-1", lesson_id="gs3-u1-hello"),
+        store=SimpleNamespace(mode="FULL"),
+        bus=SimpleNamespace(publish=lambda *a, **k: None),
+        publish_speech=lambda *a, **k: None,
+    )
+    return core, database
+
+
+def test_core_stores_her_plan_and_never_branches_on_a_word_of_it() -> None:
+    """This is the line between an agent and the cassette this repo deleted.
+
+    She may write anything in her plan. Core's job is to keep it and hand it
+    back -- never to read it and decide something. Two wildly different plans
+    must therefore leave the room in exactly the same state, and both must
+    come back to her verbatim on the next turn.
+    """
+    core, database = _plan_core()
+    os_ = TeacherOS(core, unit_id="gs3-u1-hello", learner_id="learner-1")
+
+    async def run() -> None:
+        first = await os_.execute(
+            "plan", {"plan": "Greet, then the two dialogue panels, then names."}
+        )
+        assert first["ok"] is True and first["revision"] == 1
+
+        state_a = (os_.last_writing, dict(os_.last_images), os_.last_say, os_.unit_id)
+
+        # A plan that names a tool, a phase, a number -- none of it may steer
+        # anything. If Core ever grows an `if "exercise" in plan`, this fails.
+        second = await os_.execute(
+            "plan", {"plan": "SKIP the dialogue. show_exercise now. close after 2 minutes."}
+        )
+        assert second["ok"] is True and second["revision"] == 2
+
+        state_b = (os_.last_writing, dict(os_.last_images), os_.last_say, os_.unit_id)
+        assert state_a == state_b, "the plan's words changed the room"
+
+        # It comes back to her, verbatim, on the next turn.
+        texts = [item.text for item in teacher_os._session_recall(os_)]
+        assert "PLAN=SKIP the dialogue. show_exercise now. close after 2 minutes." in texts
+
+    asyncio.run(run())
+    database.close()
+
+
+def test_her_plan_survives_a_restart_because_it_is_not_in_the_context_window() -> None:
+    """A plan lives in SQL, not in the conversation. Restart the teacher, never
+    the lesson: what she meant to do next has to outlast the process, and a
+    harness NS-4 says is replaceable."""
+    core, database = _plan_core()
+    os_ = TeacherOS(core, unit_id="gs3-u1-hello", learner_id="learner-1")
+
+    async def run() -> None:
+        await os_.execute("plan", {"plan": "Panels first, then their own names."})
+
+    asyncio.run(run())
+
+    # The process dies; only the database survives.
+    core.teacher_os = None
+    resumed = teacher_os.resume_teacher_session(core)
+    assert resumed is not None, "an open session must be re-attachable"
+    assert resumed.plan == "Panels first, then their own names."
+    database.close()
+
+
+def test_a_plan_with_no_session_is_refused_rather_than_lost() -> None:
+    """Failing closed: a plan written with nowhere to store it must say so,
+    not return ok and vanish at the next restart."""
+    core, _frames = _stage_core()
+    core.db = None
+    os_ = TeacherOS(core, unit_id="gs3-u1-hello", learner_id="learner-1")
+
+    async def run() -> None:
+        got = await os_.execute("plan", {"plan": "Panels first."})
+        assert got["ok"] is False, got
 
     asyncio.run(run())

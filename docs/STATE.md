@@ -72,7 +72,8 @@ speech :8001           Piper TTS + faster-whisper ASR
 ```
 LOOK UP    read_library  search_library  read_board
 CHANGE     write_board   show_image      show_exercise  play_clip
-           record_evidence
+INTEND     plan                                         ← hers; Core never reads it
+REMEMBER   record_evidence
 SPEAK      say                                          ← ends the turn
 ```
 
@@ -95,7 +96,10 @@ costing.](decisions/2026-08-19-flat-tools-and-bundling.md)
 
 **Memory shape.** SQL `observations` (with `mode ∈ name|point|ask`) →
 `SKILL_CARD` + `PAST` on every turn, scoped to one `student_id` across all
-sessions. RAM `BEATS` is the last 8 teaching beats.
+sessions. `PLAN` is the plan she wrote for this period, in the `lesson_plans` table —
+[stored, never branched on](decisions/2026-08-19-she-keeps-her-own-plan.md). It
+replaced the in-RAM `BEATS` log, which Core wrote *about* her and from which she
+had to re-infer where she was every turn.
 One census line per turn records tool names, count and `board_touched` — counts
 only, no words — so a model that quietly stops bundling or stops using the board
 is visible before a term of lessons has gone by. Raw child words appear only

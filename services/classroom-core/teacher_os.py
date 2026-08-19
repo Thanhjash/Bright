@@ -38,6 +38,7 @@ BOARD_GRADE = re.compile(
 )
 
 
+PLAN_MAX_CHARS = 1200
 BOARD_MAX_CHARS = 400
 BOARD_MAX_LINES = 8
 
@@ -423,7 +424,9 @@ class TeacherOS:
     last_exercise: dict[str, Any] | None = None
     evidence: list[dict[str, str]] = field(default_factory=list)
     reads: list[str] = field(default_factory=list)
-    beats: list[str] = field(default_factory=list)
+    # Her own plan for this period, mirrored from SQL so a turn never waits on
+    # a read. Nothing in this file may branch on its content.
+    plan: str = ""
     # Per-turn census, reset at every turn. Names and counts only -- never a
     # teacher line, never a child's words. This is the six-month tell: an E4B
     # that quietly stops bundling, or stops touching the board and talks all
@@ -439,14 +442,6 @@ class TeacherOS:
     last_student_at: float | None = None
     last_heartbeat_at: float | None = None
     turn_kind: str | None = None
-
-    def note_beat(self, beat: str) -> None:
-        text = " ".join((beat or "").split())
-        if not text:
-            return
-        self.beats.append(text[:220])
-        if len(self.beats) > 8:
-            self.beats = self.beats[-8:]
 
     def map_path(self) -> str:
         return f"units/{self.unit_id}/map.md"
@@ -701,7 +696,6 @@ class TeacherOS:
             # and carries no "?", while "How are you?" modelled aloud does not.
             self.awaiting_answer = bool(arguments.get("awaiting_answer"))
             self.nudged_once = False
-            self.note_beat("T:" + line)
             publish = getattr(self.core, "publish_speech", None)
             if callable(publish):
                 publish(line, source="agent")
@@ -711,6 +705,26 @@ class TeacherOS:
                 # after the line is spoken, not before, so the room hears it.
                 self.close_period()
             return {"ok": True, "applied": True, "board": board_result}
+
+        if name == "plan":
+            # She keeps her own intention. Core STORES it and hands it back;
+            # Core never branches on a word of it. The moment anything here
+            # reads the plan to decide something, the teacher is a cassette
+            # again and NS-1 is gone.
+            text = " ".join(str(arguments.get("plan") or "").split())
+            reason = _check_free_text(
+                text, min_len=1, max_len=PLAN_MAX_CHARS, label="plan"
+            )
+            if reason:
+                return {"ok": False, "reason": reason}
+            db = getattr(self.core, "db", None)
+            saver = getattr(db, "save_lesson_plan", None)
+            session_id = str(getattr(self.core, "session_id", "") or "")
+            if not callable(saver) or not session_id:
+                return {"ok": False, "reason": "no open session to plan for"}
+            revision = saver(session_id, self.unit_id, text)
+            self.plan = text
+            return {"ok": True, "applied": True, "revision": revision}
 
         if name == "record_evidence":
             if self.turn_kind == "heartbeat":
@@ -770,9 +784,6 @@ class TeacherOS:
                 except TypeError:
                     payload.pop("mode", None)
                     record(student_id, objective[:128], outcome, note, **payload)
-            self.note_beat(
-                "S:" + (stored_mode or "attempt") + " " + objective[:128] + " " + outcome
-            )
             return {"ok": True, "applied": True}
 
         return {"ok": False, "reason": f"unknown tool {name}"}
@@ -852,9 +863,10 @@ def resume_teacher_session(core: Any) -> TeacherOS | None:
 
     What survives is what lives in the database: which unit, which learner, and
     every observation already recorded -- so SKILL_CARD and PAST come back
-    intact and she continues from what they actually did. What does not survive
-    is the board and the in-RAM beats. She is told to look up, not to open a
-    class, so she reorients rather than re-greets.
+    intact and she continues from what they actually did -- and, since 2026-08-19,
+    the plan she wrote for this period, which is exactly the thing a restart
+    used to destroy. What does not survive is the board. She is told to look up,
+    not to open a class, so she reorients rather than re-greets.
     """
     db = getattr(core, "db", None)
     finder = getattr(db, "find_open_session", None)
@@ -870,6 +882,10 @@ def resume_teacher_session(core: Any) -> TeacherOS | None:
     core.student_id = learner_id
     core.session_id = row["id"]
     core.teacher_os = TeacherOS(core, unit_id=unit_id, learner_id=learner_id)
+    getter = getattr(db, "get_lesson_plan", None)
+    if callable(getter):
+        stored = getter(core.session_id) or {}
+        core.teacher_os.plan = str(stored.get("plan") or "")
     return core.teacher_os
 
 
@@ -969,8 +985,13 @@ def _session_recall(os_: TeacherOS) -> list[Any]:
         notes.append(RecalledMemory(text="reads=" + ",".join(dict.fromkeys(os_.reads)), when="now"))
     if os_.last_say:
         notes.append(RecalledMemory(text="last_teacher_line=" + os_.last_say, when="now"))
-    if os_.beats:
-        notes.append(RecalledMemory(text="BEATS=" + " | ".join(os_.beats), when="now"))
+    # PLAN replaces BEATS. BEATS was a log Core wrote ABOUT her -- the last
+    # eight moves -- from which she had to re-infer where she was every turn,
+    # which is why teaching wandered across a period. An intention SHE wrote
+    # and revises is the thing a coding agent actually keeps, and it survives
+    # a restart because it lives in SQL rather than the context window.
+    if os_.plan:
+        notes.append(RecalledMemory(text="PLAN=" + os_.plan, when="now"))
     db = getattr(os_.core, "db", None)
     lister = getattr(db, "list_observations", None)
     if callable(lister):
@@ -1044,7 +1065,6 @@ async def _handle_teacher_turn(core: Any, text: str) -> dict[str, Any]:
     if event is None:
         os_.last_student_at = time.time()
     prior_say = os_.last_say
-    prior_evidence = len(os_.evidence)
     said = None
     error = None
     for _attempt in (1, 2):
@@ -1083,9 +1103,9 @@ async def _handle_teacher_turn(core: Any, text: str) -> dict[str, Any]:
         # the SYSTEM event ("heartbeat" / "class_start" / None). By the time the
         # stream finished, `event is None` and `event == "heartbeat"` were both
         # false whatever the turn actually was -- so a heartbeat she correctly
-        # answered with silence was filed as a fault, and "S:talk" never once
-        # reached BEATS. Found on 2026-08-19 by the turn census printing a
-        # stream frame where the event name should have been.
+        # answered with silence was filed as a fault. Found on 2026-08-19 by
+        # the turn census printing a stream frame where the event name should
+        # have been.
         async for frame in agent.turn(ctx):
             kind = getattr(frame, "type", None)
             if kind == "text_delta":
@@ -1107,10 +1127,6 @@ async def _handle_teacher_turn(core: Any, text: str) -> dict[str, Any]:
     if _is_heartbeat_ok(str(said or "")):
         said = None
         error = None
-    if event is None and len(os_.evidence) == prior_evidence:
-        os_.note_beat("S:talk")
-    elif event == "heartbeat" and not said:
-        os_.note_beat("HB:ok")
     silent_ok = event == "heartbeat" and not said and not error
     if said or silent_ok:
         core.last_teacher_fault = None
@@ -1179,6 +1195,9 @@ def teacher_status_payload(core: Any) -> dict[str, Any]:
         "phase": teacher_phase(core),
         "silenceMs": int(_silence_s(os_) * 1000) if os_ is not None else 0,
         "turnBusy": _TURN_LOCK.locked(),
+        # For the adult, not for the room: what she says she is doing. Nothing
+        # in Core reads this string to decide anything.
+        "plan": getattr(os_, "plan", None) or None,
     }
 
 

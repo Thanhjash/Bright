@@ -150,6 +150,25 @@ MIGRATIONS: list[tuple[str, tuple[str, ...]]] = [
             "ALTER TABLE observations ADD COLUMN mode TEXT",
         ),
     ),
+    (
+        # The lesson plan she wrote for herself. Core STORES it and never reads
+        # it: no column here is ever branched on, which is the line between an
+        # agent and the cassette this repo deleted. It lives in SQL rather than
+        # the context window because a plan must survive a power cut and outlive
+        # a harness the doctrine says is replaceable (NS-4, NS-5).
+        "0005_lesson_plan",
+        (
+            """
+            CREATE TABLE IF NOT EXISTS lesson_plans (
+                session_id TEXT PRIMARY KEY,
+                unit_id    TEXT NOT NULL,
+                plan       TEXT NOT NULL,
+                revision   INTEGER NOT NULL,
+                updated_at TEXT NOT NULL
+            )
+            """,
+        ),
+    ),
 ]
 
 
@@ -555,6 +574,38 @@ class Database:
                 (session_id,),
             ).fetchall()
         return [dict(row) for row in rows]
+
+    # ---------------------------------------------------------- lesson plan
+    def save_lesson_plan(self, session_id: str, unit_id: str, plan: str) -> int:
+        """Store the plan she wrote. Returns the new revision.
+
+        Core never reads `plan` back for a decision -- it is returned to her
+        and to /teacher/status, and that is all. If a branch on its content
+        ever appears, the teacher has become a cassette again.
+        """
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT revision FROM lesson_plans WHERE session_id = ?",
+                (session_id,),
+            ).fetchone()
+            revision = int(row["revision"]) + 1 if row else 1
+            self._conn.execute(
+                "INSERT INTO lesson_plans (session_id, unit_id, plan, revision, updated_at) "
+                "VALUES (?, ?, ?, ?, ?) "
+                "ON CONFLICT(session_id) DO UPDATE SET "
+                "unit_id = excluded.unit_id, plan = excluded.plan, "
+                "revision = excluded.revision, updated_at = excluded.updated_at",
+                (session_id, unit_id, plan, revision, iso()),
+            )
+            self._conn.commit()
+        return revision
+
+    def get_lesson_plan(self, session_id: str) -> dict[str, Any] | None:
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT * FROM lesson_plans WHERE session_id = ?", (session_id,)
+            ).fetchone()
+        return dict(row) if row else None
 
     def list_observations(
         self, session_id: str | None = None, student_id: str | None = None, limit: int = 500

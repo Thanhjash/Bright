@@ -42,8 +42,14 @@ source at the pinned commit:
 **And Bright's live classroom profile switches all of it off**, deliberately:
 
 - `infra/hermes/config.yaml` sets `platform_toolsets.api_server: [bright-classroom]`
-  — only the 8 classroom MCP tools exist; `skills_list` / `skill_view` are not
-  reachable.
+  — only the classroom MCP tools exist; `skills_list` / `skill_view` are not
+  reachable. **Verified 2026-08-19:** this works because `bright-classroom` is an
+  MCP server name, not a registered builtin toolset key, so
+  `_get_platform_tools` resolves zero builtin tools
+  (`hermes_cli/tools_config.py:2334-2377`). `agent.disabled_toolsets` is applied
+  **last** and subtracts (`:2502-2510`, *"This runs last so it overrides
+  everything above"*) — it is defence in depth here, not the primary gate, and
+  the precedence is the opposite of what an earlier note of ours claimed.
 - Patch `0001-bright-live-ephemeral` pins the **entire** system prompt to
   `gateway.api_server.extra.bright_live.system_prompt`, bypassing the assembly
   that would inject a skills index at all.

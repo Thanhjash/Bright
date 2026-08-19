@@ -474,13 +474,14 @@ The agent does **not** generate HTML. It does **not** call `eval()`. It does not
 
 The live agent uses a **small typed tool set** against the library and the
 room, the way a coding agent uses read/search/edit/run against a repo. There are
-nine, and adding a tenth requires a decision doc:
+ten, and adding an eleventh requires a decision doc:
 
 ```
 read_library    search_library   → maps, units, keys, asset:// ids
 read_board      write_board      → the chalkboard: short markdown, never HTML
 show_image      show_exercise    → asset:// ids only, never a path
 play_clip
+plan                             → HER plan for the period; Core stores, never reads
 record_evidence                  → categorical memory, never raw chat
 say                              → one teacher line; ends the turn
 ```

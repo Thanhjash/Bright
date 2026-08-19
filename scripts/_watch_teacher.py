@@ -31,6 +31,12 @@ say = str(d.get("lastSay") or "").strip()
 if say:
     out += "\n  co noi: " + textwrap.fill(say, 96, subsequent_indent=" " * 10)
 
+plan = str(d.get("plan") or "").strip()
+if plan:
+    out += "\n  \033[36mke hoach cua co:\033[0m " + textwrap.fill(
+        plan, 96, subsequent_indent=" " * 18
+    )
+
 fault = d.get("lastFault")
 if fault:
     out += "\n  \033[31mloi:\033[0m " + json.dumps(fault, ensure_ascii=False)[:180]

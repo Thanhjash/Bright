@@ -45,6 +45,7 @@ TEACHER_TOOLS = frozenset(
         "show_image",
         "show_exercise",
         "play_clip",
+        "plan",
         "record_evidence",
         "say",
     }
@@ -260,7 +261,7 @@ def render_teacher_turn(ctx: TurnContext, turn_id: str) -> str:
     last_line = ""
     skill_card = ""
     past = ""
-    beats = ""
+    plan = ""
     reads = ""
     for mem in list(getattr(ctx, "recalled", None) or []):
         text = str(getattr(mem, "text", "") or "")
@@ -282,8 +283,8 @@ def render_teacher_turn(ctx: TurnContext, turn_id: str) -> str:
             skill_card = text[len("SKILL_CARD=") :]
         elif text.startswith("PAST="):
             past = text[len("PAST=") :]
-        elif text.startswith("BEATS="):
-            beats = text[len("BEATS=") :]
+        elif text.startswith("PLAN="):
+            plan = text[len("PLAN=") :]
         elif text.startswith("reads="):
             reads = text[len("reads=") :]
     map_path = f"units/{unit}/map.md" if unit else "the unit map listed in index.md"
@@ -307,7 +308,7 @@ def render_teacher_turn(ctx: TurnContext, turn_id: str) -> str:
         ("LAST_SAY", last_line),
         ("SKILL_CARD", skill_card),
         ("PAST", past),
-        ("BEATS", beats),
+        ("PLAN", plan),
     ]
     # Stable first, volatile last. Prompt caching matches on the longest common
     # PREFIX, and TURN_ID changes every single turn -- with it on line 1 nothing

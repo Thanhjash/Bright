@@ -152,6 +152,7 @@ async def test_mcp_is_authenticated_and_never_exposes_classroom_say():
             "show_image",
             "show_exercise",
             "play_clip",
+            "plan",
             "say",
             "record_evidence",
         }

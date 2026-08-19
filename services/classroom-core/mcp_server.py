@@ -26,6 +26,7 @@ ToolExecutor = Callable[[str, dict[str, Any]], Awaitable[Any]]
 
 PROTOCOL_VERSION = "2025-06-18"
 MUTATING_TOOLS = frozenset({
+    "plan",
     "write_board",
     "show_image",
     "show_exercise",
@@ -302,6 +303,26 @@ TOOLS: tuple[dict[str, Any], ...] = (
                 "transcript": {"type": "string", "maxLength": 200},
             },
             ["asset"],
+        ),
+    },
+    {
+        "name": "plan",
+        "description": (
+            "Write or revise YOUR plan for this period -- what you mean to do "
+            "next and why, in a few short lines. It is yours: the room stores "
+            "it and hands it back to you every turn, and nothing in the room "
+            "acts on it. Write one early in the period and revise it whenever "
+            "the class makes you change your mind. Never a child's words."
+        ),
+        "inputSchema": _schema(
+            {
+                "plan": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 1200,
+                }
+            },
+            ["plan"],
         ),
     },
     {
