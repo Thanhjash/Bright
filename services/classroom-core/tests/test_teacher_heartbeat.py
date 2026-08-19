@@ -266,3 +266,39 @@ def test_an_interrupted_period_resumes_instead_of_starting_over(monkeypatch) -> 
     assert fired == ["[heartbeat]"], "she must look up, not greet the class again"
     assert core.session_id == "sess-cut", "the same period, not a new one"
     assert core.teacher_os.unit_id == "gs3-u1-hello"
+
+
+def test_she_ends_the_period_herself_and_the_room_does_not_reopen_it() -> None:
+    """A teacher ends her own lesson; she does not run until someone stops her.
+
+    Two halves, and the second is the one that bites. Closing must happen after
+    the goodbye is spoken or the class never hears it -- and once closed, the
+    room must not immediately open another period. The Stage still holds the
+    audio lease and the pulse still ticks every ten seconds, so without a
+    cooldown she would say goodbye and greet the same class three seconds
+    later, forever.
+    """
+    ended: list[str] = []
+    spoken: list[str] = []
+    core = SimpleNamespace(
+        db=SimpleNamespace(end_session=lambda sid, **k: ended.append(sid)),
+        session_id="sess-1",
+        publish_speech=lambda text, **k: spoken.append(text),
+        store=SimpleNamespace(mode="OFFLINE"),
+    )
+    os_ = TeacherOS(core, unit_id="gs3-u1-hello", learner_id="learner-1")
+    core.teacher_os = os_
+
+    async def run() -> dict:
+        return await os_.execute("say", {"teacher_line": "Goodbye, see you next time.", "closing": True})
+
+    result = asyncio.run(run())
+    assert result["ok"] is True
+    assert spoken == ["Goodbye, see you next time."], "the class must hear the goodbye"
+    assert ended == ["sess-1"], "the session row must be closed"
+    assert core.teacher_os is None, "the period is over"
+
+    # And the room refuses to start another one straight away.
+    core.capability_leases = SimpleNamespace(expire=lambda: None, stage_owner="stage-1")
+    pulse = asyncio.run(pulse_teacher(core))
+    assert pulse["action"] == "asleep", "she just closed; do not reopen the period"

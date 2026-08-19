@@ -18,15 +18,27 @@ import { resolveAsset } from '../lib/assets'
 import { SPEECH_URL } from '../lib/env'
 import { useClassroom } from '../store/classroom'
 
+/**
+ * Which Piper voice says this line.
+ *
+ * It used to compare counts: `viet > latin`. That is wrong for exactly the
+ * words this teacher says most. "Chuối" scores one Vietnamese letter against
+ * four Latin ones and came out English, so the single word she code-switches
+ * to was mispronounced every time. Vietnamese words are mostly plain Latin
+ * letters with one diacritic on them; counting was never going to work.
+ *
+ * A Vietnamese-only letter is a certainty, not a vote. If one appears, the
+ * line is Vietnamese. Nothing else in the ASCII range can tell us otherwise.
+ */
 function pickVoice(text: string): 'en' | 'vi' {
   const forced = import.meta.env.VITE_TTS_VOICE
   if (forced === 'en' || forced === 'vi') return forced
-  const letters = text.replace(/\s+/g, '')
-  if (!letters) return 'en'
-  const latin = (letters.match(/[A-Za-z]/g) ?? []).length
-  const viet = (letters.match(/[ÀÁẢÃẠĂẰẮẲẴẶÂẦẤẨẪẬÈÉẺẼẸÊỀẾỂỄỆÌÍỈĨỊÒÓỎÕỌÔỒỐỔỖỘƠỜỚỞỠỢÙÚỦŨỤƯỪỨỬỮỰỲÝỶỸỴĐàáảãạăằắẳẵặâầấẩẫậèéẻẽẹêềếểễệìíỉĩịòóỏõọôồốổỗộơờớởỡợùúủũụưừứửữựỳýỷỹỵđ]/g) ?? []).length
-  return viet > latin ? 'vi' : 'en'
+  return VIETNAMESE_LETTER.test(text) ? 'vi' : 'en'
 }
+
+/** Letters that exist in Vietnamese and in no English word. */
+const VIETNAMESE_LETTER =
+  /[ÀÁẢÃẠĂẰẮẲẴẶÂẦẤẨẪẬÈÉẺẼẸÊỀẾỂỄỆÌÍỈĨỊÒÓỎÕỌÔỒỐỔỖỘƠỜỚỞỠỢÙÚỦŨỤƯỪỨỬỮỰỲÝỶỸỴĐàáảãạăằắẳẵặâầấẩẫậèéẻẽẹêềếểễệìíỉĩịòóỏõọôồốổỗộơờớởỡợùúủũụưừứửữựỳýỷỹỵđ]/
 
 export type PlaybackStatus = 'completed' | 'cancelled' | 'failed'
 export type SpeechBehavior = 'queue' | 'interrupt' | 'replace'

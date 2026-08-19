@@ -248,6 +248,7 @@ def render_teacher_turn(ctx: TurnContext, turn_id: str) -> str:
     last = getattr(ctx, "last_interaction", None)
     if last is not None:
         said = str(getattr(last, "detail", "") or "")
+    period_minutes = ""
     student_id = ""
     writing = ""
     images = ""
@@ -260,7 +261,9 @@ def render_teacher_turn(ctx: TurnContext, turn_id: str) -> str:
     reads = ""
     for mem in list(getattr(ctx, "recalled", None) or []):
         text = str(getattr(mem, "text", "") or "")
-        if text.startswith("student_id="):
+        if text.startswith("PERIOD_MINUTES="):
+            period_minutes = text[len("PERIOD_MINUTES=") :]
+        elif text.startswith("student_id="):
             student_id = text[len("student_id=") :]
         elif text.startswith("writing="):
             writing = text[len("writing=") :]
@@ -290,6 +293,7 @@ def render_teacher_turn(ctx: TurnContext, turn_id: str) -> str:
     state = [
         ("TURN_ID", turn_id),
         ("STUDENT_ID", student_id),
+        ("PERIOD_MINUTES", period_minutes),
         ("UNIT", unit),
         ("EVENT", event or "student"),
         ("STUDENT_SAID", student_said),
@@ -339,6 +343,10 @@ def render_teacher_turn(ctx: TurnContext, turn_id: str) -> str:
         "If your line asks the class for something, set awaiting_answer on say. "
         "The room then waits a few seconds and wakes you once, instead of "
         "leaving a child sitting in silence."
+    )
+    lines.append(
+        "When the period is over, or the unit's exit is met, close it yourself: "
+        "open close-a-period and set closing on your last say."
     )
     lines.append("The turn ends when you say. Say something every turn.")
     lines.extend(volatile)

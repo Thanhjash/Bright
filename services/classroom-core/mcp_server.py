@@ -284,6 +284,15 @@ TOOLS: tuple[dict[str, Any], ...] = (
                     "minLength": 1,
                     "maxLength": 220,
                 },
+                "closing": {
+                    "type": "boolean",
+                    "description": (
+                        "True when this line ends the period. Say the goodbye first; "
+                        "the room closes the lesson after the class has heard it. A "
+                        "teacher ends her own lesson rather than running until "
+                        "someone stops her."
+                    ),
+                },
                 "awaiting_answer": {
                     "type": "boolean",
                     "description": (

@@ -397,6 +397,20 @@ class TeacherOS:
     def map_path(self) -> str:
         return f"units/{self.unit_id}/map.md"
 
+    def close_period(self) -> None:
+        """End the period: close the row, drop the OS, mark the clock."""
+        core = self.core
+        db = getattr(core, "db", None)
+        ender = getattr(db, "end_session", None)
+        session_id = getattr(core, "session_id", None)
+        if callable(ender) and session_id:
+            try:
+                ender(session_id)
+            except Exception:  # noqa: BLE001 -- the room outlives the bookkeeping
+                pass
+        core.last_close_at = time.time()
+        core.teacher_os = None
+
     def catalog(self) -> dict[str, list[str]]:
         return unit_catalog(self.unit_id)
 
@@ -606,6 +620,11 @@ class TeacherOS:
             publish = getattr(self.core, "publish_speech", None)
             if callable(publish):
                 publish(line, source="agent")
+            if bool(arguments.get("closing")):
+                # She said goodbye, so the period is over. A teacher ends the
+                # lesson; she does not run until someone stops her. Closing
+                # after the line is spoken, not before, so the room hears it.
+                self.close_period()
             return {"ok": True, "applied": True}
 
         if name == "record_evidence":
@@ -736,6 +755,13 @@ def _close_open_teacher_sessions(db: Any, *, learner_id: str, unit_id: str) -> N
         ender(session_id)
 
 
+# After she closes, the room must not immediately open another period. The
+# Stage still holds the audio lease and the pulse still ticks, so without this
+# she would say goodbye and greet the same class three seconds later, forever.
+# A real next period is a timetable event, and Bright has no day clock yet.
+REOPEN_AFTER_CLOSE_S = 600.0
+
+
 def resume_teacher_session(core: Any) -> TeacherOS | None:
     """Re-attach to a period that was interrupted, instead of starting a new one.
 
@@ -841,6 +867,10 @@ def _session_recall(os_: TeacherOS) -> list[Any]:
     from bright_contracts import RecalledMemory
 
     notes: list[Any] = []
+    # Core reports the clock; she decides what it means. How long a period runs
+    # is in the unit map, which is curriculum -- Core must not know it.
+    elapsed_min = int((time.time() - os_.started_at) // 60)
+    notes.append(RecalledMemory(text=f"PERIOD_MINUTES={elapsed_min}", when="now"))
     notes.append(RecalledMemory(text="student_id=" + os_.learner_id, when="now"))
     if os_.last_writing:
         notes.append(RecalledMemory(text="writing=" + os_.last_writing, when="now"))
@@ -1040,6 +1070,10 @@ async def _open_on_presence(core: Any, *, reason: str) -> dict[str, Any] | None:
     a projector that cannot open a class must still stay up and be honest
     about it on /teacher/status.
     """
+    closed_at = getattr(core, "last_close_at", None)
+    if closed_at is not None and (time.time() - closed_at) < REOPEN_AFTER_CLOSE_S:
+        return None          # she just closed this period; do not reopen it
+
     leases = getattr(core, "capability_leases", None)
     if leases is not None:
         leases.expire()
