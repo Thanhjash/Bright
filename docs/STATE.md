@@ -125,31 +125,38 @@ as `STUDENT_SAID` for the current turn (NS-5). No raw child speech in SQL.
 ## 3b. The gap, stated as the north star states it
 
 [NORTH-STAR.md](NORTH-STAR.md) §2 models the teacher's **working day**.
-**Updated 2026-08-19 — four of five boxes now exist:**
+**Updated 2026-08-19 — all five boxes now exist:**
 
 ```
-BEFORE      prepare for a period nobody has arrived at yet     ❌ absent
+BEFORE      prepare for a period nobody has arrived at yet     ✅ nightly prepare
 ARRIVAL     notice a person, greet them                        ✅ presence gate
 THE PERIOD  open, teach, judge, adapt, pace, close             ✅ turn loop + rhythm
 CLOSE       end it herself, on time                            ✅ say(closing)
 AFTER       write up evidence; it changes next time            ✅ evidence writes
 ```
 
-Only **BEFORE** is missing, and it is missing for one reason: nothing in the
-system knows when a class is. That is the day clock below, not a gap in the
-teaching loop.
+**BEFORE** runs on Core's own day clock at 03:00, or on demand via
+`POST /teacher/prepare`. She reads the unit and the class's past properly —
+nobody is waiting, so this is the only place an offline 4B is allowed to be
+slow, and therefore the only place it is allowed to be thorough — and writes the
+period's plan. She cannot speak, use the board or record evidence while the room
+is empty; that is enforced in `execute`, not asked for in a prompt.
+
+It deliberately does **not** use Hermes' `cron` or `delegate_task`:
+[why the harness could not give us that
+guarantee](decisions/2026-08-19-prepare-is-ours-not-hermes.md).
 
 Within THE PERIOD, the rhythm is no longer a single constant: she waits ~7s
 after asking (one nudge, then the long floor), reads PERIOD_MINUTES to judge
 when time is up, and an interrupted period resumes instead of restarting.
 
-And one of three clocks is missing entirely:
+All three clocks now run:
 
 | Clock | Owner | State |
 |---|---|---|
 | Reflex < 100 ms | Core | ✅ |
 | Turn, seconds | `pulse_teacher` | ✅ built and **already running** |
-| **Day, minutes → hours** | `scheduler.py` | ⚠️ the socket is wired; **nothing is plugged into it**. This is the last missing clock, and it is what BEFORE needs |
+| **Day, minutes → hours** | `scheduler.py` | ✅ `prepare_next` at 03:00 drafts the period; `lastPrepare` on `/teacher/status` says whether it worked |
 
 ### How close this actually is — traced 2026-08-18
 

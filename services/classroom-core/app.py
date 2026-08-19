@@ -469,7 +469,36 @@ def create_app(settings: Settings | None = None, core: Core | None = None) -> Fa
                         return None
                     return time.perf_counter() - started
 
-                core_.set_agent_seam(AgentSeam(probe=_probe_hermes))
+                async def _prepare_next(_context: dict) -> dict | None:
+                    """The nightly period draft. NORTH-STAR §2's BEFORE box.
+
+                    A job that fails at 03:00 and says nothing is exactly the
+                    papered-over failure the doctrine calls a defect, so the
+                    outcome -- good or bad -- lands on /teacher/status where the
+                    adult who boots the appliance can see it.
+                    """
+                    from library import list_units
+                    from teacher_os import prepare_period
+
+                    units = list_units()
+                    if len(units) != 1:
+                        # NS-7: Core never picks a favourite lesson. With none
+                        # authored there is nothing to prepare; with several, an
+                        # adult chooses.
+                        outcome = {"ok": False, "error": f"{len(units)} units authored"}
+                    else:
+                        try:
+                            outcome = await prepare_period(core_, unit_id=units[0])
+                        except Exception as exc:  # noqa: BLE001
+                            outcome = {"ok": False, "error": repr(exc)[:200]}
+                    outcome["at"] = time.strftime("%Y-%m-%dT%H:%M:%S%z")
+                    core_.last_prepare = outcome
+                    log.info("[prepare] %s", outcome)
+                    return outcome
+
+                core_.set_agent_seam(
+                    AgentSeam(probe=_probe_hermes, prepare_next=_prepare_next)
+                )
                 log.info(
                     "[agent] wired: %s (turn timeout %.1fs)",
                     type(core_.agent).__name__,
@@ -583,6 +612,21 @@ def create_app(settings: Settings | None = None, core: Core | None = None) -> Fa
             force=bool(payload.get("force")),
             reason=str(payload.get("reason") or "poke"),
         )
+
+    @app.post("/teacher/prepare")
+    async def teacher_prepare() -> dict[str, Any]:
+        """Draft the period now instead of waiting for the nightly job.
+
+        The adult who sets the appliance up in the morning may not have had it
+        running at 03:00 -- a highland classroom loses power. Preparation that
+        can only ever happen on a schedule would silently never happen.
+        """
+        core_ = get_core()
+        # Through BackgroundJobs, not the seam directly: that is the path the
+        # 03:00 trigger takes, and a hand-run that skips it would be testing
+        # something the appliance never does.
+        got = await core_.jobs.prepare_next({})
+        return got or {"ok": False, "error": "no prepare seam wired"}
 
     def readiness() -> tuple[dict[str, Any], bool]:
         """Return the product-facing readiness snapshot and verdict."""

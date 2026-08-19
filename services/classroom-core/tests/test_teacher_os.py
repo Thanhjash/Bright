@@ -887,3 +887,97 @@ def test_a_plan_with_no_session_is_refused_rather_than_lost() -> None:
         assert got["ok"] is False, got
 
     asyncio.run(run())
+
+
+def test_preparation_cannot_speak_show_or_record() -> None:
+    """Before class the room is empty and the projector is dark.
+
+    "The Stage is the only loudspeaker" is not a thing to ask an agent nicely
+    for, so a preparation turn is stopped in `execute`, not in the prompt. The
+    same guard covers evidence: there is no child in the room to attribute
+    anything to.
+
+    This is also why preparation does NOT run on the harness's own cron or
+    child agents. Verified upstream 2026-08-19: a platform whose
+    `platform_toolsets` names no MCP server gets every globally-enabled MCP
+    server unioned in (hermes_cli/tools_config.py:2495), so a cron job asking
+    for `[cronjob, delegation]` would be handed `bright-classroom` -- and `say`
+    with it. Nothing upstream blocks an MCP tool by name for a child agent.
+    """
+    core, database = _plan_core()
+    os_ = TeacherOS(core, unit_id="gs3-u1-hello", learner_id="learner-1")
+    os_.turn_kind = "prepare"
+
+    async def run() -> None:
+        for name, args in (
+            ("say", {"teacher_line": "Good morning!"}),
+            ("write_board", {"text": "# Hello"}),
+            ("show_image", {"asset": "asset://gs3/pages/p10.jpg"}),
+            ("show_exercise", {"kind": "choice", "content": {}}),
+            ("play_clip", {"asset": "asset://gs3/audio/a1.mp3"}),
+            (
+                "record_evidence",
+                {
+                    "student_id": "learner-1",
+                    "objective_id": "ask-wellbeing",
+                    "outcome": "correct",
+                },
+            ),
+        ):
+            got = await os_.execute(name, args)
+            assert got["ok"] is False, f"{name} must not work before the room fills"
+        assert os_.last_say is None, "nothing may reach the loudspeaker"
+        assert os_.last_writing is None, "nothing may reach the projector"
+
+        # Reading and planning are exactly what preparation is for.
+        assert (await os_.execute("read_library", {"path": "how-to-teach.md"}))["ok"]
+        assert (await os_.execute("plan", {"plan": "Panels, then their names."}))["ok"]
+
+    asyncio.run(run())
+    database.close()
+
+
+def test_a_period_prepared_last_night_starts_with_that_plan() -> None:
+    """Preparation is the only place an offline 4B is allowed to be slow, and
+    therefore the only place it is allowed to be thorough -- nobody is waiting.
+    The point is that the morning inherits the work."""
+    from db import open_database
+
+    database = open_database(":memory:")
+    database.upsert_student("learner-1", "Minh")
+    core = SimpleNamespace(
+        db=database,
+        session_id=None,
+        student_id=None,
+        teacher_os=None,
+        settings=SimpleNamespace(default_learner_id="learner-1"),
+        store=SimpleNamespace(mode="FULL"),
+        bus=SimpleNamespace(publish=lambda *a, **k: None),
+        publish_speech=lambda *a, **k: None,
+    )
+    database.save_lesson_plan(
+        teacher_os.prepared_plan_id("gs3-u1-hello"),
+        "gs3-u1-hello",
+        "Start with the panels; they only pointed last time.",
+    )
+
+    os_ = teacher_os.start_teacher_session(
+        core, unit_id="gs3-u1-hello", learner_id="learner-1", learner_name="Minh"
+    )
+    assert os_.plan == "Start with the panels; they only pointed last time."
+    # And it is copied onto the live session, so revising it tonight does not
+    # rewrite what she actually did this morning.
+    assert (database.get_lesson_plan(core.session_id) or {})["plan"] == os_.plan
+    database.close()
+
+
+def test_preparation_refuses_to_run_while_a_class_is_in_progress() -> None:
+    """A second teacher thinking out loud during a lesson is the one thing the
+    turn lock exists to prevent."""
+    core, database = _plan_core()
+    core.teacher_os = TeacherOS(core, unit_id="gs3-u1-hello", learner_id="learner-1")
+
+    got = asyncio.run(teacher_os.prepare_period(core, unit_id="gs3-u1-hello"))
+    assert got["ok"] is False
+    assert "in progress" in got["error"]
+    database.close()

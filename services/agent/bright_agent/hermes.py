@@ -289,7 +289,11 @@ def render_teacher_turn(ctx: TurnContext, turn_id: str) -> str:
             reads = text[len("reads=") :]
     map_path = f"units/{unit}/map.md" if unit else "the unit map listed in index.md"
     token = " ".join(said.split())
-    event = {"[sat_down]": "class_start", "[heartbeat]": "heartbeat"}.get(token)
+    event = {
+        "[sat_down]": "class_start",
+        "[heartbeat]": "heartbeat",
+        "[prepare]": "prepare",
+    }.get(token)
     student_said = "" if event else said
 
     # Only what changed. An empty field is not information, and every line here
@@ -368,6 +372,14 @@ def render_teacher_turn(ctx: TurnContext, turn_id: str) -> str:
     if event == "class_start":
         lines.append(
             "The adult started class. Begin teaching from the unit map. End this turn with say."
+        )
+    elif event == "prepare":
+        lines.append(
+            "There is no class yet. Nobody is waiting, so take the time to read "
+            "the unit properly and look at what this class actually struggled "
+            "with. Then write the plan for the period with the plan tool. You "
+            "cannot speak, use the board, or record evidence before the room "
+            "fills -- reading and planning are the only things that work now."
         )
     elif event == "heartbeat":
         lines.append(

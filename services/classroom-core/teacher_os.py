@@ -46,7 +46,14 @@ BOARD_MAX_LINES = 8
 SYSTEM_EVENTS = {
     "[sat_down]": "class_start",
     "[heartbeat]": "heartbeat",
+    "[prepare]": "prepare",
 }
+# Before class the room is empty and the projector is dark. A preparation turn
+# may read the library and write her plan; it may not speak, put anything on
+# the board, or record evidence about a child who is not there. Enforced in
+# `execute` rather than in the prompt, because "the Stage is the only
+# loudspeaker" is not a thing to ask an agent nicely for.
+PREPARE_TOOLS = frozenset({"read_library", "search_library", "read_board", "plan"})
 HEARTBEAT_OK = "HEARTBEAT_OK"
 # The unit map says "Four seconds of wait after a question -- count it."
 # HEARTBEAT_SILENCE_S is the wait for a room that has simply gone quiet; it is
@@ -557,6 +564,15 @@ class TeacherOS:
         return result
 
     async def _dispatch(self, name: str, arguments: dict[str, Any]) -> Any:
+        if self.turn_kind == "prepare" and name not in PREPARE_TOOLS:
+            return {
+                "ok": False,
+                "reason": (
+                    "there is no class yet -- before the room fills you may only "
+                    "read the library and write your plan"
+                ),
+            }
+
         if name == "read_library":
             try:
                 got = read_library(str(arguments.get("path") or ""))
@@ -889,6 +905,65 @@ def resume_teacher_session(core: Any) -> TeacherOS | None:
     return core.teacher_os
 
 
+PREPARE_SESSION_PREFIX = "prepare:"
+
+
+def prepared_plan_id(unit_id: str) -> str:
+    """Where a plan written before class waits for the class to arrive."""
+    return PREPARE_SESSION_PREFIX + unit_id
+
+
+async def prepare_period(core: Any, *, unit_id: str) -> dict[str, Any]:
+    """Read the unit properly, look at what this class actually struggled with,
+    and draft the period -- while nobody is waiting.
+
+    This is the only place an offline 4B model is allowed to be slow, and
+    therefore the only place it is allowed to be thorough. NORTH-STAR §2's
+    BEFORE box was empty because nothing ran here.
+
+    It does NOT use the harness's own cron or child agents. Two reasons, both
+    checked in the upstream source on 2026-08-19 rather than assumed:
+
+    * `bright_live` -- the profile that pins the terminal tool and the system
+      prompt -- is installed once per gateway process and applies to every
+      request on it, so preparation cannot share the classroom gateway.
+    * A platform whose `platform_toolsets` entry names no MCP server gets EVERY
+      globally-enabled MCP server unioned in (hermes_cli/tools_config.py:2495).
+      A cron job configured with `[cronjob, delegation]` would therefore be
+      handed `bright-classroom` -- and `say` with it. Nothing upstream blocks
+      an MCP tool by name for a child agent or a scheduled job.
+
+    Core's own day clock has none of that, and Core is the sole state writer
+    anyway (NS-1). The guarantee that preparation cannot speak lives in
+    `execute`, in this file, where it is a test rather than a config option.
+    """
+    if getattr(core, "teacher_os", None) is not None:
+        return {"ok": False, "error": "a class is in progress"}
+    async with _TURN_LOCK:
+        prior_session = getattr(core, "session_id", None)
+        prior_student = getattr(core, "student_id", None)
+        # NS-7: a child's id is a property of the deployment, not the code.
+        learner_id = str(
+            prior_student
+            or getattr(getattr(core, "settings", None), "default_learner_id", "")
+            or "learner"
+        )
+        # The MCP turn registry binds each turn to (session, learner) and
+        # refuses a tool whose scope has drifted -- which is exactly the check
+        # that should stay strict during a live class. Preparation therefore
+        # declares its scope rather than being exempted from the check.
+        core.session_id = prepared_plan_id(unit_id)
+        core.student_id = learner_id
+        core.teacher_os = TeacherOS(core, unit_id=unit_id, learner_id=learner_id)
+        try:
+            got = await _handle_teacher_turn(core, "[prepare]")
+        finally:
+            core.teacher_os = None
+            core.session_id = prior_session
+            core.student_id = prior_student
+    return {"ok": bool(got.get("ok")), "unitId": unit_id, "error": got.get("error")}
+
+
 def start_teacher_session(core: Any, *, unit_id: str, learner_id: str, learner_name: str) -> TeacherOS:
     core.db.upsert_student(learner_id, learner_name, learner_name)
     _close_open_teacher_sessions(core.db, learner_id=learner_id, unit_id=unit_id)
@@ -897,6 +972,15 @@ def start_teacher_session(core: Any, *, unit_id: str, learner_id: str, learner_n
         student_id=learner_id, lesson_id=unit_id, mode=str(core.store.mode)
     )
     core.teacher_os = TeacherOS(core, unit_id=unit_id, learner_id=learner_id)
+    # A period prepared last night starts with the plan she drafted then, rather
+    # than with a blank one she has to invent while a class watches.
+    getter = getattr(core.db, "get_lesson_plan", None)
+    if callable(getter):
+        prepared = getter(prepared_plan_id(unit_id)) or {}
+        plan = str(prepared.get("plan") or "")
+        if plan:
+            core.teacher_os.plan = plan
+            core.db.save_lesson_plan(core.session_id, unit_id, plan)
     return core.teacher_os
 
 
@@ -1119,6 +1203,10 @@ async def _handle_teacher_turn(core: Any, text: str) -> dict[str, Any]:
         elif said and _check_teacher_line(str(said)):
             error = error or _check_teacher_line(str(said))
             said = None
+        if event == "prepare":
+            # Nobody is waiting, and she must not speak. The turn succeeded if
+            # she wrote a plan; there is nothing to retry if she did not.
+            break
         if said:
             error = None
             break
@@ -1127,7 +1215,13 @@ async def _handle_teacher_turn(core: Any, text: str) -> dict[str, Any]:
     if _is_heartbeat_ok(str(said or "")):
         said = None
         error = None
-    silent_ok = event == "heartbeat" and not said and not error
+    if event == "prepare":
+        # A prepare turn that produced a plan is a success even though the room
+        # heard nothing -- which is the point of preparing.
+        silent_ok = bool(os_.plan) and not error
+        error = error or (None if silent_ok else "prepared nothing")
+    else:
+        silent_ok = event == "heartbeat" and not said and not error
     if said or silent_ok:
         core.last_teacher_fault = None
     else:
@@ -1198,6 +1292,9 @@ def teacher_status_payload(core: Any) -> dict[str, Any]:
         # For the adult, not for the room: what she says she is doing. Nothing
         # in Core reads this string to decide anything.
         "plan": getattr(os_, "plan", None) or None,
+        # A scheduled job that fails at 03:00 and tells nobody is the
+        # papered-over failure the doctrine calls a defect.
+        "lastPrepare": getattr(core, "last_prepare", None),
     }
 
 
