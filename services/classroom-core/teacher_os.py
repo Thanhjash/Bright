@@ -202,6 +202,15 @@ def _reason_class(reason: str) -> str:
     return "other"
 
 
+def _asset_name(raw: Any) -> str:
+    """`asset://gs3/audio/track-05.mp3` -> `track-05`. Short enough for a log line."""
+    text = str(raw or "").strip()
+    if not text:
+        return ""
+    tail = text.rsplit("/", 1)[-1]
+    return tail.rsplit(".", 1)[0] or tail
+
+
 def _board_refusal(raw: str, label: str) -> str:
     """Why _clean_board_markdown refused this text, in words she can act on.
 
@@ -442,6 +451,22 @@ class TeacherOS:
     turn_refusals: list[str] = field(default_factory=list)
     turn_board_skips: list[str] = field(default_factory=list)
     turn_chalked: bool = False
+    # WHICH file, WHICH track, WHICH picture -- not just how many tools. Tool
+    # names alone could not answer the first question the failing lesson raised:
+    # did she open keys.md before judging, or never open it at all?
+    turn_reads: list[str] = field(default_factory=list)
+    turn_clips: list[str] = field(default_factory=list)
+    turn_images: list[str] = field(default_factory=list)
+    turn_exercises: list[str] = field(default_factory=list)
+    turn_evidence: list[str] = field(default_factory=list)
+    # The same, accumulated over the whole period. A lesson is the unit that
+    # succeeds or fails; a turn is not. "No clip played all period" is the
+    # finding, and no single turn can show it.
+    period_reads: list[str] = field(default_factory=list)
+    period_clips: list[str] = field(default_factory=list)
+    period_images: list[str] = field(default_factory=list)
+    period_exercises: list[str] = field(default_factory=list)
+    period_evidence: list[str] = field(default_factory=list)
     started_at: float = field(default_factory=time.time)
     last_say_at: float | None = None
     awaiting_answer: bool = False
@@ -455,6 +480,10 @@ class TeacherOS:
 
     def close_period(self) -> None:
         """End the period: close the row, drop the OS, mark the clock."""
+        # Before the OS is dropped -- it holds the only copy of what the period
+        # actually used, and a period that played no clip and marked everything
+        # correct is invisible in any single turn's line.
+        _log_period_census(self)
         core = self.core
         db = getattr(core, "db", None)
         ender = getattr(db, "end_session", None)
@@ -556,12 +585,54 @@ class TeacherOS:
                 self.turn_refusals.append(
                     name + ":" + _reason_class(str(result.get("reason") or ""))
                 )
+            else:
+                self._note_use(name, arguments, result)
             board = str(result.get("board") or "")
             if board == "applied":
                 self.turn_chalked = True
             elif board.startswith("skipped:"):
                 self.turn_board_skips.append(_reason_class(board))
         return result
+
+    def _note_use(self, name: str, arguments: dict[str, Any], result: dict[str, Any]) -> None:
+        """Which material a successful call actually reached for.
+
+        Only what she used, and only as short names -- a path, a track id, an
+        objective. No teacher line, no child's words, no learner id.
+        """
+
+        def add(turn: list[str], period: list[str], value: str) -> None:
+            value = value.strip()
+            if not value:
+                return
+            turn.append(value)
+            if value not in period:
+                period.append(value)
+
+        if name == "read_library":
+            add(self.turn_reads, self.period_reads, str(result.get("path") or ""))
+        elif name == "search_library":
+            for hit in result.get("hits") or []:
+                add(self.turn_reads, self.period_reads, str((hit or {}).get("path") or ""))
+        elif name == "play_clip":
+            add(self.turn_clips, self.period_clips, _asset_name(arguments.get("asset")))
+        elif name == "show_image":
+            add(self.turn_images, self.period_images, _asset_name(arguments.get("asset")))
+            add(self.turn_images, self.period_images, _asset_name(arguments.get("second")))
+        elif name == "show_exercise":
+            add(self.turn_exercises, self.period_exercises, str(arguments.get("kind") or ""))
+        elif name == "record_evidence":
+            add(
+                self.turn_evidence,
+                self.period_evidence,
+                ":".join(
+                    (
+                        str(arguments.get("objective_id") or "?"),
+                        str(arguments.get("outcome") or "?"),
+                        str(arguments.get("mode") or "-"),
+                    )
+                ),
+            )
 
     async def _dispatch(self, name: str, arguments: dict[str, Any]) -> Any:
         if self.turn_kind == "prepare" and name not in PREPARE_TOOLS:
@@ -1112,7 +1183,8 @@ def _log_turn_census(os_: TeacherOS, *, event: str | None, ok: bool) -> None:
     board = os_.turn_chalked or any(name in BOARD_TOOLS for name in tools)
     log.info(
         "teacher turn census event=%s ok=%s tools=%d board_touched=%s "
-        "tool_names=%s refusals=%s board_skips=%s",
+        "tool_names=%s refusals=%s board_skips=%s "
+        "reads=%s clips=%s images=%s exercises=%s evidence=%s",
         event or "student",
         ok,
         len(tools),
@@ -1120,6 +1192,64 @@ def _log_turn_census(os_: TeacherOS, *, event: str | None, ok: bool) -> None:
         ",".join(tools) or "-",
         ",".join(os_.turn_refusals) or "-",
         ",".join(os_.turn_board_skips) or "-",
+        ",".join(os_.turn_reads) or "-",
+        ",".join(os_.turn_clips) or "-",
+        ",".join(os_.turn_images) or "-",
+        ",".join(os_.turn_exercises) or "-",
+        ",".join(os_.turn_evidence) or "-",
+    )
+
+
+def period_census(os_: TeacherOS) -> dict[str, Any]:
+    """What the whole period used, and how honest the marking looks.
+
+    A lesson is the unit that succeeds or fails; a turn is not. "No clip played
+    all period" and "every outcome was correct" are period-level findings that
+    no single turn can show -- and they are exactly the two shapes the live
+    failure took on 2026-08-19.
+
+    Counts and short names only. This is safe to print on /teacher/status for
+    the adult and safe to keep in a log.
+    """
+    outcomes: dict[str, int] = {}
+    modes: dict[str, int] = {}
+    objectives: list[str] = []
+    for row in os_.period_evidence:
+        parts = (row.split(":") + ["?", "?", "-"])[:3]
+        objective, outcome, mode = parts
+        outcomes[outcome] = outcomes.get(outcome, 0) + 1
+        modes[mode] = modes.get(mode, 0) + 1
+        if objective not in objectives:
+            objectives.append(objective)
+    return {
+        "unit": os_.unit_id,
+        "minutes": int((time.time() - os_.started_at) / 60),
+        "reads": list(os_.period_reads),
+        "clips": list(os_.period_clips),
+        "images": list(os_.period_images),
+        "exercises": list(os_.period_exercises),
+        "objectives": objectives,
+        "outcomes": outcomes,
+        "modes": modes,
+        "evidenceRows": len(os_.period_evidence),
+    }
+
+
+def _log_period_census(os_: TeacherOS) -> None:
+    got = period_census(os_)
+    log.info(
+        "teacher period census unit=%s minutes=%d reads=%d clips=%d images=%d "
+        "exercises=%d evidence=%d outcomes=%s modes=%s read_names=%s",
+        os_.unit_id,
+        int((time.time() - os_.started_at) / 60),
+        len(got["reads"]),
+        len(got["clips"]),
+        len(got["images"]),
+        len(got["exercises"]),
+        got["evidenceRows"],
+        json.dumps(got["outcomes"], sort_keys=True),
+        json.dumps(got["modes"], sort_keys=True),
+        ",".join(got["reads"]) or "-",
     )
 
 
@@ -1146,6 +1276,11 @@ async def _handle_teacher_turn(core: Any, text: str) -> dict[str, Any]:
     os_.turn_refusals = []
     os_.turn_board_skips = []
     os_.turn_chalked = False
+    os_.turn_reads = []
+    os_.turn_clips = []
+    os_.turn_images = []
+    os_.turn_exercises = []
+    os_.turn_evidence = []
     if event is None:
         os_.last_student_at = time.time()
     prior_say = os_.last_say
@@ -1292,6 +1427,9 @@ def teacher_status_payload(core: Any) -> dict[str, Any]:
         # For the adult, not for the room: what she says she is doing. Nothing
         # in Core reads this string to decide anything.
         "plan": getattr(os_, "plan", None) or None,
+        # What this period has actually used so far. The adult can see a lesson
+        # that has played no recording and shown one picture before it ends.
+        "period": period_census(os_) if os_ is not None else None,
         # A scheduled job that fails at 03:00 and tells nobody is the
         # papered-over failure the doctrine calls a defect.
         "lastPrepare": getattr(core, "last_prepare", None),

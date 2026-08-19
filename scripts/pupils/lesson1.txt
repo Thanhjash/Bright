@@ -1,0 +1,19 @@
+# A Grade-3 absolute beginner in Period 1 of gs3-u1-hello.
+# Nothing here may tell her what to teach -- every line is only something a
+# child could actually say, including the silences and the wrong answers.
+# `#` is a comment. A blank line is the child saying nothing at all.
+Hello
+I am Minh
+Hello teacher
+Fine
+em chưa hiểu
+Hello. I am Minh.
+Hi
+yes
+Ben
+I am Minh
+em không biết
+Hello, I'm Minh
+How are you
+Fine, thank you
+Goodbye
