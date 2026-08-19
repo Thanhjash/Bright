@@ -47,7 +47,14 @@ SYSTEM_EVENTS = {
     "[sat_down]": "class_start",
     "[heartbeat]": "heartbeat",
     "[prepare]": "prepare",
+    "[wake]": "wake",
 }
+# She may ask the room to wake her. Without it there is structurally no such
+# thing as an ACTIVITY: her only wakes are a child speaking, one 7s nudge, and
+# a 45s silence floor -- so "say it together, three times, listening between
+# each" is three rounds of a silent classroom, and she simply never starts one.
+WAKE_MIN_S = 5.0
+WAKE_MAX_S = 180.0
 # Before class the room is empty and the projector is dark. A preparation turn
 # may read the library and write her plan; it may not speak, put anything on
 # the board, or record evidence about a child who is not there. Enforced in
@@ -471,9 +478,21 @@ class TeacherOS:
     last_say_at: float | None = None
     awaiting_answer: bool = False
     nudged_once: bool = False
+    # When she asked the room to hand her the next beat of a drill or a clip.
+    wake_at: float | None = None
     last_student_at: float | None = None
     last_heartbeat_at: float | None = None
     turn_kind: str | None = None
+    # What Core witnessed on THIS turn: which turn it is, and whether a child
+    # actually produced anything. Evidence is anchored to both -- she is
+    # stateless per turn, so a row written on a turn with no student act is
+    # necessarily about an utterance that did not happen.
+    turn_id: str | None = None
+    turn_student_text: str = ""
+    # Objectives already recorded on this turn. The unique index on
+    # (session_id, response_turn_id, skill) could never fire while
+    # response_turn_id was a fresh random uuid on every call.
+    turn_recorded: set[str] = field(default_factory=set)
 
     def map_path(self) -> str:
         return f"units/{self.unit_id}/map.md"
@@ -783,6 +802,11 @@ class TeacherOS:
             # and carries no "?", while "How are you?" modelled aloud does not.
             self.awaiting_answer = bool(arguments.get("awaiting_answer"))
             self.nudged_once = False
+            wake_in = arguments.get("wake_in_s")
+            if isinstance(wake_in, (int, float)) and wake_in > 0:
+                self.wake_at = time.time() + min(max(float(wake_in), WAKE_MIN_S), WAKE_MAX_S)
+            else:
+                self.wake_at = None
             publish = getattr(self.core, "publish_speech", None)
             if callable(publish):
                 publish(line, source="agent")
@@ -814,8 +838,21 @@ class TeacherOS:
             return {"ok": True, "applied": True, "revision": revision}
 
         if name == "record_evidence":
-            if self.turn_kind == "heartbeat":
-                return {"ok": False, "reason": "heartbeat is not student evidence"}
+            # Core is a WITNESS, not a marker. Every refusal below is a fact
+            # Core saw with its own eyes -- no turn happened, the child said
+            # nothing, this row is already written. Whether the answer was good
+            # enough is hers, and stays hers: see
+            # docs/decisions/2026-08-19-core-is-a-witness.md.
+            if self.turn_kind is not None:
+                return {
+                    "ok": False,
+                    "reason": f"{self.turn_kind} is not student evidence",
+                }
+            if not self.turn_student_text.strip():
+                return {
+                    "ok": False,
+                    "reason": "no child spoke this turn -- there is nothing to record",
+                }
             # Unattributed evidence is refused in code, not merely discouraged
             # in a prompt (docs/decisions/2026-08-18-show-exercise-tool.md).
             # No row is written for a missing, placeholder, or wrong-learner id.
@@ -835,7 +872,12 @@ class TeacherOS:
                 return {"ok": False, "reason": "objective_id and legal outcome required"}
             if mode == "off-topic":
                 return {"ok": False, "reason": "off-topic is not evidence"}
-            if mode and mode not in MODES:
+            if not mode:
+                # A modeless row silently fell out of SKILL_CARD coverage
+                # (ATTEMPT_MODES is {name, point}), so evidence she recorded
+                # evaporated from the one thing that reads it.
+                return {"ok": False, "reason": "mode is required: name, point, or ask"}
+            if mode not in MODES:
                 return {"ok": False, "reason": "mode must be name, point, or ask"}
             # Fail CLOSED. An empty catalog means the unit folder is missing or
             # unreadable -- not that every objective is suddenly legal. The old
@@ -846,6 +888,15 @@ class TeacherOS:
                 return {"ok": False, "reason": f"unit {self.unit_id} has no objectives on disk"}
             if objective not in allowed:
                 return {"ok": False, "reason": "objective_id is not on the unit map"}
+            # One row per objective per turn. NOT per session: a child who was
+            # `wrong` at minute 10 and `correct` after scaffolding at minute 30
+            # is the most valuable pattern this memory can hold -- wrong-then-
+            # right IS the learning -- and a session key would destroy it.
+            if objective in self.turn_recorded:
+                return {
+                    "ok": False,
+                    "reason": f"already recorded {objective} this turn",
+                }
             stored_mode = mode or None
             note = f"unit={self.unit_id}; outcome={outcome}"
             if stored_mode:
@@ -857,12 +908,18 @@ class TeacherOS:
                 "mode": stored_mode or "",
             }
             self.evidence.append(row)
+            self.turn_recorded.add(objective)
             db = getattr(self.core, "db", None)
             record = getattr(db, "record_observation", None)
             if callable(record):
                 payload = dict(
                     session_id=getattr(self.core, "session_id", None),
-                    response_turn_id=f"ev-{uuid.uuid4().hex[:12]}",
+                    # The REAL turn. This used to be a fresh random uuid on
+                    # every call, which meant the unique index on
+                    # (session_id, response_turn_id, skill) could never fire
+                    # once, and no row could ever be traced back to the
+                    # utterance it claims to be about.
+                    response_turn_id=self.turn_id or f"ev-{uuid.uuid4().hex[:12]}",
                     activity_id=self.unit_id,
                     mode=stored_mode,
                 )
@@ -1123,7 +1180,41 @@ def _session_recall(os_: TeacherOS) -> list[Any]:
     # is in the unit map, which is curriculum -- Core must not know it.
     elapsed_min = int((time.time() - os_.started_at) // 60)
     notes.append(RecalledMemory(text=f"PERIOD_MINUTES={elapsed_min}", when="now"))
+    # How many periods this class has already finished on this unit. Core
+    # witnessed every one of them open and close, so counting them is the same
+    # species of act as reading the clock. What the number MEANS -- that the
+    # third meeting is "Period 3 -- Put it together" -- is in the unit map,
+    # where curriculum belongs. Core must never look that up, or the map stops
+    # being the thing that decides and Python starts.
+    counter = getattr(getattr(os_.core, "db", None), "count_periods_held", None)
+    if callable(counter):
+        try:
+            held = counter(student_id=os_.learner_id, lesson_id=os_.unit_id)
+        except Exception:  # noqa: BLE001 -- a missing count must not cost a turn
+            held = None
+        if held is not None:
+            notes.append(RecalledMemory(text=f"PERIODS_HELD={held}", when="now"))
+    # What she has already tried THIS period, per objective. The unit map's own
+    # pacing law is "Time is not the measure; attempts are", and it was
+    # unexecutable because nothing counted attempts.
+    if os_.period_evidence:
+        tally: dict[str, int] = {}
+        for row in os_.period_evidence:
+            objective = row.split(":", 1)[0]
+            tally[objective] = tally.get(objective, 0) + 1
+        notes.append(
+            RecalledMemory(
+                text="THIS_PERIOD=" + ", ".join(f"{k} x{v}" for k, v in tally.items()),
+                when="now",
+            )
+        )
     notes.append(RecalledMemory(text="student_id=" + os_.learner_id, when="now"))
+    # An empty board is a fact, and it was invisible: the writing/images/exercise
+    # lines are omitted when empty, so "nothing is up" and "I was not told" read
+    # identically. Measured 2026-08-19 on google/gemma-4-26b-a4b-it: she said
+    # "Look at these friends!" twice with nothing on the projector at all.
+    if not (os_.last_writing or os_.last_images or os_.last_exercise):
+        notes.append(RecalledMemory(text="BOARD=empty", when="now"))
     if os_.last_writing:
         notes.append(RecalledMemory(text="writing=" + os_.last_writing, when="now"))
     if os_.last_images:
@@ -1281,6 +1372,11 @@ async def _handle_teacher_turn(core: Any, text: str) -> dict[str, Any]:
     os_.turn_images = []
     os_.turn_exercises = []
     os_.turn_evidence = []
+    os_.turn_recorded = set()
+    # What Core actually heard this turn. A system event is not a child
+    # speaking, so evidence written on one is about an utterance that did not
+    # happen -- and she has no memory of an earlier one to be recalling.
+    os_.turn_student_text = "" if event else text
     if event is None:
         os_.last_student_at = time.time()
     prior_say = os_.last_say
@@ -1296,6 +1392,7 @@ async def _handle_teacher_turn(core: Any, text: str) -> dict[str, Any]:
         # single run open -- so the NEXT turn 429'd. The registry still scopes
         # every call to this session and learner, and the turn is retired
         # explicitly when it ends, so a long TTL costs nothing.
+        os_.turn_id = turn_id
         core.turn_registry.register(
             turn_id, os_.execute, student_id=os_.learner_id, ttl_s=900.0
         )
@@ -1338,6 +1435,12 @@ async def _handle_teacher_turn(core: Any, text: str) -> dict[str, Any]:
         elif said and _check_teacher_line(str(said)):
             error = error or _check_teacher_line(str(said))
             said = None
+        if event == "wake":
+            # She asked for this beat. If she produced nothing there is nothing
+            # to retry -- the room simply goes back to waiting for a child.
+            if said:
+                error = None
+            break
         if event == "prepare":
             # Nobody is waiting, and she must not speak. The turn succeeded if
             # she wrote a plan; there is nothing to retry if she did not.
@@ -1367,6 +1470,8 @@ async def _handle_teacher_turn(core: Any, text: str) -> dict[str, Any]:
         }
     _log_turn_census(os_, event=event, ok=bool(said) or silent_ok)
     os_.turn_kind = None
+    os_.turn_id = None
+    os_.turn_student_text = ""
     return {
         "ok": bool(said) or silent_ok,
         "say": said,
@@ -1519,6 +1624,25 @@ async def pulse_teacher(core: Any, *, force: bool = False, reason: str = "tick")
     # She asked something and is waiting. Nudge once, early, then let the
     # ordinary long floor take over -- and bypass HEARTBEAT_MIN_GAP_S for that
     # one nudge, or the 20s cooldown swallows the whole point of a short wait.
+    # A beat she scheduled herself. It bypasses the silence floor and the
+    # cooldown, like the nudge -- the whole point is that it happens when she
+    # said, not when the room happens to go quiet. It is NOT a heartbeat: a
+    # heartbeat may honestly answer HEARTBEAT_OK and stay silent, which for a
+    # move she asked for would be the drill dying mid-round.
+    if os_.wake_at is not None and now >= os_.wake_at:
+        os_.wake_at = None
+        os_.last_heartbeat_at = now
+        try:
+            result = await handle_teacher_turn(core, "[wake]")
+        except RuntimeError as exc:
+            return {"ok": False, "action": "wait", "phase": "fault", "reason": str(exc)}
+        result["silenceMs"] = int(_silence_s(os_) * 1000)
+        result["phase"] = teacher_phase(core)
+        result["reason"] = "her_own_next_beat"
+        if not result.get("action"):
+            result["action"] = "say" if result.get("say") else HEARTBEAT_OK
+        return result
+
     nudging = os_.awaiting_answer and not os_.nudged_once and silence >= WAIT_AFTER_QUESTION_S
     if nudging:
         os_.nudged_once = True

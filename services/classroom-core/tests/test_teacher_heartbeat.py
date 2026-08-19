@@ -338,3 +338,52 @@ def test_a_heartbeat_she_answers_with_silence_is_not_a_fault() -> None:
     assert got["ok"] is True, got
     assert got["say"] is None, "silence was the right answer"
     assert core.last_teacher_fault is None, "silence is not a fault"
+
+
+def test_she_can_ask_the_room_for_her_own_next_beat() -> None:
+    """Without this there is structurally no such thing as an ACTIVITY.
+
+    Her only wakes were a child speaking, one 7s nudge, and a 45s silence
+    floor. So "say it together, three times, listening between each" is three
+    rounds of a silent classroom -- and she simply never starts one. Measured
+    2026-08-19: zero exercises and one picture across a whole period.
+
+    A scheduled beat is not a heartbeat. A heartbeat may honestly answer
+    HEARTBEAT_OK and stay quiet; for a move she asked for, that is the drill
+    dying mid-round.
+    """
+    core = SimpleNamespace(publish_speech=lambda *a, **k: None)
+    os_ = TeacherOS(core, unit_id="gs3-u1-hello", learner_id="learner-1")
+
+    async def run() -> None:
+        plain = await os_.execute("say", {"teacher_line": "Look at this word."})
+        assert plain["ok"] is True
+        assert os_.wake_at is None, "no wake unless she asks for one"
+
+        asked = await os_.execute(
+            "say", {"teacher_line": "Say it with me: Hello!", "wake_in_s": 8}
+        )
+        assert asked["ok"] is True
+        assert os_.wake_at is not None
+        assert 5.0 <= os_.wake_at - time.time() <= 9.0
+
+        # Clamped at both ends -- a drill beat is seconds, not an hour, and a
+        # zero would mean "wake me before I have finished speaking".
+        await os_.execute("say", {"teacher_line": "Again.", "wake_in_s": 9999})
+        assert os_.wake_at - time.time() <= teacher_os.WAKE_MAX_S + 1
+        await os_.execute("say", {"teacher_line": "Again.", "wake_in_s": 1})
+        assert os_.wake_at - time.time() >= teacher_os.WAKE_MIN_S - 1
+
+        # And a later plain line clears it: she moved on.
+        await os_.execute("say", {"teacher_line": "Good. Now something new."})
+        assert os_.wake_at is None
+
+    asyncio.run(run())
+
+
+def test_a_wake_turn_is_not_a_heartbeat() -> None:
+    """Two different events, because the escape hatch differs. A heartbeat may
+    honestly answer HEARTBEAT_OK; a beat she scheduled may not."""
+    assert teacher_os.system_event("[wake]") == "wake"
+    assert teacher_os.system_event("[heartbeat]") == "heartbeat"
+    assert teacher_os.system_event("[wake]") != teacher_os.system_event("[heartbeat]")

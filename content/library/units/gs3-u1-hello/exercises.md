@@ -1,5 +1,11 @@
 # Exercises — Hello, Lesson 1
 
+**Each block below is exactly the arguments for `show_exercise`, minus
+`turn_id`.** Copy one whole and send it — do not unwrap it, do not rename
+anything. A block that has been retyped from memory is a wasted round-trip a
+child sits through.
+
+
 Concrete `show_exercise` payloads for material on pages 10–11. This is what
 each activity **is** — its prompt, its options, which option is correct, which
 recording goes with it. It is not a running order: the numbers below are the
@@ -17,12 +23,30 @@ The four children's names against their faces.
 ```json
 {
   "kind": "vocabulary",
-  "items": [
-    { "id": "ben",  "text": "Ben",  "asset": "asset://gs3/panels/char-ben.jpg" },
-    { "id": "mai",  "text": "Mai",  "asset": "asset://gs3/panels/char-mai.jpg" },
-    { "id": "minh", "text": "Minh", "asset": "asset://gs3/panels/char-minh.jpg" },
-    { "id": "lucy", "text": "Lucy", "asset": "asset://gs3/panels/char-lucy.jpg" }
-  ]
+  "content": {
+    "items": [
+      {
+        "id": "ben",
+        "text": "Ben",
+        "asset": "asset://gs3/panels/char-ben.jpg"
+      },
+      {
+        "id": "mai",
+        "text": "Mai",
+        "asset": "asset://gs3/panels/char-mai.jpg"
+      },
+      {
+        "id": "minh",
+        "text": "Minh",
+        "asset": "asset://gs3/panels/char-minh.jpg"
+      },
+      {
+        "id": "lucy",
+        "text": "Lucy",
+        "asset": "asset://gs3/panels/char-lucy.jpg"
+      }
+    ]
+  }
 }
 ```
 
@@ -34,10 +58,20 @@ Recording: `asset://gs3/audio/track-05.mp3`.
 ```json
 {
   "kind": "vocabulary",
-  "items": [
-    { "id": "a", "text": "Ben & Mai",   "asset": "asset://gs3/panels/u1l1-dialogue-a.jpg" },
-    { "id": "b", "text": "Minh & Lucy", "asset": "asset://gs3/panels/u1l1-dialogue-b.jpg" }
-  ]
+  "content": {
+    "items": [
+      {
+        "id": "a",
+        "text": "Ben & Mai",
+        "asset": "asset://gs3/panels/u1l1-dialogue-a.jpg"
+      },
+      {
+        "id": "b",
+        "text": "Minh & Lucy",
+        "asset": "asset://gs3/panels/u1l1-dialogue-b.jpg"
+      }
+    ]
+  }
 }
 ```
 
@@ -57,15 +91,17 @@ both speech bubbles blank.
 ```json
 {
   "kind": "roleplay",
-  "environment": "a path near the school gate, one child sitting on a bench",
-  "ai_role": "the child on the bench",
-  "student_role": "the child arriving at school",
-  "target_phrases": [
-    "Hello. I'm [name].",
-    "Hi. I'm [name].",
-    "Hello, [name]. I'm [name].",
-    "Hi, [name]. I'm [name]."
-  ]
+  "content": {
+    "environment": "a path near the school gate, one child sitting on a bench",
+    "ai_role": "the child on the bench",
+    "student_role": "the child arriving at school",
+    "target_phrases": [
+      "Hello. I'm [name].",
+      "Hi. I'm [name].",
+      "Hello, [name]. I'm [name].",
+      "Hi, [name]. I'm [name]."
+    ]
+  }
 }
 ```
 
@@ -82,12 +118,20 @@ wrong pairing. Recording: `asset://gs3/audio/track-07.mp3`.
 ```json
 {
   "kind": "choice",
-  "prompt": "Which pair is speaking?",
-  "options": [
-    { "id": "a", "asset": "asset://gs3/panels/u1l1-ex4-item1-a.jpg" },
-    { "id": "b", "asset": "asset://gs3/panels/u1l1-ex4-item1-b.jpg" }
-  ],
-  "correct_id": "b"
+  "content": {
+    "prompt": "Which pair is speaking?",
+    "options": [
+      {
+        "id": "a",
+        "asset": "asset://gs3/panels/u1l1-ex4-item1-a.jpg"
+      },
+      {
+        "id": "b",
+        "asset": "asset://gs3/panels/u1l1-ex4-item1-b.jpg"
+      }
+    ],
+    "correct_id": "b"
+  }
 }
 ```
 
@@ -100,12 +144,20 @@ not Minh.
 ```json
 {
   "kind": "choice",
-  "prompt": "Which pair is speaking?",
-  "options": [
-    { "id": "a", "asset": "asset://gs3/panels/u1l1-ex4-item2-a.jpg" },
-    { "id": "b", "asset": "asset://gs3/panels/u1l1-ex4-item2-b.jpg" }
-  ],
-  "correct_id": "a"
+  "content": {
+    "prompt": "Which pair is speaking?",
+    "options": [
+      {
+        "id": "a",
+        "asset": "asset://gs3/panels/u1l1-ex4-item2-a.jpg"
+      },
+      {
+        "id": "b",
+        "asset": "asset://gs3/panels/u1l1-ex4-item2-b.jpg"
+      }
+    ],
+    "correct_id": "a"
+  }
 }
 ```
 

@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 from collections.abc import AsyncIterator
+from types import SimpleNamespace
 from typing import Any
 
 import httpx
@@ -97,8 +98,13 @@ def test_teacher_request_has_no_move_menu(monkeypatch: pytest.MonkeyPatch):
     # Forbidding a tool that cannot be called costs tokens on every round-trip
     # and teaches the model a name it should never have learned.
     assert "classroom_propose_move" not in text
-    assert "how-to-teach.md" in text
-    assert "units/" in text and "map.md" in text
+    # READ_NOW names at most two a turn -- the rest arrive next turn. On a
+    # student turn the key and the judging skill come first, because that is
+    # the move she is about to make.
+    assert "READ_NOW=" in text
+    assert "keys.md" in text
+    assert "the rest next turn" in text
+    assert "units/" in text, "the unit is still named, even when the map waits a turn"
     assert "offered_move_ids" not in text
     # Empty memory fields are omitted rather than sent as bare keys; the
     # populated case is asserted immediately below.
@@ -745,3 +751,36 @@ async def test_live_complete_is_disabled_without_consuming_the_single_gateway_sl
     with pytest.raises(RuntimeError, match="live Hermes profile"):
         await make_agent(handler).complete([{"role": "user", "content": "probe"}])
     assert requests == 0
+
+
+def test_a_scheduled_beat_reaches_her_as_her_own_move() -> None:
+    """`[wake]` is not `[heartbeat]`.
+
+    A heartbeat means the room went quiet and she may honestly answer
+    HEARTBEAT_OK and stay silent. A wake is a beat SHE asked for -- the next
+    round of a drill -- and staying silent there is the activity dying
+    mid-round. Without this the room has no way to hold a 20-minute activity
+    at all: measured 2026-08-19, zero exercises and one picture per period.
+    """
+    from bright_agent.hermes import render_teacher_turn
+
+    class _Mem:
+        def __init__(self, text: str) -> None:
+            self.text = text
+
+    def turn(said: str) -> str:
+        ctx = SimpleNamespace(
+            lesson=SimpleNamespace(lesson_id="gs3-u1-hello"),
+            last_interaction=SimpleNamespace(detail=said),
+            recalled=[_Mem("student_id=learner-1")],
+        )
+        return render_teacher_turn(ctx, "bright-x")
+
+    wake = turn("[wake]")
+    assert "EVENT=wake" in wake
+    assert "next beat of" in wake
+    assert "Do not answer HEARTBEAT_OK" in wake
+
+    beat = turn("[heartbeat]")
+    assert "EVENT=heartbeat" in beat
+    assert "reply HEARTBEAT_OK" in beat, "silence keeps its escape hatch"

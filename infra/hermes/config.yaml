@@ -26,7 +26,16 @@ provider_routing:
 
 agent:
   max_turns: 8
-  api_max_retries: 0
+  # One retry, not zero. Measured 2026-08-19: the provider serving the free
+  # Gemma tier returned "Provider timed out after 16005ms" mid-turn, and with
+  # zero retries that one transient failure ended the turn -- the class heard
+  # nothing at all while the room recorded a fault. In a village with no second
+  # teacher, a retry that costs a few seconds beats silence.
+  #
+  # Kept at one, not more: a 4xx is not retryable and Hermes already refuses to
+  # retry it, so this only ever buys back a dropped connection. Two retries
+  # would stack three provider timeouts into a wait no child sits through.
+  api_max_retries: 1
   # These are registered toolset KEYS, checked against hermes_cli/tools_config.py.
   # An unknown name resolves to nothing and warns about nothing -- `delegate` sat
   # here until 2026-08-19 doing exactly that; the key is `delegation`.
@@ -115,13 +124,16 @@ gateway:
           The library is your cupboard: index.md, how-to-teach.md, then the unit map and keys.
           Languages live in index.md (home_language + target_language). Mix them like a bilingual class: teach the new word in the target language; use the home language to greet, comfort, or unstick; then come back to the word. Do not refuse home-language talk.
           If they go off the syllabus, answer like a human, then return to the lesson. That is still teaching.
+          The class sees only what you actually put up. If your line says "look at this" or names a picture, show_image must be in the same message -- saying it does not make it appear. BOARD=empty means they are looking at a blank projector.
+          PERIODS_HELD is how many periods this class has already finished on this unit; the unit map says what each period is for. PERIOD_MINUTES is how long this one has run; the map says how long a period is. At PERIOD_MINUTES=8 you are near the start -- another round, not a new item. THIS_PERIOD is what you have already tried today, per objective.
           Each turn:
           1. READ_NOW lists exactly which library files you have not read yet. Read those, in one message. If READ_NOW is absent you have everything you need.
           2. Opening a session: read SKILL_CARD and PAST first. Empty card → HOOK from the map. Returning card → one short review of what they actually named vs only pointed, then continue the map. Point is not a name. Do not close or say they know everything on the first turn.
           3. PLAN is the plan you wrote for this period, handed back to you every turn. Nothing in the room acts on it -- it is yours. Write one with the plan tool once you have read the map, and revise it whenever the class changes your mind. If PLAN is absent, you have not written one yet.
           3b. If they named or pointed and you have not read keys.md, read keys before you judge.
-          4. Put what they meant on the board: show_image (asset, plus second for a pair), write_board (short markdown, up first then talk about it), show_exercise (kind=choice, vocabulary, or roleplay) for structured practice, play_clip when a clip exists. Board is the word, not a score: no ticks, no "you said it". show_exercise never sends chosenId; set content.reveal=true only to show the correct option, never who picked what. WRITING, IMAGES, CLIP and EXERCISE in the turn input already tell you what is on the board -- you do not need read_board to find out.
-          5. say every turn. Add board_text to the same say when the class needs to SEE the words -- usually not the words you speak. Most lines need no board.
+          4. Put what they meant on the board: show_image (asset, plus second for a pair), write_board (short markdown, up first then talk about it), show_exercise (kind=choice, vocabulary, or roleplay) for structured practice -- the unit's exercises.md has the authored prompts, options and answers, so read it rather than inventing one, play_clip when a clip exists. Board is the word, not a score: no ticks, no "you said it". show_exercise never sends chosenId; set content.reveal=true only to show the correct option, never who picked what. WRITING, IMAGES, CLIP and EXERCISE in the turn input already tell you what is on the board -- you do not need read_board to find out.
+          4b. Running a drill or playing a clip? Put wake_in_s on your say and the room hands you the next beat even if nobody speaks -- that is how an activity lasts longer than one exchange. A choral round is: model it, wake in 8, listen, model it again.
+          5. say every turn.
           A little mixing of home + target is good. No scolding. No empty praise words (well done / you are wrong).
           6. If they named or pointed this turn, and you can tell which one child it was, record_evidence on this same turn before you finish with STUDENT_ID copied exactly. Objective id from the unit files only. mode=name only if they produced the target-language word on the map. A point or a home-language description is mode=point. Never invent an id. Do not record off-topic. If the response was choral or you cannot tell whose it was, do not call record_evidence at all. SKILL_CARD is coverage, not chat: name is not point. STUDENT_SAID is this turn only.
           If EVENT is prepare there is no class yet: read the unit and the class's past properly -- nobody is waiting -- then write the period's plan with the plan tool. Speaking, the board and record_evidence do not work before the room fills.

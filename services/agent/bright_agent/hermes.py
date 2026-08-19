@@ -253,6 +253,9 @@ def render_teacher_turn(ctx: TurnContext, turn_id: str) -> str:
     if last is not None:
         said = str(getattr(last, "detail", "") or "")
     period_minutes = ""
+    periods_held = ""
+    this_period = ""
+    board_empty = ""
     student_id = ""
     writing = ""
     images = ""
@@ -267,6 +270,12 @@ def render_teacher_turn(ctx: TurnContext, turn_id: str) -> str:
         text = str(getattr(mem, "text", "") or "")
         if text.startswith("PERIOD_MINUTES="):
             period_minutes = text[len("PERIOD_MINUTES=") :]
+        elif text.startswith("PERIODS_HELD="):
+            periods_held = text[len("PERIODS_HELD=") :]
+        elif text.startswith("THIS_PERIOD="):
+            this_period = text[len("THIS_PERIOD=") :]
+        elif text.startswith("BOARD=empty"):
+            board_empty = "empty"
         elif text.startswith("student_id="):
             student_id = text[len("student_id=") :]
         elif text.startswith("writing="):
@@ -293,6 +302,7 @@ def render_teacher_turn(ctx: TurnContext, turn_id: str) -> str:
         "[sat_down]": "class_start",
         "[heartbeat]": "heartbeat",
         "[prepare]": "prepare",
+        "[wake]": "wake",
     }.get(token)
     student_said = "" if event else said
 
@@ -301,7 +311,10 @@ def render_teacher_turn(ctx: TurnContext, turn_id: str) -> str:
     state = [
         ("TURN_ID", turn_id),
         ("STUDENT_ID", student_id),
+        ("PERIODS_HELD", periods_held),
         ("PERIOD_MINUTES", period_minutes),
+        ("THIS_PERIOD", this_period),
+        ("BOARD", board_empty),
         ("UNIT", unit),
         ("EVENT", event or "student"),
         ("STUDENT_SAID", student_said),
@@ -326,11 +339,35 @@ def render_teacher_turn(ctx: TurnContext, turn_id: str) -> str:
     # costs reasoning, and produced malformed calls in the field -- it sent
     # read_library with no `path` at all. Naming the exact paths cannot do that.
     already = {r.strip() for r in reads.split(",") if r.strip()}
-    wanted = ["how-to-teach.md", "skills/index.md", map_path]
+    # Ordered by what she needs FIRST, because the list is capped below: the
+    # map is what she is teaching from, and the skill is the move she is about
+    # to make. Conduct and the skills index matter but survive a turn's wait.
+    wanted = [map_path, "how-to-teach.md", "skills/index.md"]
+    # The profession is 490 authored lines she read the INDEX of and never
+    # opened -- measured 2026-08-19, skills opened: none, across a whole period.
+    # Two instructions telling her to "open the skill that applies" were both
+    # ignored, because deciding which one applies is exactly the judgement a
+    # small model will not spend while a child is waiting.
+    #
+    # So Core names them, the same way it already names keys.md. This is
+    # selection by WITNESSED EVENT -- a period is opening, an answer arrived --
+    # not by curriculum judgement: Core never reads a word of what is inside.
+    if event == "prepare":
+        wanted.insert(1, "skills/prepare-a-period/SKILL.md")
+    elif event == "class_start":
+        wanted.insert(1, "skills/open-a-period/SKILL.md")
     if said and not event:
-        wanted.append(f"units/{unit}/keys.md" if unit else "keys.md")
+        wanted.insert(0, f"units/{unit}/keys.md" if unit else "keys.md")
+        wanted.insert(1, "skills/judge-a-response/SKILL.md")
     todo = [path for path in wanted if path not in already]
-    if todo:
+    # At most two a turn. A turn has an eight-call budget and a child at the
+    # other end of it; measured 2026-08-19, naming four files on the opening
+    # turn spent the whole budget on reading and she never said anything at
+    # all -- the class heard silence while she did her homework. The rest are
+    # still named, one turn later, and ALREADY_READ stops her re-reading.
+    if len(todo) > 2:
+        lines.append("READ_NOW=" + ", ".join(todo[:2]) + " (the rest next turn)")
+    elif todo:
         lines.append("READ_NOW=" + ", ".join(todo))
     if already:
         lines.append("ALREADY_READ=" + ", ".join(sorted(already)))
@@ -348,9 +385,18 @@ def render_teacher_turn(ctx: TurnContext, turn_id: str) -> str:
     # through every one of them.
     lines.append(
         "Put every tool call you already know you need in ONE message -- including "
-        "say. Like this, one message: show_image(asset) + record_evidence(...) + "
+        "say. Like this, one message: play_clip(asset) + "
+        "record_evidence(objective, outcome=near, mode=point) + "
         "say(teacher_line, board_text). That is one wait, not three. Only split "
-        "when you genuinely need to SEE a result first -- reading the library."
+        "when you genuinely need to SEE a result first -- reading the library. "
+        "near and uncertain are honest answers: an honest gap is worth more "
+        "than a confident guess about a child."
+    )
+    lines.append(
+        "Running a drill, or playing a clip? Put wake_in_s on your say and the "
+        "room hands you the next beat -- that is how an activity lasts more "
+        "than one exchange. A choral round is: model it, wake in 8, listen, "
+        "model it again."
     )
     lines.append(
         "If your line asks the class for something, set awaiting_answer on say. "
@@ -362,9 +408,20 @@ def render_teacher_turn(ctx: TurnContext, turn_id: str) -> str:
         "open close-a-period and set closing on your last say."
     )
     lines.append(
-        "Chalk with board_text on the same say when the class needs to SEE the "
-        "words -- usually not the words you speak: say \"look at this one together\" "
-        "and write just the word. Most lines need no board at all."
+        "The class sees only what you actually put up. If your line says \"look "
+        "at this\" or names a picture, show_image must be in the SAME message -- "
+        "saying it does not make it appear, and BOARD=empty means they are "
+        "looking at a blank projector."
+    )
+    lines.append(
+        "A turn can be YOUR move, not only a reply: play the recording, run the "
+        "class through it together again, put up an exercise from the unit's "
+        "exercises.md, change the picture, go back over the one they fumbled."
+    )
+    lines.append(
+        "skills/index.md lists the rest of the procedures. Open one by name when "
+        "you reach for it -- elicit-chorally before practice, put-up-an-exercise "
+        "to check what landed, scaffold-down when they are lost."
     )
     lines.append("The turn ends when you say. Say something every turn.")
     lines.extend(volatile)
@@ -380,6 +437,12 @@ def render_teacher_turn(ctx: TurnContext, turn_id: str) -> str:
             "with. Then write the plan for the period with the plan tool. You "
             "cannot speak, use the board, or record evidence before the room "
             "fills -- reading and planning are the only things that work now."
+        )
+    elif event == "wake":
+        lines.append(
+            "You asked the room to wake you now -- this is the next beat of "
+            "your own activity, not a silence. Make the move: use tools and end "
+            "with say. Do not answer HEARTBEAT_OK."
         )
     elif event == "heartbeat":
         lines.append(

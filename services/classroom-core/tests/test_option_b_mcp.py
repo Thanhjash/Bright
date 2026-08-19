@@ -158,3 +158,42 @@ async def test_mcp_is_authenticated_and_never_exposes_classroom_say():
         }
         assert "classroom_say" not in names
         assert all("turn_id" in tool["inputSchema"]["required"] for tool in TOOLS)
+
+
+def test_the_wire_schema_carries_no_length_bounds() -> None:
+    """A schema keyword the edge model's provider refuses is a dead classroom.
+
+    Measured 2026-08-19: the OpenRouter provider serving
+    google/gemma-4-26b-a4b-it returns HTTP 422 for the whole request --
+    "mcp__bright_classroom__plan.parameters.properties.plan uses maxLength" --
+    while Gemini accepted the identical schema all day. That is the gate we
+    wrote down after the merged `teach` tool failed, firing in the other
+    direction: what the development model tolerates is not evidence about the
+    model that ships.
+
+    Core still enforces every bound from the same dicts, so nothing is
+    loosened -- the limit reaches the model as a sentence instead.
+    """
+    from mcp_server import TOOLS, wire_tools
+
+    def bounds(obj, path=""):
+        found = []
+        if isinstance(obj, dict):
+            for key, value in obj.items():
+                if key in {"maxLength", "minLength"}:
+                    found.append(f"{path}.{key}")
+                found.extend(bounds(value, f"{path}.{key}"))
+        elif isinstance(obj, list):
+            for item in obj:
+                found.extend(bounds(item, path))
+        return found
+
+    wire = wire_tools()
+    assert not bounds(wire), f"length bounds reached the wire: {bounds(wire)}"
+    # ...and Core did not quietly stop checking them.
+    assert bounds(list(TOOLS)), "Core's own copy must keep the bounds it validates"
+    assert {t["name"] for t in wire} == {t["name"] for t in TOOLS}
+    for tool in wire:
+        if tool["name"] == "say":
+            note = tool["inputSchema"]["properties"]["teacher_line"]["description"]
+            assert "220 characters" in note, "the limit must still reach her, in prose"

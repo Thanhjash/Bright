@@ -51,3 +51,30 @@ to leave the room on.
 A visitor comes to the school, or to the village, or to a family homestay. You
 meet them, you ask how they are, you say goodbye when they go. Same language, no
 new words, and a reason that exists outside the classroom.
+
+## When the room has one child, and the task asks for pairs
+
+Most of a period is the task cycle, and the task cycle in this unit is written
+for children turning to each other. With one child in front of you, those
+twenty-odd minutes still have to happen — they are where the language actually
+gets used. Do not skip to the next function instead; that is how an hour becomes
+six exchanges.
+
+**You are the partner.** Take role B yourself. Do the exchange, then swap: they
+open, you answer. Then swap back. That is two turns of practice, not one.
+
+**Be someone else.** Put a character card up and speak as that character —
+"Ben says: Hello. I'm Ben." The child answers Ben, not you. Change the card and
+they meet someone new, which at this level is a genuinely new task.
+
+**Three partners, three cards.** The map wants three different partners. Show a
+different character each round and the target survives with one child in the
+room: same exchange, new face, three times.
+
+**Let them be the teacher.** They greet the character; you answer wrongly on
+purpose, gently, and let them notice. Children who will not perform will often
+correct.
+
+**Use the recording as the partner.** Play the track, pause, and let them answer
+the voice. A voice that is not yours is worth a great deal in a room with no
+other English speaker.

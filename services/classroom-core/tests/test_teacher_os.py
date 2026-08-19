@@ -140,6 +140,9 @@ def test_teacher_os_says_and_records_without_a_graph() -> None:
         publish_speech=lambda text, source="agent": published.append((text, source)),
     )
     os = TeacherOS(core, unit_id="gs3-u1-hello", learner_id="learner-1")
+    # A real turn sets this from what Core heard. Evidence is anchored to a
+    # witnessed student act, so a direct-drive test has to supply one.
+    os.turn_student_text = "banana"
 
     async def run() -> None:
         bad = await os.execute("say", {"teacher_line": "You are wrong."})
@@ -157,7 +160,12 @@ def test_teacher_os_says_and_records_without_a_graph() -> None:
         assert os.reads == ["units/gs3-u1-hello/map.md"]
         ev = await os.execute(
             "record_evidence",
-            {"student_id": "learner-1", "objective_id": "greet-and-name", "outcome": "wrong"},
+            {
+                "student_id": "learner-1",
+                "objective_id": "greet-and-name",
+                "outcome": "wrong",
+                "mode": "name",
+            },
         )
         assert ev["ok"] is True
         assert os.evidence[0]["outcome"] == "wrong"
@@ -252,12 +260,28 @@ def test_record_evidence_keeps_mode_orthogonal_to_outcome() -> None:
     core = SimpleNamespace(db=database, session_id=session_id)
     os = TeacherOS(core, unit_id="gs3-u1-hello", learner_id="learner-1")
 
+    os.turn_student_text = "Hello, I'm Minh"
+
     async def run() -> None:
+        # `mode` used to be optional, and a modeless row then fell silently out
+        # of SKILL_CARD coverage (ATTEMPT_MODES is {name, point}) -- evidence
+        # she recorded evaporating from the one thing that reads it.
         missing = await os.execute(
             "record_evidence",
             {"student_id": "learner-1", "objective_id": "greet-and-name", "outcome": "correct"},
         )
-        assert missing["ok"] is True
+        assert missing["ok"] is False
+        assert "mode is required" in missing["reason"]
+        named = await os.execute(
+            "record_evidence",
+            {
+                "student_id": "learner-1",
+                "objective_id": "greet-and-name",
+                "outcome": "correct",
+                "mode": "name",
+            },
+        )
+        assert named["ok"] is True
         point = await os.execute(
             "record_evidence",
             {
@@ -268,7 +292,9 @@ def test_record_evidence_keeps_mode_orthogonal_to_outcome() -> None:
             },
         )
         assert point["ok"] is True
-        named = await os.execute(
+
+        # Same objective, same turn -- refused. One row per objective per turn.
+        again = await os.execute(
             "record_evidence",
             {
                 "student_id": "learner-1",
@@ -277,7 +303,24 @@ def test_record_evidence_keeps_mode_orthogonal_to_outcome() -> None:
                 "mode": "name",
             },
         )
-        assert named["ok"] is True
+        assert again["ok"] is False
+        assert "already recorded" in again["reason"]
+
+        # A later turn, though, is the most valuable pattern this memory can
+        # hold: wrong-then-right after scaffolding IS the learning, so the key
+        # is (objective, turn) and never (objective, session).
+        os.turn_recorded = set()
+        os.turn_id = "bright-later-turn"
+        later = await os.execute(
+            "record_evidence",
+            {
+                "student_id": "learner-1",
+                "objective_id": "greet-and-name",
+                "outcome": "near",
+                "mode": "name",
+            },
+        )
+        assert later["ok"] is True
         refuse = await os.execute(
             "record_evidence",
             {
@@ -301,7 +344,7 @@ def test_record_evidence_keeps_mode_orthogonal_to_outcome() -> None:
 
     asyncio.run(run())
     rows = database.list_observations(student_id="learner-1")
-    assert [row["mode"] for row in rows] == [None, "point", "name"]
+    assert [row["mode"] for row in rows] == ["name", "point", "name"]
     assert all((row["evidence"] or "").startswith("unit=") for row in rows)
     assert all("yellow" not in (row["evidence"] or "") for row in rows)
     student = database.get_student("learner-1")
@@ -312,8 +355,12 @@ def test_record_evidence_keeps_mode_orthogonal_to_outcome() -> None:
     assert student["skills"] == {}
     card, past = teacher_os.format_skill_memory(rows)
     assert "ask-wellbeing point supported=1 contradicted=0 no_decision=0" in card
-    assert "greet-and-name name supported=0 contradicted=0 no_decision=1" in card
-    assert "greet-and-name -" in past
+    # correct on the first turn, `near` on a later one -- both rows count,
+    # and `near` is a no_decision rather than support.
+    assert "greet-and-name name supported=1 contradicted=0 no_decision=1" in card
+    # PAST is a modeless row no more: mode is required, so every row names
+    # how the answer was elicited.
+    assert "greet-and-name name correct" in past
     later = TeacherOS(core, unit_id="gs3-u1-hello", learner_id="learner-1")
     recalled = teacher_os._session_recall(later)
     texts = [item.text for item in recalled]
@@ -339,6 +386,8 @@ def test_the_turn_carries_no_raw_child_words() -> None:
         publish_speech=lambda *a, **k: None,
     )
     os = TeacherOS(core, unit_id="gs3-u1-hello", learner_id="learner-1")
+
+    os.turn_student_text = "cái màu vàng"
 
     async def run() -> None:
         await os.execute("say", {"teacher_line": "Look at this with me."})
@@ -373,6 +422,7 @@ def test_reopen_session_writes_summary_without_raw_words() -> None:
         core, unit_id="gs3-u1-hello", learner_id="learner-sum", learner_name="Minh"
     )
     first_id = core.session_id
+    first.turn_student_text = "Hello, I'm Minh"
 
     async def run() -> None:
         await first.execute(
@@ -410,6 +460,7 @@ def test_evidence_fails_closed_when_the_unit_is_missing() -> None:
     async def run() -> None:
         core = SimpleNamespace(db=None, session_id=None, store=None, bus=None)
         os_ = TeacherOS(core, unit_id="unit-that-does-not-exist", learner_id="learner-1")
+        os_.turn_student_text = "Hello"
         got = await os_.execute(
             "record_evidence",
             {
@@ -980,4 +1031,84 @@ def test_preparation_refuses_to_run_while_a_class_is_in_progress() -> None:
     got = asyncio.run(teacher_os.prepare_period(core, unit_id="gs3-u1-hello"))
     assert got["ok"] is False
     assert "in progress" in got["error"]
+    database.close()
+
+
+def test_core_is_a_witness_not_a_marker() -> None:
+    """Where Core's refusal stops and her judgement starts.
+
+    Core may refuse a claim about the room it witnessed: no turn happened, no
+    child spoke, this row is already written, that objective is not on the map.
+    Core may never rule on whether the answer was good enough -- that lives in
+    keys.md, which is curriculum, which Python must never read.
+
+    The observed failure on 2026-08-19: a pupil said "em chưa hiểu" (*I don't
+    understand*) and `take-leave` was recorded `correct` on that turn. She was
+    recording the utterance she wished she had heard. Core cannot know the
+    answer was poor, but it does know nobody said anything a child could have
+    meant by it -- and on a heartbeat, that nobody spoke at all.
+    """
+    core, database = _plan_core()
+    os_ = TeacherOS(core, unit_id="gs3-u1-hello", learner_id="learner-1")
+    good = {
+        "student_id": "learner-1",
+        "objective_id": "take-leave",
+        "outcome": "correct",
+        "mode": "name",
+    }
+
+    async def run() -> None:
+        # No child spoke this turn -> nothing to record.
+        os_.turn_student_text = ""
+        empty = await os_.execute("record_evidence", dict(good))
+        assert empty["ok"] is False
+        assert "no child spoke" in empty["reason"]
+
+        # A system event is not a child speaking, whichever event it is.
+        for kind in ("heartbeat", "class_start", "prepare"):
+            os_.turn_kind = kind
+            os_.turn_student_text = "Goodbye"
+            got = await os_.execute("record_evidence", dict(good))
+            assert got["ok"] is False, kind
+        os_.turn_kind = None
+
+        # A real child act -> hers to judge, and Core does not second-guess it.
+        os_.turn_student_text = "Goodbye"
+        os_.turn_id = "bright-turn-1"
+        first = await os_.execute("record_evidence", dict(good))
+        assert first["ok"] is True
+        assert os_.evidence[-1]["objective_id"] == "take-leave"
+
+    asyncio.run(run())
+    database.close()
+
+
+def test_every_row_is_anchored_to_the_turn_it_claims_to_be_about() -> None:
+    """`response_turn_id` used to be a fresh random uuid on every call.
+
+    Two consequences, both silent: the unique index on
+    (session_id, response_turn_id, skill) could never fire once, and no row
+    could ever be traced back to the utterance it claims to be about. A false
+    row was unfalsifiable after the fact; now it is one join.
+    """
+    core, database = _plan_core()
+    os_ = TeacherOS(core, unit_id="gs3-u1-hello", learner_id="learner-1")
+    os_.turn_student_text = "Goodbye"
+    os_.turn_id = "bright-turn-7"
+
+    async def run() -> None:
+        await os_.execute(
+            "record_evidence",
+            {
+                "student_id": "learner-1",
+                "objective_id": "take-leave",
+                "outcome": "correct",
+                "mode": "name",
+            },
+        )
+
+    asyncio.run(run())
+    rows = database.list_observations(student_id="learner-1")
+    assert rows, "the row must exist"
+    assert rows[-1]["response_turn_id"] == "bright-turn-7"
     database.close()

@@ -69,8 +69,15 @@ producing it. Never record this as `name`.
 
 - Greetings to you at the start of class
 - Repeating in a choral round — the whole class said it, you cannot attribute it
+- **Saying back the phrase you said in your own last line.** That is your model
+  working, not the child producing. Ask again later, cold, and record that.
 - Anything off-topic, however charming
 - A child copying the answer of the child next to them, if you noticed
 
 When in doubt, `uncertain`. An honest gap is worth more than a confident guess
 about a child.
+
+**One row is one attempt, not coverage.** A child who produced it once, five
+seconds after hearing you, has been exposed to it — they have not retained it.
+Look for it again later in the period, and again on another day, before you
+treat it as something they can do.

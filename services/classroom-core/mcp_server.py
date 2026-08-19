@@ -383,6 +383,17 @@ TOOLS: tuple[dict[str, Any], ...] = (
                         "someone stops her."
                     ),
                 },
+                "wake_in_s": {
+                    "type": "integer",
+                    "description": (
+                        "Set this when your next move should happen even if "
+                        "nobody speaks -- the next round of a drill, or after a "
+                        "clip has finished playing. The room hands you the turn "
+                        "about then. About 5 to 180 seconds. Omit it when you "
+                        "are only waiting for an answer; use awaiting_answer "
+                        "for that."
+                    ),
+                },
                 "awaiting_answer": {
                     "type": "boolean",
                     "description": (
@@ -397,6 +408,52 @@ TOOLS: tuple[dict[str, Any], ...] = (
     },
 )
 TOOLS_BY_NAME = {tool["name"]: tool for tool in TOOLS}
+
+# Length bounds are Core's business, not the wire's.
+#
+# Measured 2026-08-19: the OpenRouter provider serving
+# google/gemma-4-26b-a4b-it rejects the whole request with HTTP 422 --
+# "mcp__bright_classroom__plan.parameters.properties.plan uses maxLength" --
+# and that is the model family that ships to the miniPC. Gemini accepted the
+# same schema all day, which is exactly the gate we wrote down after the merged
+# `teach` tool failed: a schema feature the development model tolerates is not
+# evidence the edge model will.
+#
+# Core still validates every bound, from these same dicts, in
+# _validate_arguments -- so nothing is loosened. What changes is that the model
+# is TOLD the limit in prose instead of being sent a keyword its provider may
+# refuse. For a small model that is the better channel anyway: a sentence it
+# reads beats a constraint it has to infer.
+_WIRE_STRIPPED = ("maxLength", "minLength")
+
+
+def _wire_property(spec: dict[str, Any]) -> dict[str, Any]:
+    clean = {k: v for k, v in spec.items() if k not in _WIRE_STRIPPED}
+    limit = spec.get("maxLength")
+    if limit:
+        note = f"At most {limit} characters."
+        clean["description"] = (str(clean.get("description") or "").strip() + " " + note).strip()
+    return clean
+
+
+def wire_tools() -> list[dict[str, Any]]:
+    """`tools/list` as the provider will accept it."""
+    out: list[dict[str, Any]] = []
+    for tool in TOOLS:
+        schema = tool["inputSchema"]
+        out.append(
+            {
+                **tool,
+                "inputSchema": {
+                    **schema,
+                    "properties": {
+                        name: _wire_property(spec)
+                        for name, spec in schema["properties"].items()
+                    },
+                },
+            }
+        )
+    return out
 
 
 def _validate_arguments(tool: dict[str, Any], arguments: dict[str, Any]) -> str | None:
@@ -479,7 +536,7 @@ def build_mcp_router(core_getter: Callable[[], Any], token: str) -> APIRouter:
         if method == "ping":
             return _rpc_result(request_id, {})
         if method == "tools/list":
-            return _rpc_result(request_id, {"tools": list(TOOLS)})
+            return _rpc_result(request_id, {"tools": wire_tools()})
         if method == "tools/call":
             if not isinstance(params, dict):
                 return _rpc_error(request_id, -32602, "Invalid params")

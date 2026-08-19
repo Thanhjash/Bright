@@ -391,6 +391,25 @@ class Database:
             ).fetchall()
         return [dict(row) for row in rows]
 
+    def count_periods_held(self, *, student_id: str, lesson_id: str) -> int:
+        """How many periods this class has already finished on this unit.
+
+        A fact Core witnessed with its own eyes -- it opened and closed every
+        one of these rows. What the number MEANS ("meeting three is Period 3 —
+        Put it together") is curriculum, and lives in the unit map. Core counts;
+        it must never look the meaning up.
+
+        Only ended sessions count, so the period in progress is not counted as
+        already held.
+        """
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT COUNT(*) AS n FROM sessions "
+                "WHERE student_id = ? AND lesson_id = ? AND ended_at IS NOT NULL",
+                (student_id, lesson_id),
+            ).fetchone()
+        return int(row["n"]) if row else 0
+
     # ---------------------------------------------------------- observations
     def record_observation(
         self,
