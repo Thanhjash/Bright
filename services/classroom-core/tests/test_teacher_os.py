@@ -4,6 +4,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import teacher_os
+from mcp_server import TOOLS_BY_NAME
 from teacher_os import TeacherOS
 
 
@@ -493,14 +494,17 @@ def test_show_exercise_vocabulary_forces_interaction_none() -> None:
 
 def test_two_asset_show_image_puts_both_assets_on_the_stage() -> None:
     """_push_stage used to read only `last_images["main"]`, silently dropping
-    the second asset. A pair now routes through the vocabulary scene."""
+    the second asset. A pair now routes through the vocabulary scene.
+
+    The pair is spelled `asset` + `second`; `left`/`right` was a second,
+    invisible calling convention and is gone from the wire schema."""
     core, frames = _stage_core()
     os_ = TeacherOS(core, unit_id="gs3-u1-hello", learner_id="learner-1")
 
     async def run() -> dict:
         return await os_.execute(
             "show_image",
-            {"left": "asset://gs3/pages/p10.jpg", "right": "asset://gs3/pages/p11.jpg"},
+            {"asset": "asset://gs3/pages/p10.jpg", "second": "asset://gs3/pages/p11.jpg"},
         )
 
     got = asyncio.run(run())
@@ -698,5 +702,100 @@ def test_speaking_and_chalking_are_one_call_but_not_one_string() -> None:
         plain = await os_.execute("say", {"teacher_line": "Now you try."})
         assert plain["ok"] is True, plain
         assert os_.last_writing == "banana", "a silent line must not wipe the board"
+
+    asyncio.run(run())
+
+
+def test_a_refused_board_text_never_silences_her_but_is_never_silent_either() -> None:
+    """The chalk rides on `say` only because it degrades instead of failing.
+
+    A malformed picture or exercise costs one move; a malformed `say` costs the
+    class its teacher. So bad `board_text` is skipped and she still speaks --
+    but skipping SILENTLY was its own bug: she believed she had written, and
+    the next turn's WRITING= disagreed with her. The result must name what
+    happened to the board, in words she can act on inside the same turn.
+    """
+    core, frames = _stage_core()
+    os_ = TeacherOS(core, unit_id="gs3-u1-hello", learner_id="learner-1")
+
+    async def run() -> None:
+        good = await os_.execute(
+            "say", {"teacher_line": "Look at this word.", "board_text": "banana"}
+        )
+        assert good["board"] == "applied", good
+
+        # Han script: the classroom does not read it, and the refusal has to
+        # say so rather than dropping the chalk on the floor.
+        bad = await os_.execute(
+            "say", {"teacher_line": "Try this one.", "board_text": "\u9999\u8549"}
+        )
+        assert bad["ok"] is True, "a bad board must never silence her"
+        assert os_.last_say == "Try this one."
+        assert bad["board"].startswith("skipped:"), bad
+        assert "script" in bad["board"], bad
+        assert os_.last_writing == "banana", "the old board survives a refusal"
+
+        # No board asked for is not a failure, and must not read like one.
+        none = await os_.execute("say", {"teacher_line": "Now you try."})
+        assert none["board"] == "none", none
+
+    asyncio.run(run())
+
+
+def test_show_image_without_a_picture_is_refused_by_the_schema() -> None:
+    """Every argument used to be optional, so `show_image({turn_id})` passed
+    validation and only failed at execute -- a wasted round-trip a child sits
+    through, handed free to any model that guesses. This is the same
+    all-optional trap that killed the merged `teach` tool on 2026-08-19.
+    """
+    schema = TOOLS_BY_NAME["show_image"]["inputSchema"]
+    assert "asset" in schema["required"]
+    assert "left" not in schema["properties"], "one spelling of the argument, not two"
+    assert "right" not in schema["properties"]
+
+
+def test_record_evidence_never_offers_a_mode_it_always_refuses() -> None:
+    """`off-topic` was legal in the enum and rejected unconditionally in
+    execute. A schema-legal value that always fails is a landmine for a small
+    model, which trusts an enum over the prose beside it."""
+    modes = TOOLS_BY_NAME["record_evidence"]["inputSchema"]["properties"]["mode"]["enum"]
+    assert "off-topic" not in modes
+    assert set(modes) == {"name", "point", "ask"}
+
+
+def test_the_turn_census_counts_tools_and_never_carries_words() -> None:
+    """The six-month tell for an offline model that has quietly degraded.
+
+    An E4B that stops bundling, or stops touching the board and just talks,
+    looks like a working teacher in any single transcript. Only the counts
+    show it: tools per turn falling toward one, board_touched collapsing.
+
+    A persisted `last_writing` must not count as touching the board -- a false
+    positive here hides the exact failure the counter exists to catch.
+    """
+    core, _frames = _stage_core()
+    os_ = TeacherOS(core, unit_id="gs3-u1-hello", learner_id="learner-1")
+
+    async def run() -> None:
+        await os_.execute("write_board", {"text": "# Hello"})
+        assert os_.turn_tools == ["write_board"]
+
+        # A chalked say counts; a plain say the turn after does not, even
+        # though the board still shows the earlier writing.
+        os_.turn_tools, os_.turn_chalked = [], False
+        await os_.execute("say", {"teacher_line": "Look.", "board_text": "banana"})
+        assert os_.turn_chalked is True
+
+        os_.turn_tools, os_.turn_chalked = [], False
+        await os_.execute("say", {"teacher_line": "Now you try."})
+        assert os_.last_writing == "banana", "the board still shows it"
+        assert os_.turn_chalked is False, "but THIS turn did not touch the board"
+
+        # Refusals are bucketed, never quoted.
+        os_.turn_refusals = []
+        await os_.execute("show_image", {"asset": "asset://../secret.png"})
+        assert os_.turn_refusals, "a refusal must be counted"
+        for entry in os_.turn_refusals:
+            assert "secret" not in entry, "the census must not echo arguments"
 
     asyncio.run(run())

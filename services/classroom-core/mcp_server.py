@@ -191,6 +191,10 @@ def _schema(properties: dict[str, Any], required: list[str]) -> dict[str, Any]:
     }
 
 
+# Order matters: a model reads tools/list as a narrative. Look things up,
+# then change the room, and `say` LAST because it is the terminal tool --
+# the turn ends when she speaks. record_evidence used to sit after it,
+# which read as "there is something to do after you finish".
 TOOLS: tuple[dict[str, Any], ...] = (
     {
         "name": "read_library",
@@ -213,12 +217,21 @@ TOOLS: tuple[dict[str, Any], ...] = (
         ),
     },
     {
+        "name": "read_board",
+        "description": "See what is currently on the board: writing, pictures, and the last clip.",
+        "inputSchema": _schema({}, []),
+    },
+    {
         "name": "write_board",
         "description": (
-            "Write chalkboard markdown. Only these draw as chalk: `#`, `##` or `###` "
-            "headings; `-` or `1.` list items, with a space after the marker; "
-            "**bold** and *italic*. Anything else prints as literal punctuation on "
-            "the projector. Max 400 characters, 8 lines. No HTML or URLs."
+            "Put writing on the board FIRST, then talk about what is up there. "
+            "To chalk while you speak instead, use say(board_text) -- same board, "
+            "same limits, different moment. "
+            "Only these draw as chalk: `#`, `##` or `###` headings; `-` or `1.` "
+            "list items, with a space after the marker; **bold** and *italic*. "
+            "Anything else prints as literal punctuation on the projector. "
+            "Max 400 characters, 8 lines. No HTML or URLs. "
+            "Usually called in the same message as say."
         ),
         "inputSchema": _schema(
             {"text": {"type": "string", "minLength": 1, "maxLength": 400}},
@@ -226,20 +239,34 @@ TOOLS: tuple[dict[str, Any], ...] = (
         ),
     },
     {
-        "name": "read_board",
-        "description": "See what is currently on the board: writing, pictures, and the last clip.",
-        "inputSchema": _schema({}, []),
-    },
-    {
         "name": "show_image",
-        "description": "Put one picture (asset) or two (left, right) on the board.",
+        # Every argument used to be optional, so show_image({turn_id}) passed
+        # validation and only failed at execute -- a wasted round-trip a child
+        # waits through, handed free to any model that guesses. The picture is
+        # the point of the tool: make it required, and make the pair case one
+        # extra field instead of a second, invisible calling convention.
+        "description": (
+            "Put a picture on the board. `asset` is required and must be an "
+            "asset:// id from the unit files. Add `second` only to stand two "
+            "pictures side by side for a comparison. Usually called in the same "
+            "message as say."
+        ),
         "inputSchema": _schema(
             {
-                "asset": {"type": "string"},
-                "left": {"type": "string"},
-                "right": {"type": "string"},
+                "asset": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "asset:// id of the picture, from the unit files.",
+                },
+                "second": {
+                    "type": "string",
+                    "description": (
+                        "asset:// id of a second picture, shown beside the first. "
+                        "Omit it for a single picture."
+                    ),
+                },
             },
-            [],
+            ["asset"],
         ),
     },
     {
@@ -247,7 +274,8 @@ TOOLS: tuple[dict[str, Any], ...] = (
         "description": (
             "Show a choice, vocabulary, or roleplay exercise on the board. "
             "content is validated for structure only -- Core never judges whether "
-            "an answer is pedagogically right."
+            "an answer is pedagogically right. "
+            "Usually called in the same message as say."
         ),
         "inputSchema": _schema(
             {
@@ -265,7 +293,8 @@ TOOLS: tuple[dict[str, Any], ...] = (
         "description": (
             "Play a short library audio clip. `transcript` is SPOKEN as the "
             "subtitle while it plays -- it does not appear on the board. To put "
-            "words on the board, write_board."
+            "words on the board, write_board. "
+            "Usually called in the same message as say."
         ),
         "inputSchema": _schema(
             {
@@ -273,6 +302,34 @@ TOOLS: tuple[dict[str, Any], ...] = (
                 "transcript": {"type": "string", "maxLength": 200},
             },
             ["asset"],
+        ),
+    },
+    {
+        "name": "record_evidence",
+        "description": (
+            "Record categorical evidence for exactly one named learner. Never "
+            "include the learner's raw words, and never call this for a choral "
+            "or unattributable response. "
+            "mode is name, point, or ask — not off-topic, and not a substitute for outcome."
+        ),
+        "inputSchema": _schema(
+            {
+                "student_id": {"type": "string", "minLength": 1, "maxLength": 128},
+                "objective_id": {"type": "string", "minLength": 1, "maxLength": 128},
+                "outcome": {
+                    "type": "string",
+                    "enum": ["correct", "wrong", "uncertain", "near"],
+                },
+                # "off-topic" was legal in the enum and refused unconditionally
+                # in teacher_os -- a schema-legal value that always fails is a
+                # landmine for a small model, which trusts an enum over the
+                # prose beside it.
+                "mode": {
+                    "type": "string",
+                    "enum": ["name", "point", "ask"],
+                },
+            },
+            ["student_id", "objective_id", "outcome"],
         ),
     },
     {
@@ -289,10 +346,11 @@ TOOLS: tuple[dict[str, Any], ...] = (
                     "type": "string",
                     "maxLength": 400,
                     "description": (
-                        "Chalk this on the board while you speak. Usually NOT the same "
-                        "words as teacher_line -- you might say \"look at this word "
-                        "together\" and write just the word. Omit it to leave the board "
-                        "alone; most lines do not need the board."
+                        "Chalk this WHILE you speak, in the same breath. Usually NOT "
+                        "the same words as teacher_line -- you might say \"look at this "
+                        "word together\" and write just the word. To put writing up "
+                        "before you talk about it, use write_board instead. Omit it to "
+                        "leave the board alone; most lines do not need the board."
                     ),
                 },
                 "closing": {
@@ -314,30 +372,6 @@ TOOLS: tuple[dict[str, Any], ...] = (
                 },
             },
             ["teacher_line"],
-        ),
-    },
-    {
-        "name": "record_evidence",
-        "description": (
-            "Record categorical evidence for exactly one named learner. Never "
-            "include the learner's raw words, and never call this for a choral "
-            "or unattributable response. "
-            "mode is name, point, or ask — not off-topic, and not a substitute for outcome."
-        ),
-        "inputSchema": _schema(
-            {
-                "student_id": {"type": "string", "minLength": 1, "maxLength": 128},
-                "objective_id": {"type": "string", "minLength": 1, "maxLength": 128},
-                "outcome": {
-                    "type": "string",
-                    "enum": ["correct", "wrong", "uncertain", "near"],
-                },
-                "mode": {
-                    "type": "string",
-                    "enum": ["name", "point", "ask", "off-topic"],
-                },
-            },
-            ["student_id", "objective_id", "outcome"],
         ),
     },
 )

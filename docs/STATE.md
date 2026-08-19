@@ -70,18 +70,35 @@ speech :8001           Piper TTS + faster-whisper ASR
 [Why exactly these nine.](decisions/2026-08-18-show-exercise-tool.md)
 
 ```
-read_library  search_library  write_board    read_board
-show_image    show_exercise   play_clip      say
-record_evidence
+LOOK UP    read_library  search_library  read_board
+CHANGE     write_board   show_image      show_exercise  play_clip
+           record_evidence
+SPEAK      say                                          ← ends the turn
 ```
 
-`present` and `open_response` appear in older docs and in a compatibility branch
-of `teacher_os.execute`. They are **not** the live surface — `write_board` and
-`show_image` replaced `present` on the wire.
+Order is deliberate and identical in `mcp_server.TOOLS`, `hermes.TEACHER_TOOLS`
+and the config include list: a model reads `tools/list` as a narrative, and the
+terminal tool should be the last word.
+
+`say` carries an optional `board_text` — she chalks in the same breath. It is
+the one content field allowed on the terminal tool, because an invalid one is
+**skipped and reported** while the class still hears her.
+`write_board` is the other moment: writing goes up first, then she talks about
+it, and a refusal comes back with a reason she can act on.
+
+`present` and `open_response` were compatibility branches in
+`teacher_os.execute`, reachable from no tool list. Deleted 2026-08-19.
+
+A merge of five of these into one `teach` tool was tried and reverted the same
+day. [Why flat won, and what the round-trip was actually
+costing.](decisions/2026-08-19-flat-tools-and-bundling.md)
 
 **Memory shape.** SQL `observations` (with `mode ∈ name|point|ask`) →
 `SKILL_CARD` + `PAST` on every turn, scoped to one `student_id` across all
-sessions. RAM `BEATS` is the last 8 teaching beats. Raw child words appear only
+sessions. RAM `BEATS` is the last 8 teaching beats.
+One census line per turn records tool names, count and `board_touched` — counts
+only, no words — so a model that quietly stops bundling or stops using the board
+is visible before a term of lessons has gone by. Raw child words appear only
 as `STUDENT_SAID` for the current turn (NS-5). No raw child speech in SQL.
 
 ---

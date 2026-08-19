@@ -113,10 +113,21 @@ This is reflex-tier work (NS-2) once issued: no model call, just a board update.
 Play the clip. Ask. Wait. *Then* put the words up. Three separate acts, and
 today the middle two have no tool and the last is fused into the first.
 
-### 4.4 `ask` — missing, and it is the wait
+### 4.4 `ask` — SOLVED, as a boolean rather than a tool
 
-`open_response` existed in the design and was dropped with the cassette. It
-should come back, because **the wait is a teaching act with a duration**:
+**Update 2026-08-19.** `say` carries `awaiting_answer`, and Core waits on it: a
+short silence, then one nudge. She tells us whether she asked, rather than Core
+guessing from a question mark — "Now you try" expects an answer and carries no
+"?", while "How are you?" modelled aloud does not.
+
+That is the invariant below satisfied without a second speaking tool, and
+without `say` losing its status as the one tool that cannot fail: a boolean
+about the utterance cannot be refused. See
+[flat tools and bundling](../decisions/2026-08-19-flat-tools-and-bundling.md)
+for why that distinction is the tripwire. `open_response` itself was deleted
+from `execute` the same day.
+
+The original argument, kept because the reasoning still holds:
 
 - the room's microphone opens (Layer 4 autonomy)
 - the pulse's silence floor should measure from *the question*, not from any line
@@ -162,6 +173,29 @@ guard rail it needs most.
 
 Flat names with tight schemas let Core reject a malformed call precisely, which
 is the mechanism that has been catching the model's mistakes all along.
+
+**2026-08-19 — this section was right, and it was overridden anyway.** Five
+tools were merged into one `teach` with a nested `board` union. Gemini avoided
+the union entirely and the board stayed empty for three turns; a repeated
+refused call tripped the Hermes circuit breaker and took MCP out of the turn.
+Reverted the same day.
+
+Two things it taught, beyond what is written above:
+
+- **Failure isolation is the real principle.** A tool is one *independently
+  refusable* intent. With flat tools a malformed `show_image` still lets her
+  speak; with one merged tool a bad sub-field kills the speech too — in an
+  unattended classroom, a teacher standing silent in front of children.
+- **Merging tools was the wrong axis.** Latency is round-trips, not tool count,
+  and multi-tool-per-message already delivers board + image + speech in a single
+  round-trip. Full argument, with measurements:
+  [flat tools and bundling](../decisions/2026-08-19-flat-tools-and-bundling.md).
+
+`show_image` is also the section's own example fixed: it had `required: []`
+until 2026-08-19, so `show_image({turn_id})` passed validation and failed at
+execute — precisely the guard rail this section says a flat schema buys, not
+actually bought. `asset` is now required, and the two-picture case is one
+optional `second` instead of a separate `left`/`right` spelling.
 
 ### The collapse gate
 

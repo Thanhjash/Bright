@@ -474,15 +474,31 @@ The agent does **not** generate HTML. It does **not** call `eval()`. It does not
 
 The live agent uses a **small typed tool set** against the library and the
 room, the way a coding agent uses read/search/edit/run against a repo. There are
-eight, and adding a ninth requires a decision doc:
+nine, and adding a tenth requires a decision doc:
 
 ```
 read_library    search_library   → maps, units, keys, asset:// ids
-write_board     read_board       → the chalkboard: short markdown, never HTML
-show_image      play_clip        → asset:// ids only, never a path
-say                              → one teacher line; ends the turn
+read_board      write_board      → the chalkboard: short markdown, never HTML
+show_image      show_exercise    → asset:// ids only, never a path
+play_clip
 record_evidence                  → categorical memory, never raw chat
+say                              → one teacher line; ends the turn
 ```
+
+**A tool is one independently-refusable intent.** Anything Core can refuse — a
+missing asset, a malformed exercise, a script the classroom does not read — gets
+its own tool, so a refusal costs one move and never the turn. `say` is the tool
+that must never fail: with flat tools a malformed `show_image` still lets her
+speak and the lesson limps forward, while one merged tool means a bad sub-field
+kills the speech too — in a room with no adult in it, a teacher standing silent
+in front of children.
+
+So anything riding on `say` must degrade rather than fail. `say` may carry the
+line, booleans about the line (`closing`, `awaiting_answer`), and at most one
+degrade-on-invalid content field: `board_text`, the chalk. **The day a field on
+`say` can cause `ok: false` for any reason other than `teacher_line`, or gains
+type object/array, or names an `asset://`, the merged tool is being rebuilt one
+flag at a time.** [Why, with measurements.](decisions/2026-08-19-flat-tools-and-bundling.md)
 
 Everything the agent touches is named semantically. It never sees a file path,
 a URL, a DOM node, or CSS. Core resolves `asset://` ids to disk and rejects an

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import os
 import re
 from functools import lru_cache
@@ -17,7 +18,8 @@ from typing import Any
 from config import REPO_ROOT
 from library import LibraryError, read_library, search_library, unit_catalog
 
-LAYOUTS = frozenset({"image", "two_cards", "text"})
+log = logging.getLogger("bright.teacher")
+
 OUTCOMES = frozenset({"correct", "wrong", "uncertain", "near"})
 MODES = frozenset({"name", "point", "ask"})
 ATTEMPT_MODES = frozenset({"name", "point"})
@@ -161,6 +163,51 @@ def _clean_board_markdown(raw: str) -> str | None:
     if _alien_script(body):
         return None
     return body
+
+
+_REASON_CLASSES: tuple[tuple[str, str], ...] = (
+    ("script", "alien-script"),
+    ("non-evaluative", "grade-word"),
+    ("URL", "url-or-markup"),
+    ("characters", "length"),
+    ("chars", "length"),
+    ("not found", "asset-missing"),
+    ("asset://", "asset-malformed"),
+    ("objective", "objective"),
+    ("learner", "attribution"),
+    ("student", "attribution"),
+    ("heartbeat", "heartbeat"),
+)
+
+
+def _reason_class(reason: str) -> str:
+    """Bucket a refusal into a countable slug.
+
+    Every refusal string in this file is authored here, so none of them carry
+    a child's words -- but logging counts instead of sentences keeps that true
+    by construction rather than by review.
+    """
+    text = (reason or "").lower()
+    for needle, slug in _REASON_CLASSES:
+        if needle.lower() in text:
+            return slug
+    return "other"
+
+
+def _board_refusal(raw: str, label: str) -> str:
+    """Why _clean_board_markdown refused this text, in words she can act on.
+
+    A bare "it did not apply" teaches her nothing and she repeats it next turn.
+    _check_free_text already names the specific fault -- alien script, a grade
+    word, a URL -- so reuse it and fall back to the grammar only when it finds
+    nothing more specific.
+    """
+    return _check_free_text(
+        raw, min_len=1, max_len=BOARD_MAX_CHARS, label=label
+    ) or (
+        f"{label} must be 1..{BOARD_MAX_CHARS} chars, {BOARD_MAX_LINES} lines, "
+        "no URL or HTML"
+    )
 
 
 def _check_free_text(text: str, *, min_len: int, max_len: int, label: str) -> str | None:
@@ -377,7 +424,14 @@ class TeacherOS:
     evidence: list[dict[str, str]] = field(default_factory=list)
     reads: list[str] = field(default_factory=list)
     beats: list[str] = field(default_factory=list)
-    response_open: bool = True
+    # Per-turn census, reset at every turn. Names and counts only -- never a
+    # teacher line, never a child's words. This is the six-month tell: an E4B
+    # that quietly stops bundling, or stops touching the board and talks all
+    # period, looks exactly like a working teacher in any single transcript.
+    turn_tools: list[str] = field(default_factory=list)
+    turn_refusals: list[str] = field(default_factory=list)
+    turn_board_skips: list[str] = field(default_factory=list)
+    turn_chalked: bool = False
     started_at: float = field(default_factory=time.time)
     last_say_at: float | None = None
     awaiting_answer: bool = False
@@ -492,6 +546,22 @@ class TeacherOS:
         bus.publish("scene.update", scene)
 
     async def execute(self, name: str, arguments: dict[str, Any]) -> Any:
+        """Run one tool and count it. The census is the only thing added here."""
+        result = await self._dispatch(name, arguments)
+        self.turn_tools.append(name)
+        if isinstance(result, dict):
+            if result.get("ok") is False:
+                self.turn_refusals.append(
+                    name + ":" + _reason_class(str(result.get("reason") or ""))
+                )
+            board = str(result.get("board") or "")
+            if board == "applied":
+                self.turn_chalked = True
+            elif board.startswith("skipped:"):
+                self.turn_board_skips.append(_reason_class(board))
+        return result
+
+    async def _dispatch(self, name: str, arguments: dict[str, Any]) -> Any:
         if name == "read_library":
             try:
                 got = read_library(str(arguments.get("path") or ""))
@@ -512,12 +582,10 @@ class TeacherOS:
             return {"ok": True, **got}
 
         if name == "write_board":
-            text = _clean_board_markdown(str(arguments.get("text") or ""))
+            raw_text = str(arguments.get("text") or "")
+            text = _clean_board_markdown(raw_text)
             if not text:
-                return {
-                    "ok": False,
-                    "reason": f"board markdown must be 1..{BOARD_MAX_CHARS} chars, {BOARD_MAX_LINES} lines, no URL or HTML",
-                }
+                return {"ok": False, "reason": _board_refusal(raw_text, "board markdown")}
             self.last_writing = text
             self.last_present = {"layout": "text", "slots": {"main": text}}
             self._mark_board("writing")
@@ -556,8 +624,12 @@ class TeacherOS:
             return {"ok": True, "applied": True}
 
         if name == "show_image":
-            left = _as_asset(str(arguments.get("left") or arguments.get("asset") or ""))
-            right = _as_asset(str(arguments.get("right") or ""))
+            # `asset` (+ optional `second`) is the whole calling convention.
+            # It used to also answer to left/right, which was a second, invisible
+            # spelling of the same argument -- a coin flip a 4B model paid for
+            # every turn, and the reason show_image({turn_id}) was schema-legal.
+            left = _as_asset(str(arguments.get("asset") or ""))
+            right = _as_asset(str(arguments.get("second") or ""))
             if left is None:
                 return {"ok": False, "reason": "show_image needs an asset:// id"}
             if _media_file(left) is None:
@@ -587,21 +659,6 @@ class TeacherOS:
                 publish(transcript or " ", source="clip", audio_asset=asset)
             return {"ok": True, "applied": True}
 
-        if name == "present":
-            layout = str(arguments.get("layout") or "")
-            slots = arguments.get("slots") or {}
-            if layout not in LAYOUTS or not isinstance(slots, dict):
-                return {"ok": False, "reason": "unknown layout"}
-            values = [str(value or "") for value in list(slots.values())[:4]]
-            if layout == "text":
-                return await self.execute("write_board", {"text": values[0] if values else ""})
-            if layout == "two_cards":
-                return await self.execute(
-                    "show_image",
-                    {"left": values[0] if values else "", "right": values[1] if len(values) > 1 else ""},
-                )
-            return await self.execute("show_image", {"asset": values[0] if values else ""})
-
         if name == "say":
             line = " ".join(str(arguments.get("teacher_line") or "").split())
             if _is_heartbeat_ok(line):
@@ -618,12 +675,24 @@ class TeacherOS:
             # speech too, and a strong model then repeated the call until the
             # circuit breaker took the room out. In an unattended classroom that
             # is a teacher standing silent in front of children.
-            board_text = _clean_board_markdown(str(arguments.get("board_text") or ""))
+            #
+            # The chalk rides on say only because it DEGRADES: bad markdown is
+            # skipped and the class still hears her. But skipping silently was
+            # its own bug -- she believed she had written, and the next turn's
+            # WRITING= said otherwise. Degrade loudly, fail never: the result
+            # names what happened to the board while `ok` stays True.
+            raw_board = str(arguments.get("board_text") or "")
+            board_text = _clean_board_markdown(raw_board) if raw_board else None
             if board_text:
+                board_result = "applied"
                 self.last_writing = board_text
                 self.last_present = {"layout": "text", "slots": {"main": board_text}}
                 self._mark_board("writing")
                 self._push_stage()
+            elif raw_board:
+                board_result = "skipped: " + _board_refusal(raw_board, "board_text")
+            else:
+                board_result = "none"
 
             self.last_say = line
             self.last_say_at = time.time()
@@ -641,7 +710,7 @@ class TeacherOS:
                 # lesson; she does not run until someone stops her. Closing
                 # after the line is spoken, not before, so the room hears it.
                 self.close_period()
-            return {"ok": True, "applied": True}
+            return {"ok": True, "applied": True, "board": board_result}
 
         if name == "record_evidence":
             if self.turn_kind == "heartbeat":
@@ -704,10 +773,6 @@ class TeacherOS:
             self.note_beat(
                 "S:" + (stored_mode or "attempt") + " " + objective[:128] + " " + outcome
             )
-            return {"ok": True, "applied": True}
-
-        if name == "open_response":
-            self.response_open = True
             return {"ok": True, "applied": True}
 
         return {"ok": False, "reason": f"unknown tool {name}"}
@@ -921,6 +986,38 @@ def _session_recall(os_: TeacherOS) -> list[Any]:
     return notes
 
 
+BOARD_TOOLS = frozenset({"write_board", "show_image", "show_exercise"})
+
+
+def _log_turn_census(os_: TeacherOS, *, event: str | None, ok: bool) -> None:
+    """One line per turn: how many tools, and did anything reach the board.
+
+    Four numbers decide, six months from now, whether the offline model is
+    still teaching or has quietly become an all-talk teacher. Joined with
+    `api_calls=N/8` in the harness log, `tools` also gives the bundling ratio:
+    a model that stops batching pays a full round-trip per tool, and the child
+    waits through every one of them.
+
+    Names and counts only. No teacher line, no child's words, no learner id.
+    """
+    tools = list(os_.turn_tools)
+    # `last_writing` persists across turns, so it is not proof that THIS turn
+    # touched the board -- a false positive here would hide the exact
+    # degradation the counter exists to catch.
+    board = os_.turn_chalked or any(name in BOARD_TOOLS for name in tools)
+    log.info(
+        "teacher turn census event=%s ok=%s tools=%d board_touched=%s "
+        "tool_names=%s refusals=%s board_skips=%s",
+        event or "student",
+        ok,
+        len(tools),
+        board,
+        ",".join(tools) or "-",
+        ",".join(os_.turn_refusals) or "-",
+        ",".join(os_.turn_board_skips) or "-",
+    )
+
+
 _TURN_LOCK = asyncio.Lock()
 
 
@@ -940,6 +1037,10 @@ async def _handle_teacher_turn(core: Any, text: str) -> dict[str, Any]:
         raise RuntimeError("no Hermes teacher wired")
     event = system_event(text)
     os_.turn_kind = event
+    os_.turn_tools = []
+    os_.turn_refusals = []
+    os_.turn_board_skips = []
+    os_.turn_chalked = False
     if event is None:
         os_.last_student_at = time.time()
     prior_say = os_.last_say
@@ -978,12 +1079,19 @@ async def _handle_teacher_turn(core: Any, text: str) -> dict[str, Any]:
         )
         said = None
         error = None
-        async for event in agent.turn(ctx):
-            kind = getattr(event, "type", None)
+        # `frame`, not `event`: this loop used to rebind `event`, which above is
+        # the SYSTEM event ("heartbeat" / "class_start" / None). By the time the
+        # stream finished, `event is None` and `event == "heartbeat"` were both
+        # false whatever the turn actually was -- so a heartbeat she correctly
+        # answered with silence was filed as a fault, and "S:talk" never once
+        # reached BEATS. Found on 2026-08-19 by the turn census printing a
+        # stream frame where the event name should have been.
+        async for frame in agent.turn(ctx):
+            kind = getattr(frame, "type", None)
             if kind == "text_delta":
-                said = getattr(event, "text", None)
-            elif kind == "done" and getattr(event, "reason", None) == "error":
-                error = getattr(event, "detail", None)
+                said = getattr(frame, "text", None)
+            elif kind == "done" and getattr(frame, "reason", None) == "error":
+                error = getattr(frame, "detail", None)
         core.turn_registry.retire(turn_id)
         # Core-validated line from THIS turn wins. Do not replay the previous say.
         if os_.last_say and os_.last_say != prior_say:
@@ -1012,6 +1120,7 @@ async def _handle_teacher_turn(core: Any, text: str) -> dict[str, Any]:
             "unitId": os_.unit_id,
             "learnerId": os_.learner_id,
         }
+    _log_turn_census(os_, event=event, ok=bool(said) or silent_ok)
     os_.turn_kind = None
     return {
         "ok": bool(said) or silent_ok,

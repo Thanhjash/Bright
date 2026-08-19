@@ -33,17 +33,20 @@ log = logging.getLogger("bright.agent.hermes")
 
 PROPOSE_MOVE_TOOL = "classroom_propose_move"
 PROPOSE_MOVE_WIRE_TOOL = "mcp__bright_classroom__classroom_propose_move"
+# Same order as mcp_server.TOOLS: look things up, change the room, say last.
+# A frozenset does not care, but the two lists drifting apart is how a tool
+# ends up offered on one side and rejected on the other.
 TEACHER_TOOLS = frozenset(
     {
         "read_library",
         "search_library",
-        "write_board",
         "read_board",
+        "write_board",
         "show_image",
         "show_exercise",
         "play_clip",
-        "say",
         "record_evidence",
+        "say",
     }
 )
 
@@ -334,10 +337,15 @@ def render_teacher_turn(ctx: TurnContext, turn_id: str) -> str:
             "SKILL_CARD is coverage, not chat: review what they named vs only "
             "pointed, then continue the map. A point is not a name."
         )
+    # A rule tells a small model what to do; a shape shows it. Small models
+    # imitate far more reliably than they deduce, and bundling is now the whole
+    # latency story: a message costs one round-trip at ~6-9s, and the child sits
+    # through every one of them.
     lines.append(
         "Put every tool call you already know you need in ONE message -- including "
-        "say. A message costs one round-trip and a child waits through each one, so "
-        "write_board + record_evidence + say together is one wait, not three."
+        "say. Like this, one message: show_image(asset) + record_evidence(...) + "
+        "say(teacher_line, board_text). That is one wait, not three. Only split "
+        "when you genuinely need to SEE a result first -- reading the library."
     )
     lines.append(
         "If your line asks the class for something, set awaiting_answer on say. "

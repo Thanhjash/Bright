@@ -302,3 +302,39 @@ def test_she_ends_the_period_herself_and_the_room_does_not_reopen_it() -> None:
     core.capability_leases = SimpleNamespace(expire=lambda: None, stage_owner="stage-1")
     pulse = asyncio.run(pulse_teacher(core))
     assert pulse["action"] == "asleep", "she just closed; do not reopen the period"
+
+
+def test_a_heartbeat_she_answers_with_silence_is_not_a_fault() -> None:
+    """The SSE loop used to rebind `event`, the system-event name.
+
+    After the stream finished, `event` held a stream frame, so `event ==
+    "heartbeat"` was false however the turn had started. Silence was the right
+    answer -- the class still had time to think -- and the room filed it as a
+    fault anyway, which is how an adult reading /teacher/status learns to
+    ignore the fault line. Found by the turn census printing a stream frame
+    where the event name belonged.
+    """
+    # The stream MUST emit at least one frame, because the frame is the whole
+    # bug: a generator that yields nothing never rebinds the loop variable and
+    # the test passes against the broken code.
+    async def silent_turn(_ctx):
+        yield SimpleNamespace(type="done", reason="complete", detail=None)
+
+    core = SimpleNamespace(
+        db=SimpleNamespace(record_observation=lambda *a, **k: 1),
+        session_id="sess-hb",
+        store=SimpleNamespace(state_version=1, mode="FULL"),
+        bus=SimpleNamespace(publish=lambda *a, **k: None),
+        publish_speech=lambda *a, **k: None,
+        turn_registry=SimpleNamespace(register=lambda *a, **k: None, retire=lambda *_: None),
+        agent=SimpleNamespace(prepare_turn=lambda *_: None, turn=silent_turn),
+        last_teacher_fault={"error": "stale"},
+    )
+    os_ = TeacherOS(core, unit_id="gs3-u1-hello", learner_id="learner-1")
+    core.teacher_os = os_
+
+    got = asyncio.run(teacher_os._handle_teacher_turn(core, "[heartbeat]"))
+
+    assert got["ok"] is True, got
+    assert got["say"] is None, "silence was the right answer"
+    assert core.last_teacher_fault is None, "silence is not a fault"
