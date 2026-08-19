@@ -1,7 +1,8 @@
 # Exercises — Hello, Lesson 1
 
 **Each block below is exactly the arguments for `show_exercise`, minus
-`turn_id`.** Copy one whole and send it — do not unwrap it, do not rename
+`turn_id`.** They are flat: every field sits at the top level, because a
+nested object came back empty from the model every single time. Copy one whole and send it — do not unwrap it, do not rename
 anything. A block that has been retyped from memory is a wasted round-trip a
 child sits through.
 
@@ -23,30 +24,28 @@ The four children's names against their faces.
 ```json
 {
   "kind": "vocabulary",
-  "content": {
-    "items": [
-      {
-        "id": "ben",
-        "text": "Ben",
-        "asset": "asset://gs3/panels/char-ben.jpg"
-      },
-      {
-        "id": "mai",
-        "text": "Mai",
-        "asset": "asset://gs3/panels/char-mai.jpg"
-      },
-      {
-        "id": "minh",
-        "text": "Minh",
-        "asset": "asset://gs3/panels/char-minh.jpg"
-      },
-      {
-        "id": "lucy",
-        "text": "Lucy",
-        "asset": "asset://gs3/panels/char-lucy.jpg"
-      }
-    ]
-  }
+  "items": [
+    {
+      "id": "ben",
+      "text": "Ben",
+      "asset": "asset://gs3/panels/char-ben.jpg"
+    },
+    {
+      "id": "mai",
+      "text": "Mai",
+      "asset": "asset://gs3/panels/char-mai.jpg"
+    },
+    {
+      "id": "minh",
+      "text": "Minh",
+      "asset": "asset://gs3/panels/char-minh.jpg"
+    },
+    {
+      "id": "lucy",
+      "text": "Lucy",
+      "asset": "asset://gs3/panels/char-lucy.jpg"
+    }
+  ]
 }
 ```
 
@@ -58,20 +57,18 @@ Recording: `asset://gs3/audio/track-05.mp3`.
 ```json
 {
   "kind": "vocabulary",
-  "content": {
-    "items": [
-      {
-        "id": "a",
-        "text": "Ben & Mai",
-        "asset": "asset://gs3/panels/u1l1-dialogue-a.jpg"
-      },
-      {
-        "id": "b",
-        "text": "Minh & Lucy",
-        "asset": "asset://gs3/panels/u1l1-dialogue-b.jpg"
-      }
-    ]
-  }
+  "items": [
+    {
+      "id": "a",
+      "text": "Ben & Mai",
+      "asset": "asset://gs3/panels/u1l1-dialogue-a.jpg"
+    },
+    {
+      "id": "b",
+      "text": "Minh & Lucy",
+      "asset": "asset://gs3/panels/u1l1-dialogue-b.jpg"
+    }
+  ]
 }
 ```
 
@@ -91,17 +88,15 @@ both speech bubbles blank.
 ```json
 {
   "kind": "roleplay",
-  "content": {
-    "environment": "a path near the school gate, one child sitting on a bench",
-    "ai_role": "the child on the bench",
-    "student_role": "the child arriving at school",
-    "target_phrases": [
-      "Hello. I'm [name].",
-      "Hi. I'm [name].",
-      "Hello, [name]. I'm [name].",
-      "Hi, [name]. I'm [name]."
-    ]
-  }
+  "environment": "the path to school, by the gate",
+  "ai_role": "the child on the bench",
+  "student_role": "the child arriving at school",
+  "target_phrases": [
+    "Hello. I'm [name].",
+    "Hi. I'm [name].",
+    "Hello, [name]. I'm [name].",
+    "Hi, [name]. I'm [name]."
+  ]
 }
 ```
 
@@ -118,20 +113,18 @@ wrong pairing. Recording: `asset://gs3/audio/track-07.mp3`.
 ```json
 {
   "kind": "choice",
-  "content": {
-    "prompt": "Which pair is speaking?",
-    "options": [
-      {
-        "id": "a",
-        "asset": "asset://gs3/panels/u1l1-ex4-item1-a.jpg"
-      },
-      {
-        "id": "b",
-        "asset": "asset://gs3/panels/u1l1-ex4-item1-b.jpg"
-      }
-    ],
-    "correct_id": "b"
-  }
+  "prompt": "Which pair is speaking?",
+  "options": [
+    {
+      "id": "a",
+      "asset": "asset://gs3/panels/u1l1-ex4-item1-a.jpg"
+    },
+    {
+      "id": "b",
+      "asset": "asset://gs3/panels/u1l1-ex4-item1-b.jpg"
+    }
+  ],
+  "correct_id": "b"
 }
 ```
 
@@ -144,20 +137,18 @@ not Minh.
 ```json
 {
   "kind": "choice",
-  "content": {
-    "prompt": "Which pair is speaking?",
-    "options": [
-      {
-        "id": "a",
-        "asset": "asset://gs3/panels/u1l1-ex4-item2-a.jpg"
-      },
-      {
-        "id": "b",
-        "asset": "asset://gs3/panels/u1l1-ex4-item2-b.jpg"
-      }
-    ],
-    "correct_id": "a"
-  }
+  "prompt": "Which pair is speaking?",
+  "options": [
+    {
+      "id": "a",
+      "asset": "asset://gs3/panels/u1l1-ex4-item2-a.jpg"
+    },
+    {
+      "id": "b",
+      "asset": "asset://gs3/panels/u1l1-ex4-item2-b.jpg"
+    }
+  ],
+  "correct_id": "a"
 }
 ```
 

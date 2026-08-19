@@ -1112,3 +1112,93 @@ def test_every_row_is_anchored_to_the_turn_it_claims_to_be_about() -> None:
     assert rows, "the row must exist"
     assert rows[-1]["response_turn_id"] == "bright-turn-7"
     database.close()
+
+
+def test_the_exercise_wire_is_flat_because_a_nested_object_came_back_empty() -> None:
+    """`content` used to be {"type": "object"} with no properties.
+
+    Measured 2026-08-19 against google/gemini-3.7-flash: handed the exact
+    payload verbatim in the prompt and told to send it, the model called
+    show_exercise with `content: {}` -- empty. A provider translating an
+    untyped object into a function declaration produces a field with nothing
+    in it, so there is nothing for the model to fill.
+
+    That is how the merged `teach` tool died (`board: {}`), and it is why three
+    separate prompt fixes produced not one call across four live periods. It
+    was never a prompting problem, and no amount of instruction could have made
+    it one.
+    """
+    schema = TOOLS_BY_NAME["show_exercise"]["inputSchema"]
+    props = schema["properties"]
+    assert "content" not in props, "the nested object is what the model could not fill"
+    assert schema["required"] == ["turn_id", "kind"], schema["required"]
+    for field in ("prompt", "options", "correct_id", "items",
+                  "environment", "ai_role", "student_role", "target_phrases"):
+        assert field in props, field
+    # Arrays carry a typed item shape, or the translator has nothing to offer
+    # the model there either.
+    for field in ("options", "items"):
+        assert props[field]["items"]["type"] == "object"
+        assert "id" in props[field]["items"]["properties"]
+
+
+def test_a_flat_exercise_and_a_nested_one_both_reach_the_board() -> None:
+    """The wire is flat; a nested `content` still works.
+
+    Refusing a shape that carries the same information would be pedantry a
+    child pays for in a wasted round-trip -- and it is how the older tests and
+    any in-process caller spell it.
+    """
+    core, frames = _stage_core()
+    os_ = TeacherOS(core, unit_id="gs3-u1-hello", learner_id="learner-1")
+    cards = [
+        {"id": "ben", "text": "Ben", "asset": "asset://gs3/panels/char-ben.jpg"},
+        {"id": "mai", "text": "Mai", "asset": "asset://gs3/panels/char-mai.jpg"},
+    ]
+
+    async def run() -> None:
+        flat = await os_.execute("show_exercise", {"kind": "vocabulary", "items": cards})
+        assert flat["ok"] is True, flat
+        assert os_.last_exercise["kind"] == "vocabulary"
+        assert len(os_.last_exercise["content"]["items"]) == 2
+
+        nested = await os_.execute(
+            "show_exercise", {"kind": "vocabulary", "content": {"items": cards}}
+        )
+        assert nested["ok"] is True, nested
+
+        # An empty one is refused with something she can act on, not silently.
+        empty = await os_.execute("show_exercise", {"kind": "vocabulary"})
+        assert empty["ok"] is False
+        assert "needs its fields" in empty["reason"]
+
+    asyncio.run(run())
+
+
+def test_the_authored_exercises_are_the_call_itself() -> None:
+    """A block copied out of exercises.md must BE the arguments.
+
+    They were {kind, items:[...]} while the tool wanted {kind, content:{...}},
+    so a model copying the authored block verbatim got a refusal and fell back
+    to talking -- the same "two invisible spellings" disease removed from
+    show_image, reintroduced between a tool and its own textbook.
+    """
+    import json as _json
+    import re
+
+    from library import LIBRARY_ROOT
+
+    body = (LIBRARY_ROOT / "units/gs3-u1-hello/exercises.md").read_text(encoding="utf-8")
+    blocks = [_json.loads(m) for m in re.findall(r"```json\n(\{.*?\})\n```", body, re.S)]
+    assert blocks, "the unit must ship exercise payloads"
+
+    core, _frames = _stage_core()
+    os_ = TeacherOS(core, unit_id="gs3-u1-hello", learner_id="learner-1")
+
+    async def run() -> None:
+        for block in blocks:
+            assert "content" not in block, f"authored block is not flat: {block.get('kind')}"
+            got = await os_.execute("show_exercise", dict(block))
+            assert got["ok"] is True, (block.get("kind"), got)
+
+    asyncio.run(run())

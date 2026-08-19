@@ -704,11 +704,29 @@ class TeacherOS:
 
         if name == "show_exercise":
             kind = str(arguments.get("kind") or "")
-            content = arguments.get("content")
             if kind not in EXERCISE_KINDS:
                 return {"ok": False, "reason": "kind must be choice, vocabulary, or roleplay"}
-            if not isinstance(content, dict):
-                return {"ok": False, "reason": "content must be an object"}
+            # The wire is FLAT (see mcp_server: an untyped nested object came
+            # back empty from the provider every time). A nested `content` is
+            # still accepted, because that is how the older tests and any
+            # in-process caller spell it, and because refusing a shape that
+            # carries the same information would be pedantry a child pays for.
+            content = arguments.get("content")
+            if not isinstance(content, dict) or not content:
+                content = {
+                    key: arguments[key]
+                    for key in (
+                        "prompt", "options", "correct_id", "items",
+                        "environment", "ai_role", "student_role",
+                        "target_phrases", "reveal",
+                    )
+                    if key in arguments
+                }
+            if not content:
+                return {
+                    "ok": False,
+                    "reason": f"{kind} needs its fields -- see the tool description",
+                }
             if kind == "choice":
                 stored, revealed, reason = _validate_choice(content)
             elif kind == "vocabulary":
@@ -810,7 +828,24 @@ class TeacherOS:
             publish = getattr(self.core, "publish_speech", None)
             if callable(publish):
                 publish(line, source="agent")
-            if bool(arguments.get("closing")):
+            closing = bool(arguments.get("closing"))
+            if closing and not any(
+                r.endswith("skills/close-a-period/SKILL.md") for r in self.reads
+            ):
+                # Ending a period is a professional act with a procedure, and on
+                # 2026-08-19 she ended one after fifteen minutes and eight
+                # exchanges without ever opening it. Core reads not a word of
+                # the skill -- it enforces only that the procedure was opened,
+                # exactly as it names keys.md before she judges.
+                #
+                # She is NOT silenced for it: the line is spoken, the period
+                # stays open, and the result says why. Degrade loudly, fail
+                # never -- a refused `say` is a teacher standing mute.
+                closing = False
+                board_result = (
+                    board_result + "; " if board_result != "none" else ""
+                ) + "not closed: read skills/close-a-period/SKILL.md first"
+            if closing:
                 # She said goodbye, so the period is over. A teacher ends the
                 # lesson; she does not run until someone stops her. Closing
                 # after the line is spoken, not before, so the room hears it.

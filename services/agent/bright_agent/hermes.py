@@ -359,6 +359,15 @@ def render_teacher_turn(ctx: TurnContext, turn_id: str) -> str:
     if said and not event:
         wanted.insert(0, f"units/{unit}/keys.md" if unit else "keys.md")
         wanted.insert(1, "skills/judge-a-response/SKILL.md")
+    # Once the class has actually tried something, "check what landed" is the
+    # next professional move, and it is the one she never made: measured
+    # 2026-08-19, show_exercise was called zero times across two whole periods.
+    # THIS_PERIOD is a count of Core's own rows, so naming the skill on it is
+    # a path lookup on a witnessed fact -- Core still reads none of it.
+    if this_period.strip():
+        wanted.append("skills/put-up-an-exercise/SKILL.md")
+        if unit:
+            wanted.append(f"units/{unit}/exercises.md")
     todo = [path for path in wanted if path not in already]
     # At most two a turn. A turn has an eight-call budget and a child at the
     # other end of it; measured 2026-08-19, naming four files on the opening
@@ -392,6 +401,18 @@ def render_teacher_turn(ctx: TurnContext, turn_id: str) -> str:
         "near and uncertain are honest answers: an honest gap is worth more "
         "than a confident guess about a child."
     )
+    if this_period.strip():
+        # She read put-up-an-exercise and exercises.md and still never called
+        # show_exercise -- twice, across whole periods. So the barrier is not
+        # knowing; it is having no shape to copy at the moment it applies. A
+        # small model imitates. THIS_PERIOD is a count of Core's own rows, and
+        # what to do about it stays hers.
+        lines.append(
+            "THIS_PERIOD counts what they have already tried. After a few rounds "
+            "on the same thing, saying it again teaches less than finding out "
+            "whether it landed. One message: show_exercise(kind, content copied "
+            "whole from the unit's exercises.md) + say(teacher_line)."
+        )
     lines.append(
         "Running a drill, or playing a clip? Put wake_in_s on your say and the "
         "room hands you the next beat -- that is how an activity lasts more "
@@ -409,9 +430,12 @@ def render_teacher_turn(ctx: TurnContext, turn_id: str) -> str:
     )
     lines.append(
         "The class sees only what you actually put up. If your line says \"look "
-        "at this\" or names a picture, show_image must be in the SAME message -- "
-        "saying it does not make it appear, and BOARD=empty means they are "
-        "looking at a blank projector."
+        "at this\" or names a picture, show_image must be in the SAME message. "
+        "If it says \"choose\", \"which one\", or \"let's check\", then "
+        "show_exercise must be in that same message -- announcing a task does "
+        "not put it on the board, and a class asked to choose between things "
+        "they cannot see just hears noise. BOARD=empty means they are looking "
+        "at a blank projector."
     )
     lines.append(
         "A turn can be YOUR move, not only a reply: play the recording, run the "

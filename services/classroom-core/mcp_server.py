@@ -271,12 +271,35 @@ TOOLS: tuple[dict[str, Any], ...] = (
         ),
     },
     {
-        "name": "show_exercise",
+"name": "show_exercise",
+        # FLAT, and it has to be. `content` used to be {"type": "object"} with
+        # no properties. Measured 2026-08-19 against google/gemini-3.7-flash:
+        # handed the exact payload verbatim in the prompt and told to send it,
+        # the model called this tool with `content: {}` -- empty. A provider
+        # translating an untyped object into a function declaration produces a
+        # field with nothing in it, so there is nothing for the model to fill.
+        #
+        # That is exactly how the merged `teach` tool died (`board: {}`), and it
+        # is why three separate prompt fixes -- literal examples in this
+        # description, READ_NOW naming the skill, a standing line saying
+        # announcing a task does not put it on the board -- all failed to
+        # produce a single call across four live periods. It was never a
+        # prompting problem.
+        #
+        # Every field is typed and top-level. Core's per-kind validators still
+        # decide what each `kind` requires, and still refuse with a reason she
+        # can act on -- the requiredness is pedagogy-shaped and stays out of the
+        # wire, where a provider would only mangle it.
         "description": (
-            "Show a choice, vocabulary, or roleplay exercise on the board. "
-            "content is validated for structure only -- Core never judges whether "
-            "an answer is pedagogically right. "
-            "Usually called in the same message as say."
+            "Find out what landed. This is the check after a choral round -- not "
+            "a way to display something, which write_board and show_image "
+            "already do. Usually called in the same message as say.\n"
+            "The unit's exercises.md holds ready-made payloads -- read it and "
+            "copy the fields across. Each kind needs different ones:\n"
+            "choice: prompt + options (2-4) + correct_id. Add reveal=true only "
+            "to show which was right, never who picked what.\n"
+            "vocabulary: items (2-8).\n"
+            "roleplay: environment + ai_role + student_role + target_phrases (1-5)."
         ),
         "inputSchema": _schema(
             {
@@ -284,9 +307,57 @@ TOOLS: tuple[dict[str, Any], ...] = (
                     "type": "string",
                     "enum": ["choice", "vocabulary", "roleplay"],
                 },
-                "content": {"type": "object"},
+                "prompt": {
+                    "type": "string",
+                    "description": "choice only: the question, e.g. \"Who says hello?\"",
+                },
+                "options": {
+                    "type": "array",
+                    "description": "choice only: 2 to 4 things to pick between.",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "id": {"type": "string"},
+                            "text": {"type": "string"},
+                            "asset": {"type": "string"},
+                        },
+                        "required": ["id", "text"],
+                    },
+                },
+                "correct_id": {
+                    "type": "string",
+                    "description": "choice only: the id of the right option.",
+                },
+                "items": {
+                    "type": "array",
+                    "description": "vocabulary only: 2 to 8 cards.",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "id": {"type": "string"},
+                            "text": {"type": "string"},
+                            "asset": {"type": "string"},
+                        },
+                        "required": ["id", "text"],
+                    },
+                },
+                "environment": {"type": "string", "description": "roleplay only: where it happens."},
+                "ai_role": {"type": "string", "description": "roleplay only: who you play."},
+                "student_role": {"type": "string", "description": "roleplay only: who they play."},
+                "target_phrases": {
+                    "type": "array",
+                    "description": "roleplay only: 1 to 5 lines to practise.",
+                    "items": {"type": "string"},
+                },
+                "reveal": {
+                    "type": "boolean",
+                    "description": (
+                        "choice only: show which option was correct. Never shows "
+                        "who chose what."
+                    ),
+                },
             },
-            ["kind", "content"],
+            ["kind"],
         ),
     },
     {

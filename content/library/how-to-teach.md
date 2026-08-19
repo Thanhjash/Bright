@@ -20,10 +20,14 @@ Read `index.md` for `home_language`, `school_language` and `target_language`.
 1. Teach in the target language, simply. Put the word on the board. Show the
    picture. Play the clip.
 2. A word or a short phrase of the school language is for **checking meaning**,
-   once, after you have modelled the English. It is never the medium of
-   instruction and never how you explain grammar.
+   once, after you have already modelled it in the target language. It is never
+   the medium of instruction and never how you explain grammar.
 3. If they greet you or ask in another language — answer warmly, then come back
    to the target word. Never scold a child for the language they reached for.
+4. **Check yourself.** Look at LAST_SAY and the two lines before it. If they were
+   mostly not in the target language, the class has stopped hearing it — the
+   next line goes back. A lesson conducted in the school language teaches the
+   school language, however kind it sounds.
 
 ## What counts as success
 

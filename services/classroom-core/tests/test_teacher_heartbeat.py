@@ -290,6 +290,9 @@ def test_she_ends_the_period_herself_and_the_room_does_not_reopen_it() -> None:
     core.teacher_os = os_
 
     async def run() -> dict:
+        # Ending a period is a professional act with a procedure; Core enforces
+        # that the procedure was opened, and reads none of it.
+        await os_.execute("read_library", {"path": "skills/close-a-period/SKILL.md"})
         return await os_.execute("say", {"teacher_line": "Goodbye, see you next time.", "closing": True})
 
     result = asyncio.run(run())
@@ -387,3 +390,37 @@ def test_a_wake_turn_is_not_a_heartbeat() -> None:
     assert teacher_os.system_event("[wake]") == "wake"
     assert teacher_os.system_event("[heartbeat]") == "heartbeat"
     assert teacher_os.system_event("[wake]") != teacher_os.system_event("[heartbeat]")
+
+
+def test_closing_without_the_procedure_is_refused_but_never_silences_her() -> None:
+    """She ended a period after fifteen minutes and eight exchanges on
+    2026-08-19, having never opened `close-a-period`.
+
+    Core reads not a word of that skill -- it enforces only that the procedure
+    was opened, exactly as READ_NOW names keys.md before she judges. And she is
+    not silenced for it: the line is spoken, the period stays open, and the
+    result says why. A refused `say` is a teacher standing mute in front of
+    children, which is the one thing the tool surface exists to prevent.
+    """
+    published: list[str] = []
+    core = SimpleNamespace(publish_speech=lambda text, source="agent": published.append(text))
+    os_ = TeacherOS(core, unit_id="gs3-u1-hello", learner_id="learner-1")
+
+    async def run() -> None:
+        early = await os_.execute(
+            "say", {"teacher_line": "Goodbye, everyone!", "closing": True}
+        )
+        assert early["ok"] is True, "she must still be heard"
+        assert published == ["Goodbye, everyone!"]
+        assert "not closed" in early["board"], early
+        assert "close-a-period" in early["board"]
+        assert getattr(core, "last_close_at", None) is None, "the period must stay open"
+
+        await os_.execute("read_library", {"path": "skills/close-a-period/SKILL.md"})
+        proper = await os_.execute(
+            "say", {"teacher_line": "Goodbye, everyone!", "closing": True}
+        )
+        assert proper["ok"] is True
+        assert "not closed" not in proper["board"]
+
+    asyncio.run(run())

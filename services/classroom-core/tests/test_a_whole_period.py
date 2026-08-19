@@ -120,8 +120,11 @@ def test_a_period_can_contain_a_whole_lesson() -> None:
                                  "outcome": "correct", "mode": "name"}),
             ("say", {"teacher_line": "Yes. Hello, Minh."}),
         ],
-        # Close it herself.
-        [("say", {"teacher_line": "Goodbye, everyone. See you next time.", "closing": True})],
+        # Close it herself -- after opening the procedure for it.
+        [
+            ("read_library", {"path": "skills/close-a-period/SKILL.md"}),
+            ("say", {"teacher_line": "Goodbye, everyone. See you next time.", "closing": True}),
+        ],
     ]
     brain = ScriptedTeacher(period)
     brain.executor = os_.execute
