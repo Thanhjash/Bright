@@ -75,6 +75,12 @@ class Settings:
 
     # --- paths -------------------------------------------------------------
     assets_dir: Path = field(default_factory=lambda: HERE / "assets")
+    # Who the room opens for when nothing else says. NS-7: the deployment
+    # declares its own roster; software must not carry a child's name. This is
+    # the single-learner scaffold until a real roster exists, and it is a
+    # setting so a second deployment changes a declaration, not code.
+    default_learner_id: str = "learner-1"
+    default_learner_name: str = "Learner"
     data_dir: Path = field(default_factory=lambda: HERE / "data")
     db_path: Path = field(default_factory=lambda: HERE / "data" / "bright.db")
     lesson_run_path: Path = field(default_factory=lambda: HERE / "data" / "sample_lesson_run.json")
@@ -182,6 +188,8 @@ class Settings:
             assets_dir=assets_dir,
             data_dir=data_dir,
             db_path=_resolve(_env("CORE_DB_PATH", str(data_dir / "bright.db")), REPO_ROOT),
+            default_learner_id=_env("CORE_DEFAULT_LEARNER_ID", "learner-1"),
+            default_learner_name=_env("CORE_DEFAULT_LEARNER_NAME", "Learner"),
             lesson_run_path=_resolve(
                 _env("CORE_LESSON_RUN", str(HERE / "data" / "sample_lesson_run.json")), REPO_ROOT
             ),

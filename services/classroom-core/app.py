@@ -551,8 +551,8 @@ def create_app(settings: Settings | None = None, core: Core | None = None) -> Fa
         os_ = start_teacher_session(
             get_core(),
             unit_id=str(payload.get("unitId") or default_unit),
-            learner_id=str(payload.get("learnerId") or "learner-1"),
-            learner_name=str(payload.get("learnerName") or "Minh"),
+            learner_id=str(payload.get("learnerId") or core_.settings.default_learner_id),
+            learner_name=str(payload.get("learnerName") or core_.settings.default_learner_name),
         )
         result: dict[str, Any] = {"ok": True, "unitId": os_.unit_id, "learnerId": os_.learner_id}
         if payload.get("open", True):

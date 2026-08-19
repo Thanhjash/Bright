@@ -1094,8 +1094,9 @@ async def _open_on_presence(core: Any, *, reason: str) -> dict[str, Any] | None:
         # there is nothing to teach; with several, an adult chooses.
         return None
     settings = getattr(core, "settings", None)
-    learner_id = str(getattr(settings, "default_learner_id", "") or "learner-1")
-    learner_name = str(getattr(settings, "default_learner_name", "") or "Minh")
+    # NS-7: a child's name is a property of the deployment, never of the code.
+    learner_id = str(getattr(settings, "default_learner_id", "") or "learner")
+    learner_name = str(getattr(settings, "default_learner_name", "") or "Learner")
     try:
         # An interrupted period is resumed, not replaced. `[heartbeat]` tells her
         # to look up and carry on; `[sat_down]` would make her greet a class she

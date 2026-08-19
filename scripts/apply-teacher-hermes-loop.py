@@ -23,10 +23,28 @@ DEFAULT_SITE = (
 )
 
 PATCHES: list[tuple[str, str, str]] = [
+    # Repair first, for a venv patched before 2026-08-19. `{"type": "required"}`
+    # is not valid OpenAI tool_choice syntax -- it must be the bare string.
+    # Every OpenRouter provider rejected it differently (Google: "found
+    # 'required'"; DeepInfra: "should be 'none', 'auto' or 'required'";
+    # Cloudflare: "Invalid value for `function`: `None`"), so OpenRouter walked
+    # its whole provider list failing at each one, and a teaching turn cost
+    # 26-42s before a single word reached a child. Measured after the fix on the
+    # same prompt: 3.8s, three tool calls.
+    (
+        "agent/bright_live.py",
+        '        request_overrides["tool_choice"] = {"type": "required"}',
+        '        request_overrides["tool_choice"] = "required"',
+    ),
+    (
+        "gateway/run.py",
+        '            turn_request_overrides["tool_choice"] = {"type": "required"}',
+        '            turn_request_overrides["tool_choice"] = "required"',
+    ),
     (
         "agent/bright_live.py",
         'BRIGHT_PATCH_VERSION = "0.20.0+bright.2"',
-        'BRIGHT_PATCH_VERSION = "0.20.0+bright.3"',
+        'BRIGHT_PATCH_VERSION = "0.20.0+bright.5"',
     ),
     (
         "agent/bright_live.py",
@@ -39,7 +57,7 @@ PATCHES: list[tuple[str, str, str]] = [
             "type": "function",
             "function": {"name": profile.terminal_tool},
         }""",
-        '        request_overrides["tool_choice"] = {"type": "required"}',
+        '        request_overrides["tool_choice"] = "required"',
     ),
     (
         "agent/bright_live.py",
@@ -84,7 +102,7 @@ PATCHES: list[tuple[str, str, str]] = [
                 "type": "function",
                 "function": {"name": bright_profile.terminal_tool},
             }""",
-        '            turn_request_overrides["tool_choice"] = {"type": "required"}',
+        '            turn_request_overrides["tool_choice"] = "required"',
     ),
     (
         "gateway/platforms/api_server.py",

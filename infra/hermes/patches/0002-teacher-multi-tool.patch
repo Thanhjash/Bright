@@ -7,7 +7,7 @@ Teacher multi-tool live loop: 8 iterations, say is the terminal tool.
  
  
 -BRIGHT_PATCH_VERSION = "0.20.0+bright.2"
-+BRIGHT_PATCH_VERSION = "0.20.0+bright.4"
++BRIGHT_PATCH_VERSION = "0.20.0+bright.5"
  
  
  def _truthy(value: Any) -> bool:
@@ -28,7 +28,12 @@ Teacher multi-tool live loop: 8 iterations, say is the terminal tool.
 -            "type": "function",
 -            "function": {"name": profile.terminal_tool},
 -        }
-+        request_overrides["tool_choice"] = {"type": "required"}
++        # The bare string, not {"type": "required"} -- that object is not valid
++        # OpenAI tool_choice syntax, and every OpenRouter provider rejected it
++        # differently (Google: "found 'required'"; DeepInfra: "should be 'none',
++        # 'auto' or 'required'"), so a turn spent 26-42s walking the provider
++        # list and failing at each one before anything could be taught.
++        request_overrides["tool_choice"] = "required"
          if profile.mimo_disable_thinking:
              # ``extra_body`` is the OpenAI SDK escape hatch: it serializes
              # its entries into the JSON body at the top level. Nesting this
@@ -72,7 +77,7 @@ Teacher multi-tool live loop: 8 iterations, say is the terminal tool.
 -                "type": "function",
 -                "function": {"name": bright_profile.terminal_tool},
 -            }
-+            turn_request_overrides["tool_choice"] = {"type": "required"}
++            turn_request_overrides["tool_choice"] = "required"
          agent.request_overrides = turn_request_overrides
          # Must-deliver notes for THIS turn ride the current user message
          # (api_content sidecar), never the system prompt: staged by

@@ -11,6 +11,19 @@ model:
   # Map + one teacher line + a couple of tool args.
   max_tokens: 512
 
+# OpenRouter fans one model across many providers, and they are not equivalent.
+# Measured 2026-08-19 on google/gemma-4-26b-a4b-it: NextBit returned "upstream
+# model did not return a valid tool call for the requested tool_choice", and
+# before the tool_choice syntax was fixed, Cloudflare/Google/DeepInfra each
+# rejected the request differently while Venice 429'd. Every failed hop is
+# wall-clock a child spends waiting.
+#
+# `require_parameters` keeps the request on providers that actually support
+# everything we send -- tools and tool_choice included. This is a routing
+# preference, not a model choice: swap the model freely, this still holds.
+provider_routing:
+  require_parameters: true
+
 agent:
   max_turns: 8
   api_max_retries: 0
