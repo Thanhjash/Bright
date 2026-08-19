@@ -302,7 +302,12 @@ def render_teacher_turn(ctx: TurnContext, turn_id: str) -> str:
         ("PAST", past),
         ("BEATS", beats),
     ]
-    lines = [f"{key}={value}" for key, value in state if str(value).strip()]
+    # Stable first, volatile last. Prompt caching matches on the longest common
+    # PREFIX, and TURN_ID changes every single turn -- with it on line 1 nothing
+    # after it could ever be cached. The library and the standing instructions
+    # are identical all session, so they belong above the state that moves.
+    lines: list[str] = []
+    volatile = [f"{key}={value}" for key, value in state if str(value).strip()]
 
     # Core knows what she has already read, so Core resolves the conditionals.
     # Asking the model to evaluate five "if READS has no X" rules costs tokens,
@@ -326,10 +331,12 @@ def render_teacher_turn(ctx: TurnContext, turn_id: str) -> str:
             "pointed, then continue the map. A point is not a name."
         )
     lines.append(
-        "Put every tool call you already know you need in ONE message; a turn "
-        "costs one round-trip per message, and a child waits through each one."
+        "Put every tool call you already know you need in ONE message -- including "
+        "say. A message costs one round-trip and a child waits through each one, so "
+        "write_board + record_evidence + say together is one wait, not three."
     )
-    lines.append("End this turn with say.")
+    lines.append("The turn ends when you say. Say something every turn.")
+    lines.extend(volatile)
 
     if event == "class_start":
         lines.append(

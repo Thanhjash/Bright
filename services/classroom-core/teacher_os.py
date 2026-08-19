@@ -770,6 +770,20 @@ def format_skill_memory(rows: list[dict[str, Any]]) -> tuple[str, str]:
     return card, past
 
 
+# Orientation injection was built here on 2026-08-19 and REMOVED the same day,
+# by measurement. The idea: hand her how-to-teach.md + skills/index.md + the
+# active map instead of spending a round-trip on read_library, on the premise
+# that a cached prompt prefix is nearly free.
+#
+# The premise is false for this provider. Measured against
+# google/gemini-3.7-flash through OpenRouter, three identical 4,163-token
+# requests in a row all reported `cached_tokens: 0`. So the injection cost
+# ~2,400 extra tokens on EVERY call and bought back one round-trip on the
+# first turn only. Turns went 41/11/14s -> 46/38/27s. Worse, measured.
+#
+# Revisit only against a provider that demonstrably caches: check
+# `usage.prompt_tokens_details.cached_tokens` is non-zero on a repeat call
+# BEFORE building anything on top of it.
 def _session_recall(os_: TeacherOS) -> list[Any]:
     from bright_contracts import RecalledMemory
 

@@ -32,3 +32,4 @@ def test_runtime_source_has_no_unit_answer_key() -> None:
         text = path.read_text(encoding="utf-8")
         for needle in FORBIDDEN:
             assert needle not in text, f"{path.name} still teaches {needle!r}"
+
