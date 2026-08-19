@@ -888,3 +888,42 @@ def test_the_relay_cannot_reach_a_tool_the_model_could_not() -> None:
 
     assert events[-1].reason == "error"
     assert "forbidden tool" in (events[-1].detail or "")
+
+
+def test_a_quiet_room_is_handed_to_her_without_an_escape_hatch() -> None:
+    """The turn where autonomy is the whole question.
+
+    Measured 2026-08-19: 84 heartbeats, 0 teaching moves, 0 uses of wake_in_s.
+    The cause was in the last line she read. The heartbeat tail's FIRST clause
+    offered HEARTBEAT_OK; Core then scored that a success, cleared the fault,
+    and reset the silence clock -- so the null move was the cheapest, safest and
+    most recently-read option on every one of those turns.
+
+    A quiet room is now two different events, because Core witnessed which:
+    she either asked something (they are thinking -- leave them) or she did not
+    (the floor is hers). Only one of them gets an escape hatch.
+    """
+    from bright_agent.hermes import render_teacher_turn
+
+    class _Mem:
+        def __init__(self, text: str) -> None:
+            self.text = text
+
+    def turn(said: str) -> str:
+        ctx = SimpleNamespace(
+            lesson=SimpleNamespace(lesson_id="gs3-u1-hello"),
+            last_interaction=SimpleNamespace(detail=said),
+            recalled=[_Mem("student_id=learner-1")],
+        )
+        return render_teacher_turn(ctx, "bright-x")
+
+    floor = turn("[floor]")
+    assert "EVENT=floor" in floor
+    assert "the floor is yours" in floor
+    assert "Do not answer HEARTBEAT_OK" in floor, "no escape hatch where nobody is thinking"
+
+    thinking = turn("[heartbeat]")
+    assert "EVENT=heartbeat" in thinking
+    assert "they are thinking" in thinking
+    assert "reply HEARTBEAT_OK" in thinking, "a thinking class keeps its silence"
+    assert "the floor is yours" not in thinking

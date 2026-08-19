@@ -303,6 +303,7 @@ def render_teacher_turn(ctx: TurnContext, turn_id: str) -> str:
         "[heartbeat]": "heartbeat",
         "[prepare]": "prepare",
         "[wake]": "wake",
+        "[floor]": "floor",
     }.get(token)
     student_said = "" if event else said
 
@@ -468,11 +469,30 @@ def render_teacher_turn(ctx: TurnContext, turn_id: str) -> str:
             "your own activity, not a silence. Make the move: use tools and end "
             "with say. Do not answer HEARTBEAT_OK."
         )
+    elif event == "floor":
+        # The last line she reads, on the turns where autonomy is the whole
+        # question. It used to be the heartbeat text below, whose FIRST clause
+        # offers HEARTBEAT_OK -- and Core then scored that a success, cleared
+        # the fault, and reset the silence clock, so doing nothing was the
+        # cheapest, safest, most recently-read option available. 84 heartbeats,
+        # 0 teaching moves. There is no escape hatch here because there is
+        # nothing to escape: nobody is thinking, the floor is hers.
+        lines.append(
+            "Nobody is speaking and you are not waiting for anyone -- the floor "
+            "is yours. This is the move you would make in a real classroom "
+            "while the room is quiet: run the round again with a different "
+            "picture, play the recording, put up an exercise, go back to the "
+            "one they fumbled, or start the next thing in your PLAN. Put "
+            "wake_in_s on your say to be handed the beat after this one. Do not "
+            "answer HEARTBEAT_OK -- that is for a class that is thinking, and "
+            "this is not one."
+        )
     elif event == "heartbeat":
         lines.append(
-            "The class is silent after LAST_SAY. This is not a student utterance. "
-            "If they still have time to answer, reply HEARTBEAT_OK and do not call say or record_evidence. "
-            "If you should prompt or move, use tools and end with say."
+            "You asked the class something and they have gone quiet -- they are "
+            "thinking. Do not talk over them. If they still have time, reply "
+            "HEARTBEAT_OK and call nothing else. If the wait has gone on too "
+            "long, help: scaffold down, or model the answer once and ask again."
         )
     return "\n".join(lines)
 

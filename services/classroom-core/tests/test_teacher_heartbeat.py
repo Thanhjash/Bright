@@ -93,11 +93,64 @@ def test_pulse_wakes_after_silence(monkeypatch) -> None:
     core = SimpleNamespace(teacher_os=os_, capability_leases=None)
 
     async def run() -> None:
+        # She was not waiting for anyone, so the quiet means the floor is hers
+        # and the room hands it to her -- not a heartbeat, which is what a class
+        # THINKING about her question gets.
         pulse = await pulse_teacher(core, reason="tick")
         assert pulse["say"] == "Anyone still with me?"
-        assert called == ["[heartbeat]"]
+        assert called == ["[floor]"]
+
+        # Same silence, but this time she asked something: now it is a
+        # heartbeat, and the long patient floor applies.
+        called.clear()
+        os_.awaiting_answer = True
+        os_.nudged_once = False         # the early nudge has not gone yet
+        os_.last_heartbeat_at = None
+        os_.last_say_at = time.time() - 60
+        pulse = await pulse_teacher(core, reason="tick")
+        assert called == ["[heartbeat]"], called
 
     asyncio.run(run())
+
+
+def test_the_floor_comes_to_her_far_sooner_than_a_thinking_class_is_interrupted() -> None:
+    """Two different silences. Treating them as one is why a period lasted
+    three minutes: she waited 45 seconds to do anything, every time, including
+    when nobody was coming."""
+    calls: list[str] = []
+
+    async def fake_turn(core, text):
+        calls.append(text)
+        return {"ok": True, "say": "Let's try it again together.", "action": "say"}
+
+    import pytest  # noqa: PLC0415
+
+    for awaiting, nudged, silence, expected in (
+        (False, True, 13.0, ["[floor]"]),      # her floor, taken quickly
+        (False, True, 8.0, []),                # too soon even for her
+        (True, True, 13.0, []),                # they are thinking; leave them
+        (True, False, 46.0, ["[heartbeat]"]),  # thinking long, but un-nudged
+        # Asked, nudged, and STILL nothing. The wait expires: a teacher does not
+        # stand at the front of the room forever. The floor comes back to her.
+        (True, True, 46.0, ["[floor]"]),
+    ):
+        calls.clear()
+        os_ = TeacherOS(SimpleNamespace(), unit_id="market-food", learner_id="learner-1")
+        os_.last_say = "Say it with me."
+        os_.last_say_at = time.time() - silence
+        os_.started_at = time.time() - silence - 30
+        os_.awaiting_answer = awaiting
+        os_.nudged_once = nudged
+        core = SimpleNamespace(teacher_os=os_, capability_leases=None)
+
+        monkey = pytest.MonkeyPatch()
+        monkey.setattr(teacher_os, "handle_teacher_turn", fake_turn)
+        monkey.setattr(teacher_os, "hermes_up", lambda: True)
+        try:
+            asyncio.run(pulse_teacher(core, reason="tick"))
+        finally:
+            monkey.undo()
+        assert calls == expected, (awaiting, nudged, silence, calls)
 
 
 def test_status_reports_asleep_phase() -> None:
@@ -377,8 +430,14 @@ def test_she_can_ask_the_room_for_her_own_next_beat() -> None:
         await os_.execute("say", {"teacher_line": "Again.", "wake_in_s": 1})
         assert os_.wake_at - time.time() >= teacher_os.WAKE_MIN_S - 1
 
-        # And a later plain line clears it: she moved on.
-        await os_.execute("say", {"teacher_line": "Good. Now something new."})
+        # A plain line does NOT clear it any more. It used to, so the first
+        # time she answered a child who interrupted her drill, the drill
+        # silently ended and she went back to waiting.
+        await os_.execute("say", {"teacher_line": "Yes, Minh -- good."})
+        assert os_.wake_at is not None, "answering a child must not end the drill"
+
+        # Only saying so clears it.
+        await os_.execute("say", {"teacher_line": "That is enough of that.", "wake_in_s": 0})
         assert os_.wake_at is None
 
     asyncio.run(run())
@@ -422,5 +481,34 @@ def test_closing_without_the_procedure_is_refused_but_never_silences_her() -> No
         )
         assert proper["ok"] is True
         assert "not closed" not in proper["board"]
+
+    asyncio.run(run())
+
+
+def test_the_nudge_budget_belongs_to_the_question_not_the_sentence() -> None:
+    """Why she waited for ever.
+
+    `nudged_once` was reset on every `say`. So: she asks, the 7s nudge fires and
+    sets it True, she speaks on that nudge turn -- and the reset puts it back to
+    False. The room therefore never reached "asked, nudged, still nothing", and
+    every silence for the rest of the period was classified as a class still
+    thinking. Measured 2026-08-19: 84 heartbeats, not one teaching move.
+    """
+    core = SimpleNamespace(publish_speech=lambda *a, **k: None)
+    os_ = TeacherOS(core, unit_id="gs3-u1-hello", learner_id="learner-1")
+
+    async def run() -> None:
+        await os_.execute("say", {"teacher_line": "What is this?", "awaiting_answer": True})
+        assert os_.nudged_once is False, "a new question starts with its nudge unspent"
+
+        os_.nudged_once = True                       # the early nudge fires
+        # She speaks again while still waiting on the SAME question.
+        await os_.execute("say", {"teacher_line": "Have a look at the picture."})
+        assert os_.nudged_once is True, "the budget belongs to the question"
+        assert os_.awaiting_answer is False, "a plain line is not another question"
+
+        # Asking something new spends a fresh nudge.
+        await os_.execute("say", {"teacher_line": "And this one?", "awaiting_answer": True})
+        assert os_.nudged_once is False
 
     asyncio.run(run())

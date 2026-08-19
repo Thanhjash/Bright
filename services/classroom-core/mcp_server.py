@@ -455,7 +455,12 @@ TOOLS: tuple[dict[str, Any], ...] = (
                     ),
                 },
                 "wake_in_s": {
-                    "type": "integer",
+                    # `number`, not `integer`. A model emitting 8.0 -- ordinary
+                    # for anything generating JSON -- was rejected at the
+                    # protocol layer, which killed the WHOLE say: she went mute
+                    # that turn, and because a protocol rejection never reaches
+                    # TeacherOS.execute, the census could not see it happen.
+                    "type": "number",
                     "description": (
                         "Set this when your next move should happen even if "
                         "nobody speaks -- the next round of a drill, or after a "
@@ -537,7 +542,7 @@ def _validate_arguments(tool: dict[str, Any], arguments: dict[str, Any]) -> str 
     unknown = sorted(set(arguments) - set(properties))
     if unknown and schema.get("additionalProperties") is False:
         return "unknown arguments: " + ", ".join(unknown)
-    python_types = {"string": str, "integer": int, "object": dict}
+    python_types = {"string": str, "integer": int, "number": (int, float), "object": dict}
     for key, value in arguments.items():
         rule = properties.get(key)
         if rule is None:

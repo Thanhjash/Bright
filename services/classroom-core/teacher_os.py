@@ -48,6 +48,7 @@ SYSTEM_EVENTS = {
     "[heartbeat]": "heartbeat",
     "[prepare]": "prepare",
     "[wake]": "wake",
+    "[floor]": "floor",
 }
 # She may ask the room to wake her. Without it there is structurally no such
 # thing as an ACTIVITY: her only wakes are a child speaking, one 7s nudge, and
@@ -71,7 +72,14 @@ HEARTBEAT_OK = "HEARTBEAT_OK"
 # move on. Prompting every few seconds would be nagging, and on a local model
 # every prompt is CPU we own.
 WAIT_AFTER_QUESTION_S = 7.0
+# Two different silences, and treating them as one is why a period lasted three
+# minutes. When she has ASKED something, quiet means the class is thinking and
+# 45s is the right patience. When she has NOT, quiet means the floor is hers and
+# nobody is coming -- waiting 45s there is a teacher standing at the front of a
+# room doing nothing. Measured 2026-08-19: 84 heartbeats, every one of them a
+# single line or the null answer.
 HEARTBEAT_SILENCE_S = 45.0
+HEARTBEAT_FLOOR_IS_HERS_S = 12.0
 HEARTBEAT_MIN_GAP_S = 20.0
 HEARTBEAT_TICK_S = 10.0
 
@@ -818,13 +826,28 @@ class TeacherOS:
             # She tells us whether she just asked something. Core does not
             # guess it from a question mark -- "Now you try" expects an answer
             # and carries no "?", while "How are you?" modelled aloud does not.
-            self.awaiting_answer = bool(arguments.get("awaiting_answer"))
-            self.nudged_once = False
+            # The nudge budget belongs to the QUESTION, not to the sentence.
+            # Resetting it on every say meant it could never accumulate: she
+            # asked, the nudge fired, she spoke on that nudge turn, the counter
+            # went back to zero, and the room called it "they are thinking"
+            # forever. Measured 2026-08-19 -- a whole period of nothing but
+            # heartbeats, one line each. Reset it only when she asks something
+            # NEW.
+            asking = bool(arguments.get("awaiting_answer"))
+            if asking and not self.awaiting_answer:
+                self.nudged_once = False
+            self.awaiting_answer = asking
+            # A plain say no longer cancels a pending beat. It used to, so the
+            # first time she answered a child who interrupted a drill, the drill
+            # silently ended. Only an explicit wake_in_s=0 clears it.
             wake_in = arguments.get("wake_in_s")
-            if isinstance(wake_in, (int, float)) and wake_in > 0:
-                self.wake_at = time.time() + min(max(float(wake_in), WAKE_MIN_S), WAKE_MAX_S)
-            else:
-                self.wake_at = None
+            if isinstance(wake_in, (int, float)) and not isinstance(wake_in, bool):
+                if wake_in > 0:
+                    self.wake_at = time.time() + min(
+                        max(float(wake_in), WAKE_MIN_S), WAKE_MAX_S
+                    )
+                else:
+                    self.wake_at = None
             publish = getattr(self.core, "publish_speech", None)
             if callable(publish):
                 publish(line, source="agent")
@@ -1698,7 +1721,22 @@ async def pulse_teacher(core: Any, *, force: bool = False, reason: str = "tick")
             result["action"] = "say" if result.get("say") else HEARTBEAT_OK
         return result
 
-    if not force and silence < HEARTBEAT_SILENCE_S:
+    # Whichever silence this is, Core witnessed which -- she set awaiting_answer
+    # herself on her last say. Core is not deciding what to teach; it is
+    # reporting which of two states it saw, the same way it reports BOARD=empty.
+    # She asked, the early nudge went, and still nothing came back. A real
+    # teacher does not stand at the front of the room waiting indefinitely --
+    # she models the answer, runs it chorally, tries another way. So the wait
+    # EXPIRES: once nudged and still silent past the patient floor, the room
+    # stops calling it "they are thinking" and hands her the floor.
+    #
+    # Measured 2026-08-19 without this: she set awaiting_answer on her opening
+    # line and every subsequent turn was a heartbeat, forever, one line each.
+    still_waiting = os_.awaiting_answer and not (
+        os_.nudged_once and silence >= HEARTBEAT_SILENCE_S
+    )
+    floor = HEARTBEAT_SILENCE_S if still_waiting else HEARTBEAT_FLOOR_IS_HERS_S
+    if not force and silence < floor:
         return {
             "ok": True,
             "action": HEARTBEAT_OK,
@@ -1716,8 +1754,15 @@ async def pulse_teacher(core: Any, *, force: bool = False, reason: str = "tick")
             "silenceMs": int(silence * 1000),
         }
     os_.last_heartbeat_at = now
+    # `[floor]` when the room is quiet and she was not waiting for anyone: this
+    # is her turn to move, and the HEARTBEAT_OK escape hatch is wrong for it.
+    # `[heartbeat]` keeps its meaning -- the class is thinking, do not interrupt.
+    token = "[heartbeat]" if still_waiting else "[floor]"
+    if not still_waiting:
+        # The question has been answered by silence. Stop re-asking it.
+        os_.awaiting_answer = False
     try:
-        result = await handle_teacher_turn(core, "[heartbeat]")
+        result = await handle_teacher_turn(core, token)
     except RuntimeError as exc:
         return {"ok": False, "action": "wait", "phase": "fault", "reason": str(exc)}
     result["silenceMs"] = int(_silence_s(os_) * 1000)
