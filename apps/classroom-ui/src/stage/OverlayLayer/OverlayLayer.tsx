@@ -12,10 +12,12 @@ import { SubtitleBar } from './SubtitleBar'
 export function OverlayLayer() {
   return (
     <div className="pointer-events-none absolute inset-0 z-20 flex flex-col justify-between">
-      {/* Top lane: who is up, and whether we are hearing them. Kept away from
-          the subtitle so neither can ever cover the board's bottom row. */}
-      <div className="flex items-start justify-between gap-6 p-[2.4vh_2.4vw]">
-        <div className="flex flex-wrap items-center gap-[1vw]">
+      {/* Top lane, in the AVATAR'S COLUMN only. The new chalkboard art starts
+          at 4.7% from the left, so the old full-width top lane sat squarely on
+          the chalk: a name chip parked over the first line the teacher writes.
+          Pushed right of the board's edge, where the wall is. */}
+      <div className="flex items-start justify-end gap-6 p-[2.4vh_2.4vw] pl-[68%]">
+        <div className="flex flex-wrap items-center justify-end gap-[1vw]">
           <StudentName />
         </div>
         {/* Renders only in DEGRADED or OFFLINE. It was written and then never
@@ -27,11 +29,11 @@ export function OverlayLayer() {
             failure. Classroom capability recovery is shown separately. */}
       </div>
 
-      {/* Bottom lane: subtitles only, and only over the BOARD. `--avatar-col`
-          is the same variable the Stage grid uses, so the subtitle cannot creep
-          onto the avatar if the split is ever retuned. BoardShell reserves the
-          matching height. */}
-      <div className="flex flex-col items-center p-[0_4vw_14vh] lg:pr-[calc(var(--avatar-col)+2vw)]">
+      {/* Bottom lane: BELOW the board, not over it. What she is saying is for
+          the class to hear; the chalk is for them to read, and a subtitle
+          parked across the foot of the board covers the line she just wrote.
+          `--board-bottom` comes from Stage and is measured off the artwork. */}
+      <div className="flex flex-col items-center px-[4vw] pb-[2vh] pt-[calc(var(--board-bottom)-64vh)] lg:pr-[calc(var(--avatar-col)+2vw)]">
         <SubtitleBar />
       </div>
     </div>

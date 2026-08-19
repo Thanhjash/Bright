@@ -181,21 +181,25 @@ export function RoomDock() {
 
   return (
     <>
-      {/* What the child said, echoed back. It lives at the TOP of the room --
+      {/* What the child said, echoed back. It lives BELOW THE BOARD -- the top
+          of the room is chalk now, and this chip was landing on the first line
+          she writes. Everything the system says about itself lives under the
+          board's bottom edge; the chalk is the child's. */}
+      {/* (kept for provenance) It used to live at the TOP of the room --
           her subtitle owns the bottom, and when both sat in the same corner
           they overlapped on a real projector. Top = the class, bottom = the
           teacher. */}
       {heard ? (
         <p
           data-stage="heard"
-          className="pointer-events-none absolute left-1/2 top-[2.4vh] z-[29] max-w-[52%] -translate-x-1/2 truncate rounded-full bg-ink-950/78 px-6 py-2 font-display text-[clamp(0.95rem,1.4vw,1.3rem)] text-cream/90 ring-1 ring-cream/15"
+          className="pointer-events-none absolute left-1/2 top-[calc(var(--board-bottom)+1vh)] z-[29] max-w-[52%] -translate-x-1/2 truncate rounded-full bg-ink-950/78 px-6 py-2 font-display text-[clamp(0.95rem,1.4vw,1.3rem)] text-cream/90 ring-1 ring-cream/15"
         >
           {heard}
         </p>
       ) : null}
     <div
       data-stage="dock"
-      className="pointer-events-none absolute inset-x-0 bottom-0 z-[28] flex flex-col items-center gap-3 px-[4vw] pb-[3.2vh] pt-8"
+      className="pointer-events-none absolute inset-x-0 bottom-0 z-[28] top-[var(--board-bottom)] flex flex-col items-center justify-end gap-[0.6vh] pb-[2vh] lg:pr-[calc(var(--avatar-col)*0.6)]"
     >
       {hint ? (
         <p className="pointer-events-none max-w-[36rem] text-center font-display text-[clamp(0.95rem,1.4vw,1.2rem)] text-amber">

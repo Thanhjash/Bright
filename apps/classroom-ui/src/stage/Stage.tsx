@@ -12,15 +12,28 @@ import { useClassroom } from '../store/classroom'
 import { ClassroomNotice } from './ClassroomNotice'
 import { RoomDock } from './RoomDock'
 
-const WALL = `${CORE_HTTP}/assets/stage/classroom-wall.jpg`
+const WALL = `${CORE_HTTP}/assets/stage/classroom-board.png`
 
-/** Chalk face in classroom-wall.jpg (percent of the photo). */
+/**
+ * The chalk face, measured off the artwork rather than guessed: the green
+ * rectangle in `classroom-board.png` runs x 4.7%..90.8%, y 7.8%..87.3%.
+ *
+ * The width stops well short of that, at 66%, and the gap is deliberate. The
+ * right third of the frame is the avatar's column -- she stands in front of the
+ * board, and chalk written under her is chalk nobody reads. Everything the
+ * SYSTEM says to the adult (the subtitle, the mic warning, the dock) lives in
+ * the strip below the board, outside the chalk entirely. The chalk belongs to
+ * the child.
+ */
 const BOARD: CSSProperties = {
-  left: '8.5%',
-  top: '10.5%',
-  width: '62%',
-  height: '67%',
+  left: '4.7%',
+  top: '7.8%',
+  width: '66%',
+  height: '72%',
 }
+
+/** Where the board's bottom edge sits, so chrome can stay under it. */
+const BOARD_BOTTOM = '80%'
 
 export function Stage() {
   const scene = useClassroom((s) => s.scene)
@@ -28,7 +41,9 @@ export function Stage() {
   return (
     <main
       className="stage-surface relative h-full w-full overflow-hidden bg-ink-950"
-      style={{ '--avatar-col': '28%' } as CSSProperties}
+      style={
+        { '--avatar-col': '28%', '--board-bottom': BOARD_BOTTOM } as CSSProperties
+      }
     >
       <img
         src={WALL}

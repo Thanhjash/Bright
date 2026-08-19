@@ -67,11 +67,34 @@ for (const [name, viewport] of VIEWPORTS) {
     }
   })
 
+  // Nothing the SYSTEM says may sit on the chalk. Measured 2026-08-20 against
+  // the new board art: the writing area starts 4.7% from the left, so the old
+  // full-width top lane parked a name chip over the first line she writes, and
+  // the subtitle sat across the foot of the board covering the line she had
+  // just finished. The chalk is the child's.
+  const chalk = await page.evaluate(() => {
+    const board = document.querySelector('[data-stage="board"]')?.getBoundingClientRect()
+    if (!board) return { measured: false, offenders: [] }
+    const offenders = []
+    for (const sel of ['[data-stage="subtitle"]', '[data-stage="heard"]', '[data-stage="dock"]']) {
+      const el = document.querySelector(sel)
+      if (!el) continue
+      const r = el.getBoundingClientRect()
+      if (r.width < 2 || r.height < 2) continue
+      const overlaps = !(r.right < board.left || r.left > board.right
+                      || r.bottom < board.top || r.top > board.bottom)
+      if (overlaps) offenders.push(sel)
+    }
+    return { measured: true, offenders }
+  })
+
   const jargon = ENGINEERING.filter(w => seen.text.includes(w))
   checks[`${name}: no engineering text on the wall`] = jargon.length === 0
   checks[`${name}: nothing scrolls sideways`] = !seen.horizontalScroll
   checks[`${name}: nothing bleeds off the edge`] = seen.overflowing === 0
   checks[`${name}: no page errors`] = pageErrors.length === 0
+  checks[`${name}: the system stays off the chalk`] = chalk.measured && chalk.offenders.length === 0
+  detail[name] = { ...(detail[name] || {}), chalkOffenders: chalk.offenders }
   detail[name] = { jargon, overflowing: seen.overflowing, pageErrors: pageErrors.slice(0, 3) }
   await ctx.close()
 }
