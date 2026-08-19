@@ -45,6 +45,15 @@ SYSTEM_EVENTS = {
     "[heartbeat]": "heartbeat",
 }
 HEARTBEAT_OK = "HEARTBEAT_OK"
+# The unit map says "Four seconds of wait after a question -- count it."
+# HEARTBEAT_SILENCE_S is the wait for a room that has simply gone quiet; it is
+# far too long for a child who was just asked something and is thinking. So the
+# wait is not one constant: it is a property of what she last did.
+#
+# One nudge, then back to the long floor -- ask, count to four, nudge once,
+# move on. Prompting every few seconds would be nagging, and on a local model
+# every prompt is CPU we own.
+WAIT_AFTER_QUESTION_S = 7.0
 HEARTBEAT_SILENCE_S = 45.0
 HEARTBEAT_MIN_GAP_S = 20.0
 HEARTBEAT_TICK_S = 10.0
@@ -371,6 +380,8 @@ class TeacherOS:
     response_open: bool = True
     started_at: float = field(default_factory=time.time)
     last_say_at: float | None = None
+    awaiting_answer: bool = False
+    nudged_once: bool = False
     last_student_at: float | None = None
     last_heartbeat_at: float | None = None
     turn_kind: str | None = None
@@ -586,6 +597,11 @@ class TeacherOS:
                 return {"ok": False, "reason": reason}
             self.last_say = line
             self.last_say_at = time.time()
+            # She tells us whether she just asked something. Core does not
+            # guess it from a question mark -- "Now you try" expects an answer
+            # and carries no "?", while "How are you?" modelled aloud does not.
+            self.awaiting_answer = bool(arguments.get("awaiting_answer"))
+            self.nudged_once = False
             self.note_beat("T:" + line)
             publish = getattr(self.core, "publish_speech", None)
             if callable(publish):
@@ -1048,6 +1064,25 @@ async def pulse_teacher(core: Any, *, force: bool = False, reason: str = "tick")
         return {"ok": False, "action": "wait", "phase": "fault", "reason": "hermes"}
     silence = _silence_s(os_)
     now = time.time()
+
+    # She asked something and is waiting. Nudge once, early, then let the
+    # ordinary long floor take over -- and bypass HEARTBEAT_MIN_GAP_S for that
+    # one nudge, or the 20s cooldown swallows the whole point of a short wait.
+    nudging = os_.awaiting_answer and not os_.nudged_once and silence >= WAIT_AFTER_QUESTION_S
+    if nudging:
+        os_.nudged_once = True
+        os_.last_heartbeat_at = now
+        try:
+            result = await handle_teacher_turn(core, "[heartbeat]")
+        except RuntimeError as exc:
+            return {"ok": False, "action": "wait", "phase": "fault", "reason": str(exc)}
+        result["silenceMs"] = int(_silence_s(os_) * 1000)
+        result["phase"] = teacher_phase(core)
+        result["reason"] = "waiting_for_an_answer"
+        if not result.get("action"):
+            result["action"] = "say" if result.get("say") else HEARTBEAT_OK
+        return result
+
     if not force and silence < HEARTBEAT_SILENCE_S:
         return {
             "ok": True,

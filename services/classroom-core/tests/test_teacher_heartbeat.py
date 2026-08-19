@@ -168,3 +168,65 @@ def test_pulse_will_not_open_a_class_into_a_dark_room(monkeypatch) -> None:
     pulse = asyncio.run(pulse_teacher(core))
     assert pulse["action"] == "asleep"
     assert probed == [], "an empty room must not cost a health probe"
+
+
+def test_she_nudges_once_soon_after_asking_then_waits(monkeypatch) -> None:
+    """Four seconds of wait after a question, not forty-five.
+
+    The unit map tells her to count to four after asking. The ordinary silence
+    floor is 45s, which is the right wait for a room that has drifted off, and
+    the wrong one for a child who was just asked something and is thinking.
+
+    One nudge, then the long floor takes over -- ask, wait, nudge once, move on.
+    Nagging every few seconds would be worse than silence, and on a local model
+    every prompt is CPU we own.
+    """
+    fired: list[str] = []
+
+    async def fake_turn(core, text):
+        fired.append(text)
+        return {"ok": True, "say": "Take your time."}
+
+    monkeypatch.setattr(teacher_os, "handle_teacher_turn", fake_turn)
+    monkeypatch.setattr(teacher_os, "hermes_up", lambda: True)
+
+    os_ = TeacherOS(SimpleNamespace(), unit_id="gs3-u1-hello", learner_id="learner-1")
+    os_.awaiting_answer = True
+    # Silence is measured from the LAST of several marks, started_at included.
+    stale = time.time() - (teacher_os.WAIT_AFTER_QUESTION_S + 1)
+    os_.started_at = stale
+    os_.last_say_at = stale
+    core = SimpleNamespace(teacher_os=os_, capability_leases=None)
+
+    first = asyncio.run(pulse_teacher(core))
+    assert fired == ["[heartbeat]"], "she should look up shortly after asking"
+    assert first["reason"] == "waiting_for_an_answer"
+
+    # ...and exactly once. The next tick falls back to the ordinary long floor,
+    # which is nowhere near reached yet.
+    second = asyncio.run(pulse_teacher(core))
+    assert fired == ["[heartbeat]"], "one nudge, not nagging"
+    assert second["action"] == teacher_os.HEARTBEAT_OK
+
+
+def test_a_statement_gets_the_long_wait(monkeypatch) -> None:
+    """She was explaining, not asking. Nobody owes her an answer."""
+    fired: list[str] = []
+
+    async def fake_turn(core, text):
+        fired.append(text)
+        return {"ok": True}
+
+    monkeypatch.setattr(teacher_os, "handle_teacher_turn", fake_turn)
+    monkeypatch.setattr(teacher_os, "hermes_up", lambda: True)
+
+    os_ = TeacherOS(SimpleNamespace(), unit_id="gs3-u1-hello", learner_id="learner-1")
+    os_.awaiting_answer = False
+    stale = time.time() - (teacher_os.WAIT_AFTER_QUESTION_S + 1)
+    os_.started_at = stale
+    os_.last_say_at = stale
+    core = SimpleNamespace(teacher_os=os_, capability_leases=None)
+
+    pulse = asyncio.run(pulse_teacher(core))
+    assert fired == [], "no nudge is owed after a statement"
+    assert pulse["action"] == teacher_os.HEARTBEAT_OK

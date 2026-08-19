@@ -284,6 +284,14 @@ TOOLS: tuple[dict[str, Any], ...] = (
                     "minLength": 1,
                     "maxLength": 220,
                 },
+                "awaiting_answer": {
+                    "type": "boolean",
+                    "description": (
+                        "True when this line asks the class for something and you are "
+                        "now waiting for them. The room stays quiet a few seconds and "
+                        "then wakes you once, instead of leaving a child in silence."
+                    ),
+                },
             },
             ["teacher_line"],
         ),

@@ -335,6 +335,11 @@ def render_teacher_turn(ctx: TurnContext, turn_id: str) -> str:
         "say. A message costs one round-trip and a child waits through each one, so "
         "write_board + record_evidence + say together is one wait, not three."
     )
+    lines.append(
+        "If your line asks the class for something, set awaiting_answer on say. "
+        "The room then waits a few seconds and wakes you once, instead of "
+        "leaving a child sitting in silence."
+    )
     lines.append("The turn ends when you say. Say something every turn.")
     lines.extend(volatile)
 
