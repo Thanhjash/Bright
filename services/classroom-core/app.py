@@ -449,14 +449,27 @@ def create_app(settings: Settings | None = None, core: Core | None = None) -> Fa
             )
         if agent_mode not in {"", "0", "false", "no", "off", "none"}:
             try:
-                if agent_mode != "hermes":
+                if agent_mode not in {"hermes", "relay"}:
                     raise ValueError(
-                        f"unknown BRIGHT_AGENT={agent_mode!r}; use hermes or off"
+                        f"unknown BRIGHT_AGENT={agent_mode!r}; use hermes, relay or off"
                     )
-                from bright_agent.hermes import HermesAgent
-
                 core_: Core = app.state.core
-                core_.agent = HermesAgent()
+                if agent_mode == "relay":
+                    # A person where the model goes (NS-4: the runtime is
+                    # replaceable). Deliberate opt-in only, and `ideal_hosted`
+                    # already refused it above -- a classroom must never find
+                    # itself waiting on a human who went home.
+                    from bright_agent.relay import RelayAgent
+
+                    core_.agent = RelayAgent(executor=None)
+                    log.warning(
+                        "[agent] RELAY: the brain is a person, not a model. "
+                        "Reading %s", os.environ.get("BRIGHT_RELAY_DIR", ".runtime/.../relay")
+                    )
+                else:
+                    from bright_agent.hermes import HermesAgent
+
+                    core_.agent = HermesAgent()
 
                 # The health seam. It measures the sidecar, never the model's
                 # answer quality -- a probe that spends a turn would compete

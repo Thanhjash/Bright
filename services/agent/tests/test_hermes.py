@@ -784,3 +784,107 @@ def test_a_scheduled_beat_reaches_her_as_her_own_move() -> None:
     beat = turn("[heartbeat]")
     assert "EVENT=heartbeat" in beat
     assert "reply HEARTBEAT_OK" in beat, "silence keeps its escape hatch"
+
+
+def test_the_relay_is_a_runtime_not_a_cassette() -> None:
+    """NS-4: the runtime is replaceable, the contract is not.
+
+    `bright_agent.relay` puts a person where the model goes. It satisfies the
+    same TeacherAgent contract -- Core cannot tell -- and it must not become
+    the lesson tape this repo deleted. The difference is not taste: a cassette
+    is authored BEFORE the class and replayed regardless of what happens; the
+    relay is handed the turn's own input and answers it.
+    """
+    import asyncio
+    import json
+    from pathlib import Path
+    from tempfile import TemporaryDirectory
+
+    from bright_agent.relay import RelayAgent
+
+    with TemporaryDirectory() as tmp:
+        executed: list[tuple[str, dict]] = []
+
+        async def executor(name, arguments):
+            executed.append((name, dict(arguments)))
+            return {"ok": True, "applied": True}
+
+        agent = RelayAgent(executor=executor, directory=tmp)
+        agent.prepare_turn("bright-relay-1")
+        ctx = SimpleNamespace(
+            lesson=SimpleNamespace(lesson_id="gs3-u1-hello"),
+            last_interaction=SimpleNamespace(detail="Hello"),
+            recalled=[SimpleNamespace(text="student_id=learner-1")],
+        )
+
+        async def answer(path: Path, turn_id: str, calls: list[dict]) -> None:
+            for _ in range(400):
+                if (path / "turn.json").exists():
+                    break
+                await asyncio.sleep(0.02)
+            body = json.loads((path / "turn.json").read_text(encoding="utf-8"))
+            assert body["turn_id"] == turn_id
+            assert "STUDENT_SAID=Hello" in body["input"], "the brain sees the real turn"
+            (path / "moves.json").write_text(
+                json.dumps({"turn_id": turn_id, "calls": calls}), encoding="utf-8"
+            )
+
+        async def run():
+            task = asyncio.create_task(answer(Path(tmp), "bright-relay-1", [
+                {"name": "show_image", "arguments": {"asset": "asset://x.jpg"}},
+                {"name": "say", "arguments": {"teacher_line": "Hello, Minh."}},
+            ]))
+            events = [e async for e in agent.turn(ctx)]
+            await task
+            return events
+
+        events = asyncio.run(run())
+
+    assert [name for name, _ in executed] == ["show_image", "say"], executed
+    # Core stamps the turn onto every call, exactly as it does for the model.
+    assert all(args["turn_id"] == "bright-relay-1" for _, args in executed)
+    assert events[-1].type == "done" and events[-1].reason == "complete"
+
+
+def test_the_relay_cannot_reach_a_tool_the_model_could_not() -> None:
+    """A person at the other end is still bound by the tool surface."""
+    import asyncio
+    import json
+    from pathlib import Path
+    from tempfile import TemporaryDirectory
+
+    from bright_agent.relay import RelayAgent
+
+    with TemporaryDirectory() as tmp:
+        async def executor(name, arguments):
+            raise AssertionError(f"{name} must never have been executed")
+
+        agent = RelayAgent(executor=executor, directory=tmp)
+        agent.prepare_turn("bright-relay-2")
+        ctx = SimpleNamespace(
+            lesson=SimpleNamespace(lesson_id="gs3-u1-hello"),
+            last_interaction=SimpleNamespace(detail="Hello"),
+            recalled=[],
+        )
+
+        async def answer() -> None:
+            for _ in range(400):
+                if (Path(tmp) / "turn.json").exists():
+                    break
+                await asyncio.sleep(0.02)
+            (Path(tmp) / "moves.json").write_text(
+                json.dumps({"turn_id": "bright-relay-2",
+                            "calls": [{"name": "shell", "arguments": {"cmd": "rm -rf /"}}]}),
+                encoding="utf-8",
+            )
+
+        async def run():
+            task = asyncio.create_task(answer())
+            events = [e async for e in agent.turn(ctx)]
+            await task
+            return events
+
+        events = asyncio.run(run())
+
+    assert events[-1].reason == "error"
+    assert "forbidden tool" in (events[-1].detail or "")

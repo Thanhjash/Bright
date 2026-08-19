@@ -1396,6 +1396,11 @@ async def _handle_teacher_turn(core: Any, text: str) -> dict[str, Any]:
         core.turn_registry.register(
             turn_id, os_.execute, student_id=os_.learner_id, ttl_s=900.0
         )
+        if getattr(agent, "wants_executor", False):
+            # An in-process brain (bright_agent.relay) runs tools through the
+            # same executor the turn registry got, so every refusal, every
+            # census entry and every lease check is identical to a model turn.
+            agent.executor = os_.execute
         prepare = getattr(agent, "prepare_turn", None)
         if callable(prepare):
             prepare(turn_id)

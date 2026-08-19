@@ -105,7 +105,10 @@ load_environment() {
   # A 60s read timeout cuts her off mid-thought and leaves the provider's
   # single run open, which 429s the next turn.
   export HERMES_API_TIMEOUT_S="${HERMES_API_TIMEOUT_S:-300}"
-  export BRIGHT_AGENT=hermes
+  # `relay` puts a person where the model goes -- for authoring a lesson, or
+  # for running the room when the network is dead. Opt in on purpose:
+  #   BRIGHT_AGENT=relay ./scripts/teacher-up.sh
+  export BRIGHT_AGENT="${BRIGHT_AGENT:-hermes}"
   export BRIGHT_TEACHER_AGENT=1
   export PYTHONPATH="$ROOT/services/classroom-core:$ROOT/services/agent:$ROOT/packages/contracts/python${PYTHONPATH:+:$PYTHONPATH}"
   export CORE_DEV=0
