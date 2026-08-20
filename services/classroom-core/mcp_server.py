@@ -219,6 +219,37 @@ TOOLS: tuple[dict[str, Any], ...] = (
         ),
     },
     {
+        "name": "recall_student",
+        # The twelfth tool. docs/decisions/2026-08-20-the-room-knows-who.md.
+        #
+        # db.recall() -- FTS5 over memories_fts, bm25 re-weighted by recency --
+        # has existed for days, reachable from a dev HTTP route and from nothing
+        # she could call. A memory the teacher cannot query is a memory the
+        # teacher does not have.
+        #
+        # There is no student_id argument ON PURPOSE. The subject is the learner
+        # Core opened the session for; she cannot ask about another child
+        # because the id is not hers to supply.
+        "description": (
+            "Look further into THIS learner's own record when SKILL_CARD and "
+            "PAST are not enough -- what they were like on an earlier day, "
+            "whether something has come up before. Returns notes Core wrote, "
+            "most useful first. Finding nothing is normal: a child on their "
+            "first day has no past, and you teach them anyway."
+        ),
+        "inputSchema": _schema(
+            {
+                "query": {
+                    "type": "string",
+                    "minLength": 2,
+                    "description": "What you are looking for, e.g. an objective id or a word.",
+                },
+                "limit": {"type": "integer", "minimum": 1, "maximum": 8},
+            },
+            ["query"],
+        ),
+    },
+    {
         "name": "read_board",
         "description": "See what is currently on the board: writing, pictures, and the last clip.",
         "inputSchema": _schema({}, []),

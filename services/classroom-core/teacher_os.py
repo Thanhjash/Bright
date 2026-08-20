@@ -512,6 +512,8 @@ class TeacherOS:
     # (session_id, response_turn_id, skill) could never fire while
     # response_turn_id was a fresh random uuid on every call.
     turn_recorded: set[str] = field(default_factory=set)
+    # Counts only, for the census: how often she looked into the record.
+    turn_recalls: int = 0
 
     def map_path(self) -> str:
         return f"units/{self.unit_id}/map.md"
@@ -705,6 +707,33 @@ class TeacherOS:
                 return {"ok": False, "reason": str(exc)}
             self.reads.append(got["path"])
             return {"ok": True, **got}
+
+        if name == "recall_student":
+            # Scoped to THIS learner in Core, never by an argument: the id is
+            # not hers to supply. Same shape as record_evidence refusing a
+            # student_id that is not the learner in the room.
+            recall = getattr(getattr(self.core, "db", None), "recall", None)
+            if not callable(recall):
+                return {"ok": False, "reason": "this room keeps no learner record"}
+            query = " ".join(str(arguments.get("query") or "").split())
+            if len(query) < 2:
+                return {"ok": False, "reason": "recall_student needs something to look for"}
+            raw_limit = arguments.get("limit")
+            limit = raw_limit if isinstance(raw_limit, int) and not isinstance(raw_limit, bool) else 5
+            try:
+                found = recall(query, max(1, min(int(limit), 8)), student_id=self.learner_id)
+            except Exception as exc:  # noqa: BLE001 -- a lookup must not cost the turn
+                log.warning("recall_student failed (%s)", exc)
+                return {"ok": False, "reason": "the record could not be read"}
+            # Empty is a normal answer, not a failure: a child on their first
+            # day has no past and she has to teach them anyway. Saying ok=False
+            # would read as "something broke" and invite a retry.
+            notes = [
+                {"when": getattr(item, "when", ""), "text": getattr(item, "text", "")}
+                for item in found
+            ]
+            self.turn_recalls += len(notes)
+            return {"ok": True, "notes": notes, "found": len(notes)}
 
         if name == "search_library":
             try:
@@ -1617,6 +1646,7 @@ async def _handle_teacher_turn(core: Any, text: str) -> dict[str, Any]:
     os_.turn_exercises = []
     os_.turn_evidence = []
     os_.turn_recorded = set()
+    os_.turn_recalls = 0
     # What Core actually heard this turn. A system event is not a child
     # speaking, so evidence written on one is about an utterance that did not
     # happen -- and she has no memory of an earlier one to be recalling.
@@ -1861,6 +1891,16 @@ async def _open_on_presence(core: Any, *, reason: str) -> dict[str, Any] | None:
     # NS-7: a child's name is a property of the deployment, never of the code.
     learner_id = str(getattr(settings, "default_learner_id", "") or "learner")
     learner_name = str(getattr(settings, "default_learner_name", "") or "Learner")
+    # WHO is this, if the room can see. A confident, fresh match opens that
+    # child's session and therefore that child's recorded evidence; anything
+    # less falls through to the declared learner, because "uncertain identity
+    # means no student-memory write" and opening the wrong child's memory is
+    # the same mistake made earlier. Core never sees the face -- perception
+    # hands over an id (docs/decisions/2026-08-20-the-room-knows-who.md).
+    seen = getattr(core, "identified_learner", None)
+    if seen is not None and seen.fresh():
+        learner_id, learner_name = seen.student_id, seen.display_name
+        log.info("presence: recognised %s (%.2f)", learner_id, seen.similarity)
     try:
         # An interrupted period is resumed, not replaced. `[heartbeat]` tells her
         # to look up and carry on; `[sat_down]` would make her greet a class she

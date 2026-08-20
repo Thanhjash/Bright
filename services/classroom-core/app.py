@@ -626,6 +626,47 @@ def create_app(settings: Settings | None = None, core: Core | None = None) -> Fa
             reason=str(payload.get("reason") or "poke"),
         )
 
+    @app.post("/teacher/identify")
+    async def teacher_identify(payload: dict[str, Any]) -> dict[str, Any]:
+        """A frame from the room's camera. Answers only "who", never "what next".
+
+        The Stage sends this when it has a camera and a child in front of it.
+        Core keeps the answer and uses it the next time it opens a class, so a
+        recognised child gets their OWN recorded evidence instead of the
+        deployment's default learner.
+
+        Deliberately NOT on the teaching path: it does not start, stop or steer
+        a lesson, and it is not reachable from any tool she has. It also never
+        returns the frame, a face box, or an embedding -- the id and a
+        confidence are the whole contract (NORTH-STAR: "Identity is the
+        system's job, not the model's").
+        """
+        import base64
+        import binascii
+
+        import perception
+
+        raw = str(payload.get("image_base64") or "")
+        try:
+            frame = base64.b64decode(raw, validate=True) if raw else b""
+        except (binascii.Error, ValueError):
+            raise HTTPException(400, "image_base64 is not valid base64")
+
+        core_ = get_core()
+        seen = perception.identify(frame)
+        core_.identified_learner = seen
+        if seen is None:
+            # "We do not know" is a real answer and the room carries on with
+            # the declared learner. It is never an error.
+            return {"recognised": False, "studentId": None}
+        log.info("identified %s (%.2f)", seen.student_id, seen.similarity)
+        return {
+            "recognised": True,
+            "studentId": seen.student_id,
+            "displayName": seen.display_name,
+            "similarity": round(seen.similarity, 4),
+        }
+
     @app.post("/teacher/prepare")
     async def teacher_prepare() -> dict[str, Any]:
         """Draft the period now instead of waiting for the nightly job.

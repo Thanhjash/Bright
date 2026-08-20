@@ -40,6 +40,7 @@ TEACHER_TOOLS = frozenset(
     {
         "read_library",
         "search_library",
+        "recall_student",
         "read_board",
         "write_board",
         "show_image",

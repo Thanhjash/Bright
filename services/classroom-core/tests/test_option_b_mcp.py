@@ -147,6 +147,7 @@ async def test_mcp_is_authenticated_and_never_exposes_classroom_say():
         assert names == {
             "read_library",
             "search_library",
+            "recall_student",
             "write_board",
             "read_board",
             "show_image",

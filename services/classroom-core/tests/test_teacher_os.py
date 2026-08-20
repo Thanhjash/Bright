@@ -1423,3 +1423,47 @@ def test_an_escalation_carries_no_child_words() -> None:
 
     asyncio.run(run())
     database.close()
+
+
+def test_she_can_look_into_this_learners_record_and_only_this_one() -> None:
+    """The twelfth tool: db.recall() existed for days with no hand to call it.
+
+    A memory the teacher cannot query is a memory the teacher does not have.
+    The subject is scoped in Core, not passed as an argument -- she cannot ask
+    about another child because the id is not hers to supply.
+    """
+    from db import open_database
+
+    database = open_database(":memory:")
+    database.upsert_student("learner-1", "Minh")
+    database.upsert_student("learner-2", "Mai")
+    session = database.start_session(student_id="learner-1", lesson_id="gs3-u1-hello")
+    database.write_session_summary(
+        session_id=session,
+        summary="Minh needed the picture before he could say the greeting.")
+    other = database.start_session(student_id="learner-2", lesson_id="gs3-u1-hello")
+    database.write_session_summary(
+        session_id=other,
+        summary="Mai answered the greeting without any picture at all.")
+
+    core = SimpleNamespace(
+        db=database, session_id=session,
+        store=SimpleNamespace(set_scene=lambda k, p: {"kind": k, "props": p}),
+        bus=SimpleNamespace(publish=lambda *a, **k: None),
+        publish_speech=lambda *a, **k: None,
+    )
+    os_ = TeacherOS(core, unit_id="gs3-u1-hello", learner_id="learner-1")
+
+    got = asyncio.run(os_.execute("recall_student", {"query": "picture"}))
+    assert got["ok"] is True, got
+    joined = " ".join(note["text"] for note in got["notes"])
+    assert "Minh" in joined
+    # The other child's record is unreachable, and there is no argument that
+    # could reach it.
+    assert "Mai" not in joined
+
+    # Nothing found is a normal answer, not a fault: a child on their first day
+    # has no past and she must teach them anyway.
+    empty = asyncio.run(os_.execute("recall_student", {"query": "trigonometry"}))
+    assert empty["ok"] is True and empty["found"] == 0
+    database.close()
