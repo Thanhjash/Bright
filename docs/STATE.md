@@ -514,6 +514,61 @@ deliberately ran 0.45, with no calibration on real classroom images; an adult
 console for enrolment and deletion; and her improvised Vietnamese is uncached, so
 a sentence she invents mid-lesson costs a cold VieNeu synth.
 
+## 2g. The product around the lesson — 2026-08-21
+
+**The quiz was showing two sentences as two billboards.** The owner saw it; the
+reason it survived is that `src/bus/fixtures.ts` renders a lesson that does not
+exist. Every choice the shipping unit sends has exactly TWO options and half of
+them carry no picture (`exercises.md`), while the fixtures had three image
+options. So every screenshot anyone had ever taken was of a shape the room has
+never produced. Rendered, the real shape stretched two short sentences into two
+443px cards -- **68% of the board** -- with the answer at 38px under a 67px
+question. Now: **18%**, answer text **58px**. Rule, stated in the code so it
+cannot regress: *a card is as large as its content plus a hand's width of
+padding; pictures want area, words do not.* The four real payload shapes are
+fixtures now.
+
+**Every successful preparation had been reporting itself as a failure.**
+`prepare_period` judged itself by the harness's terminal contract, which needs a
+completed `say` -- and `say` is precisely what `PREPARE_TOOLS` forbids. So the
+nightly job returned `"teacher agent did not say"` every time it worked, and
+nothing noticed because nothing read `lastPrepare`. Proof it had been working:
+after one "failure" the database held `prepare:gs3-u1-hello`, revision 3, a
+495-character plan. It is judged by the plan it leaves now. This is what removes
+the ~70s cold first turn: `start_teacher_session` already replays a prepared
+plan.
+
+**"Ready" stopped meaning "the services booted."** The lobby pill required only
+`hermesUp && speechUp` -- true while the worst seventy seconds of the demo were
+still ahead. It now also requires a drafted period, with a fourth state for the
+gap, and never blocks the card: unprepared is slow, not broken. The lobby fires
+one `POST /teacher/prepare` when nothing is drafted; `retake.sh` does the same,
+because resetting the database deletes `lesson_plans` and every retake was
+filming the cold turn. Measured: open `/` with nothing drafted → `{ok: true,
+planChars: 288}` → the pill turns green.
+
+**A door out, and the guard that makes it safe.** `/classroom` had no way back.
+The door navigates and does nothing else -- the session stays open on purpose, so
+a child who steps out re-attaches to the same period. What made it safe to have:
+the stage lease was only ever checked on the way IN (`_open_on_presence`), so
+once a session was open the pulse kept taking turns with no lease check. A room
+whose projector had closed went on being taught -- questions into an empty room,
+each one a model turn nobody heard. The pulse now answers `empty_room`.
+
+**`tests/node/the_whole_way_through.mjs`** walks the product the way a child does
+-- door, camera, enrolment offer, the press, the room, the way out -- asserting
+structure rather than pixels. 19/19, including *the door holds no audio lease*
+and *leaving does not end the period*.
+
+**Two things that cost an hour each, written down so they do not again:**
+
+- `pkill -f "<pattern>"` matches this agent's own command line. Kill by port
+  (`ss -lptn 'sport = :3001'`), never by pattern. Third occurrence.
+- A manually started Vite server on `/mnt/d` did not see edits (WSL 9p), so it
+  served stale modules and every measurement said "no change". The launcher's
+  own UI process hot-reloads fine. If a UI fix appears to do nothing, restart the
+  server before doubting the fix.
+
 ## 3. Layer status — honest
 
 | Layer | Status | Truth |
