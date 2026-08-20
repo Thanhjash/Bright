@@ -21,11 +21,16 @@
  */
 import { useEffect, useRef, useState } from 'react'
 import { CAMERA_LABELS } from '../room/labels'
+import { useIdentify } from './useIdentify'
 
 type CameraStatus = 'requesting' | 'live' | 'off' | 'no-camera'
 
-export function StudentCamera({ recognisedName }: { recognisedName?: string }) {
+export function StudentCamera({ recognisedName }: { recognisedName?: string } = {}) {
   const [status, setStatus] = useState<CameraStatus>('requesting')
+  // Who the SYSTEM decided this is. The prop stays as an override for a
+  // caller that already knows; otherwise the answer comes from Core, which
+  // got it from the vision service. This component never resolves a face.
+  const [seen, setSeen] = useState<string | undefined>(undefined)
   const videoRef = useRef<HTMLVideoElement>(null)
   const streamRef = useRef<MediaStream | null>(null)
 
@@ -70,8 +75,12 @@ export function StudentCamera({ recognisedName }: { recognisedName?: string }) {
     }
   }, [])
 
+  // Only ask while there is actually a picture to send.
+  useIdentify(videoRef, status === 'live', (who) => setSeen(who.displayName || undefined))
+
+  const named = recognisedName ?? seen
   const label = status === 'live'
-    ? (recognisedName ? CAMERA_LABELS.recognised(recognisedName) : CAMERA_LABELS.live)
+    ? (named ? CAMERA_LABELS.recognised(named) : CAMERA_LABELS.live)
     : status === 'requesting'
       ? CAMERA_LABELS.requesting
       : status === 'off'

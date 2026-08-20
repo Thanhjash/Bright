@@ -1467,3 +1467,29 @@ def test_she_can_look_into_this_learners_record_and_only_this_one() -> None:
     empty = asyncio.run(os_.execute("recall_student", {"query": "trigonometry"}))
     assert empty["ok"] is True and empty["found"] == 0
     database.close()
+
+
+def test_the_language_a_child_answered_in_reaches_her() -> None:
+    """Whisper decided it, the room threw it away, and she never knew.
+
+    Measured in a recorded lesson 2026-08-20: the child said "Chứ hiểu bài này"
+    -- I don't understand this -- Whisper labelled it `vi` correctly, and the
+    teacher answered in English and carried on. She was never told, because
+    /teacher/turn took only `text`.
+
+    A beginner falling back to their home language is the clearest thing they
+    can tell you. Core states which language it was; scaffold-down says what it
+    means. Core rules on nothing.
+    """
+    core, _frames = _stage_core()
+    os_ = TeacherOS(core, unit_id="gs3-u1-hello", learner_id="learner-1")
+
+    os_.turn_language = "vi"
+    texts = [item.text for item in teacher_os._session_recall(os_)]
+    assert "ANSWERED_IN=vi" in texts, texts
+
+    # A system event has no speaker, so it has no language either -- otherwise
+    # a heartbeat would look like a child who switched.
+    os_.turn_language = None
+    assert not any(t.startswith("ANSWERED_IN=") for t in
+                   (item.text for item in teacher_os._session_recall(os_)))

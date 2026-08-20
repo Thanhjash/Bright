@@ -514,6 +514,7 @@ class TeacherOS:
     turn_recorded: set[str] = field(default_factory=set)
     # Counts only, for the census: how often she looked into the record.
     turn_recalls: int = 0
+    turn_language: str | None = None
 
     def map_path(self) -> str:
         return f"units/{self.unit_id}/map.md"
@@ -1453,6 +1454,11 @@ def _session_recall(os_: TeacherOS) -> list[Any]:
                 when="now",
             )
         )
+    # Which language the answer came in. Only when a child actually spoke:
+    # a heartbeat has no speaker. Core states it; scaffold-down says what it
+    # is worth.
+    if os_.turn_language:
+        notes.append(RecalledMemory(text="ANSWERED_IN=" + os_.turn_language, when="now"))
     notes.append(RecalledMemory(text="student_id=" + os_.learner_id, when="now"))
     # An empty board is a fact, and it was invisible: the writing/images/exercise
     # lines are omitted when empty, so "nothing is up" and "I was not told" read
@@ -1620,12 +1626,12 @@ def _log_period_census(os_: TeacherOS) -> None:
 _TURN_LOCK = asyncio.Lock()
 
 
-async def handle_teacher_turn(core: Any, text: str) -> dict[str, Any]:
+async def handle_teacher_turn(core: Any, text: str, *, language: str | None = None) -> dict[str, Any]:
     async with _TURN_LOCK:
-        return await _handle_teacher_turn(core, text)
+        return await _handle_teacher_turn(core, text, language=language)
 
 
-async def _handle_teacher_turn(core: Any, text: str) -> dict[str, Any]:
+async def _handle_teacher_turn(core: Any, text: str, *, language: str | None = None) -> dict[str, Any]:
     from bright_contracts import LastInteraction, LessonPosition, RecalledMemory, Scene, TurnContext
 
     os_ = getattr(core, "teacher_os", None)
@@ -1647,6 +1653,13 @@ async def _handle_teacher_turn(core: Any, text: str) -> dict[str, Any]:
     os_.turn_evidence = []
     os_.turn_recorded = set()
     os_.turn_recalls = 0
+    # WHICH LANGUAGE the child answered in, as the decoder heard it. A system
+    # event has no speaker, so it has no language either.
+    #
+    # Core states the fact and rules on nothing. What it MEANS -- that a
+    # beginner falling back to their home language is telling you they are
+    # lost -- is pedagogy, and lives in skills/scaffold-down (NS-6).
+    os_.turn_language = None if event else (language or None)
     # What Core actually heard this turn. A system event is not a child
     # speaking, so evidence written on one is about an utterance that did not
     # happen -- and she has no memory of an earlier one to be recalling.

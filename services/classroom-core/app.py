@@ -610,8 +610,13 @@ def create_app(settings: Settings | None = None, core: Core | None = None) -> Fa
         text = str((body or {}).get("text") or "").strip()
         if not text:
             raise HTTPException(status_code=422, detail="text is required")
+        # Which language the child answered in, as the decoder heard it. Core
+        # reports it and never rules on what it means -- that is the skill's
+        # job (docs/decisions/2026-08-20-the-room-knows-who.md is the same
+        # shape: perception states, the profession interprets).
+        spoken = str((body or {}).get("language") or "").strip().lower()[:8] or None
         try:
-            return await handle_teacher_turn(get_core(), text)
+            return await handle_teacher_turn(get_core(), text, language=spoken)
         except RuntimeError as exc:
             raise HTTPException(status_code=503, detail=str(exc)) from exc
 

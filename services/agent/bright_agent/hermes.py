@@ -262,6 +262,7 @@ def render_teacher_turn(ctx: TurnContext, turn_id: str) -> str:
     assets = ""
     objectives = ""
     used_so_far = ""
+    answered_in = ""
     student_id = ""
     writing = ""
     images = ""
@@ -290,6 +291,8 @@ def render_teacher_turn(ctx: TurnContext, turn_id: str) -> str:
             objectives = text[len("OBJECTIVES=") :]
         elif text.startswith("USED_SO_FAR="):
             used_so_far = text[len("USED_SO_FAR=") :]
+        elif text.startswith("ANSWERED_IN="):
+            answered_in = text[len("ANSWERED_IN=") :]
         elif text.startswith("student_id="):
             student_id = text[len("student_id=") :]
         elif text.startswith("writing="):
@@ -334,6 +337,7 @@ def render_teacher_turn(ctx: TurnContext, turn_id: str) -> str:
         ("ASSETS", assets),
         ("OBJECTIVES", objectives),
         ("USED_SO_FAR", used_so_far),
+        ("ANSWERED_IN", answered_in),
         ("UNIT", unit),
         ("EVENT", event or "student"),
         ("STUDENT_SAID", student_said),

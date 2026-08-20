@@ -36,6 +36,10 @@ export class SttError extends Error {
 
 export interface Transcript {
   text: string
+  /** Which language the decoder settled on. Not a score -- the label itself.
+   *  A beginner falling back to their home language is the clearest "I am
+   *  lost" signal a classroom has, and the room used to discard it here. */
+  language: string | null
   /** 0…1 */
   confidence: number
   /** what the service reported spending, in ms */
@@ -62,6 +66,7 @@ const NO_SPEECH_THRESHOLD = 0.6
  */
 interface TranscriptionResponse {
   text?: unknown
+  language?: unknown
   ms?: unknown
   confidence?: unknown
   avgLogprob?: unknown
@@ -155,6 +160,7 @@ export async function transcribe(audio: Blob, signal?: AbortSignal): Promise<Tra
 
   return {
     text,
+    language: typeof body.language === 'string' && body.language ? body.language : null,
     confidence: readConfidence(body),
     serviceMs: typeof body.ms === 'number' ? body.ms : 0,
     queueMs: typeof body.queueMs === 'number' ? body.queueMs : 0,

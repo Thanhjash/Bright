@@ -144,14 +144,19 @@ export function RoomDock() {
     inFlight.current = true
     setDock('thinking')
     try {
-      const heardText = (await transcribe(clip.audio)).text.trim()
+      const heard = await transcribe(clip.audio)
+      const heardText = heard.text.trim()
       if (heardText) {
         setHeard(heardText)
         setHint(null)
         const res = await fetch(`${CORE_HTTP}/teacher/turn`, {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ text: heardText }),
+          // Whisper already decided which language this was, and the room
+          // used to throw it away. A Grade-3 beginner switching to their home
+          // language is the clearest "I am lost" signal in the room, and it
+          // costs nothing to pass on.
+          body: JSON.stringify({ text: heardText, language: heard.language ?? null }),
         })
         const body = await readJson(res)
         if (!res.ok) throw new Error(JSON.stringify(body).slice(0, 180))

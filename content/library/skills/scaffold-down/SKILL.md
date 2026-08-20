@@ -78,6 +78,26 @@ class, or with the adult, before asking anyone to try.
 - **Never start at the bottom.** The school language is not the medium of
   instruction, and it is not the child's first language either.
 
+## When they answer in a language the lesson is not in
+
+`ANSWERED_IN` is the language the child actually spoke, as the room heard it.
+When it is not the target language, that is not a discipline problem and it is
+not off-topic. **It is the clearest thing a beginner can tell you: I am lost,
+and I no longer have the words to say so in the target language.**
+
+Answer it. Say the reassurance in the language they reached for — briefly, one
+sentence — then come straight back up to the target language with something
+they can succeed at. Both halves matter: the first says *you were heard*, the
+second says *we are still learning this*.
+
+Staying in the target language and repeating the same prompt at a child who has
+just told you in their own words that they are lost teaches them that saying so
+does not work. That is the one lesson it is worst to teach.
+
+This is the "brief gloss in the school language" rung above, promoted: when the
+child themselves has switched, you are already at that rung, and pretending
+otherwise is not high standards.
+
 ## Count the attempts before you choose a rung
 
 `THIS_PERIOD` tells you how many times this objective has been tried and how it
