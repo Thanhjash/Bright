@@ -70,13 +70,6 @@ export interface MicRecorder {
   release(): void
 }
 
-/** How much audio to keep behind the gate. 300ms covers a soft onset like the
- *  /f/ in "Fine" without dragging in the tail of whatever came before. */
-const PRE_ROLL_MS = 300
-/** Ring length. Longer than any single utterance the gate will allow, so the
- *  pre-roll is always available and the memory cost stays a few hundred KB. */
-const RING_SECONDS = 3
-
 export function createMicRecorder(onDeviceFailure?: (failure: MicFailure) => void): MicRecorder {
   let stream: MediaStream | null = null
   let recorder: MediaRecorder | null = null
@@ -86,23 +79,6 @@ export function createMicRecorder(onDeviceFailure?: (failure: MicFailure) => voi
 
   let audioCtx: AudioContext | null = null
   let analyser: AnalyserNode | null = null
-  // ── Pre-roll ────────────────────────────────────────────────────────────
-  // THE BUG THIS EXISTS FOR. The gate opens when energy clears a threshold,
-  // and only then was `start()` called -- so the sound that OPENED the gate
-  // was the one sound never recorded. Observed with a real person on
-  // 2026-08-20: "Fine, thank you." came back from Whisper as "Thank you."
-  // every time. The model was innocent; the audio did not contain the word.
-  //
-  // So the graph now records continuously into a ring, and a clip begins
-  // PRE_ROLL_MS *before* the gate said so. Nothing is uploaded from the ring
-  // unless a capture is running -- it is a few seconds of memory, never a
-  // recording of the room.
-  let tap: ScriptProcessorNode | null = null
-  let ring: Float32Array | null = null
-  let ringWrite = 0
-  let ringFilled = 0
-  let ringRate = 48000
-  let captureFrom = -1
   let samples: Float32Array<ArrayBuffer> | null = null
   let watchedTrack: MediaStreamTrack | null = null
   let permission: PermissionStatus | null = null
@@ -211,64 +187,12 @@ export function createMicRecorder(onDeviceFailure?: (failure: MicFailure) => voi
       analyser = audioCtx.createAnalyser()
       analyser.fftSize = 1024
       samples = new Float32Array(new ArrayBuffer(analyser.fftSize * 4))
-      const src = audioCtx.createMediaStreamSource(source)
-      src.connect(analyser)
-      // ScriptProcessor rather than an AudioWorklet: a worklet needs a second
-      // file served at a URL, and this runs in a kiosk on a projector where
-      // one fewer moving part is worth more than the deprecation notice.
-      ringRate = audioCtx.sampleRate
-      ring = new Float32Array(Math.ceil(ringRate * RING_SECONDS))
-      ringWrite = 0
-      ringFilled = 0
-      tap = audioCtx.createScriptProcessor(4096, 1, 1)
-      tap.onaudioprocess = (e) => {
-        const input = e.inputBuffer.getChannelData(0)
-        const buf = ring
-        if (!buf) return
-        for (let i = 0; i < input.length; i++) {
-          buf[ringWrite] = input[i]
-          ringWrite = (ringWrite + 1) % buf.length
-        }
-        ringFilled = Math.min(buf.length, ringFilled + input.length)
-      }
-      src.connect(tap)
-      // A ScriptProcessor only runs while connected to a destination. Route it
-      // through a muted gain so nothing is ever played back into the room --
-      // the Stage is the only loudspeaker (half-duplex).
-      const mute = audioCtx.createGain()
-      mute.gain.value = 0
-      tap.connect(mute)
-      mute.connect(audioCtx.destination)
+      audioCtx.createMediaStreamSource(source).connect(analyser)
     } catch (cause) {
       // The meter is diagnostic. Losing it must not cost us the recording.
       console.warn('[voice] level meter unavailable', cause)
       analyser = null
     }
-  }
-
-  /** Ring slice from `from` to now, as a 16-bit mono WAV the ASR already eats. */
-  function readRing(from: number): Blob | null {
-    const buf = ring
-    if (!buf) return null
-    const length = (ringWrite - from + buf.length) % buf.length
-    if (length < 1) return null
-    const out = new Int16Array(length)
-    for (let i = 0; i < length; i++) {
-      const v = buf[(from + i) % buf.length]
-      out[i] = Math.max(-32768, Math.min(32767, Math.round(v * 32767)))
-    }
-    const header = new ArrayBuffer(44)
-    const view = new DataView(header)
-    const put = (off: number, text: string) => {
-      for (let i = 0; i < text.length; i++) view.setUint8(off + i, text.charCodeAt(i))
-    }
-    const bytes = out.length * 2
-    put(0, 'RIFF'); view.setUint32(4, 36 + bytes, true); put(8, 'WAVE')
-    put(12, 'fmt '); view.setUint32(16, 16, true); view.setUint16(20, 1, true)
-    view.setUint16(22, 1, true); view.setUint32(24, ringRate, true)
-    view.setUint32(28, ringRate * 2, true); view.setUint16(32, 2, true)
-    view.setUint16(34, 16, true); put(36, 'data'); view.setUint32(40, bytes, true)
-    return new Blob([header, out.buffer], { type: 'audio/wav' })
   }
 
   function pickMime(): string | undefined {
@@ -294,11 +218,6 @@ export function createMicRecorder(onDeviceFailure?: (failure: MicFailure) => voi
       }
       recorder.start()
       startedAt = performance.now()
-      // Begin the clip BEFORE the gate said so. This is the whole fix.
-      if (ring) {
-        const back = Math.min(ringFilled, Math.round(ringRate * PRE_ROLL_MS / 1000))
-        captureFrom = (ringWrite - back + ring.length) % ring.length
-      }
 
       capTimer = setTimeout(() => {
         if (recorder?.state === 'recording') onAutoStop('cap')
@@ -313,17 +232,10 @@ export function createMicRecorder(onDeviceFailure?: (failure: MicFailure) => voi
       if (!active || active.state === 'inactive') return Promise.resolve(null)
 
       const durationMs = performance.now() - startedAt
-      const from = captureFrom
-      captureFrom = -1
       return new Promise<Clip>((resolve) => {
         active.onstop = () => {
-          // The ring is the good clip: it starts before the gate opened, so it
-          // still has the word that opened it. The MediaRecorder blob is the
-          // fallback for a browser with no AudioContext, and it is the one
-          // that loses the first word.
-          const pcm = from >= 0 ? readRing(from) : null
           resolve({
-            audio: pcm ?? new Blob(chunks, { type: active.mimeType || 'audio/webm' }),
+            audio: new Blob(chunks, { type: active.mimeType || 'audio/webm' }),
             durationMs,
           })
           chunks = []
@@ -363,16 +275,6 @@ export function createMicRecorder(onDeviceFailure?: (failure: MicFailure) => voi
       samples = null
       void audioCtx?.close().catch(() => {})
       audioCtx = null
-      try {
-        tap?.disconnect()
-      } catch {
-        // already gone with the context
-      }
-      tap = null
-      ring = null
-      ringWrite = 0
-      ringFilled = 0
-      captureFrom = -1
     },
   }
 }
