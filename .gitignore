@@ -52,3 +52,7 @@ content/media/gs3/
 # it and how the panels are cut.
 Changemakers - Inputs/
 Changemakers - Inputs.zip
+
+# Face templates. Biometric student data with its own deletion story, kept
+# beside the classroom DB and never in git.
+data/faces.db*
