@@ -113,6 +113,75 @@ export const MOCK_STEPS: MockStep[] = [
     correct: 'o-banana',
     // no holdMs — waits for interaction.choice
   },
+  // ------------------------------------------------------------------ real
+  // The four shapes the SHIPPING unit actually sends, copied verbatim from
+  // `content/library/units/gs3-u1-hello/exercises.md`.
+  //
+  // Everything above this line is a shape no lesson has ever produced: three
+  // image options, four picture cards. The real unit sends TWO options, and
+  // half of them carry no picture at all. That gap is exactly why a sizing
+  // regression could live on the board for weeks without a screenshot showing
+  // it -- the fixtures were rendering a lesson that does not exist.
+  {
+    id: 'real-choice-text',
+    stage: 'PRACTICE',
+    kind: 'choice',
+    props: {
+      prompt: 'How does Mai answer?',
+      options: [
+        { id: 'a', text: 'Fine, thank you.' },
+        { id: 'b', text: "Hello. I'm Mai." },
+      ],
+    },
+    overlay: { studentName: MOCK_STUDENT_NAME },
+    say: 'How does Mai answer?',
+    correct: 'a',
+  },
+  {
+    id: 'real-choice-short',
+    stage: 'PRACTICE',
+    kind: 'choice',
+    props: {
+      prompt: 'Which word did you hear?',
+      options: [
+        { id: 'a', text: 'Hello' },
+        { id: 'b', text: 'Bye' },
+      ],
+    },
+    overlay: { studentName: MOCK_STUDENT_NAME },
+    say: 'Which word did you hear?',
+    correct: 'a',
+  },
+  {
+    id: 'real-choice-image',
+    stage: 'PRACTICE',
+    kind: 'choice',
+    props: {
+      prompt: 'Which pair is speaking?',
+      options: [
+        { id: 'a', text: 'Hello', asset: 'asset://gs3/panels/u1-l1-p2.png' },
+        { id: 'b', text: 'Bye', asset: 'asset://gs3/panels/u1-l3-p1.png' },
+      ],
+    },
+    overlay: { studentName: MOCK_STUDENT_NAME },
+    say: 'Which pair is speaking?',
+    correct: 'a',
+  },
+  {
+    id: 'real-vocab-text',
+    stage: 'INPUT',
+    kind: 'vocabulary',
+    props: {
+      items: [
+        { id: 'v1', text: 'Hello.' },
+        { id: 'v2', text: "I'm Mai." },
+        { id: 'v3', text: 'How are you?' },
+        { id: 'v4', text: 'Fine, thank you.' },
+      ],
+    },
+    say: 'Read them with me.',
+    holdMs: 5000,
+  },
   {
     id: 'target-sentence',
     stage: 'PRACTICE',

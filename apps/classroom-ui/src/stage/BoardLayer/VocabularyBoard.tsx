@@ -24,6 +24,9 @@ export function VocabularyBoard({ props }: { props: VocabularyProps }) {
   const [pressed, setPressed] = useState<string | null>(null)
   const interactive = props.interaction !== 'none'
   const items = props.items ?? []
+  /** Same rule as ChoiceBoard: pictures fill their cell, words do not. The
+   *  unit's Lesson-2 card set is four phrases with no pictures at all. */
+  const textOnly = items.length > 0 && items.every((item) => !item.asset)
 
   function point(item: MediaItem, button: HTMLButtonElement, clientX?: number, clientY?: number) {
     if (!interactive) return
@@ -41,8 +44,9 @@ export function VocabularyBoard({ props }: { props: VocabularyProps }) {
     <BoardShell align="stretch">
       <div
         className={cx(
-          'grid h-full w-full min-h-0 gap-[2.2vh_1.8vw]',
-          gridShape(items.length),
+          'grid w-full min-h-0 gap-[2.2vh_1.8vw]',
+          textOnly ? 'my-auto auto-rows-min' : 'h-full',
+          textOnly ? columnsOnly(items.length) : gridShape(items.length),
         )}
       >
         {items.map((item, i) => {
@@ -60,7 +64,8 @@ export function VocabularyBoard({ props }: { props: VocabularyProps }) {
               }}
               style={{ animationDelay: `${i * 55}ms` }}
               className={cx(
-                'animate-rise card-surface relative flex min-h-0 overflow-hidden p-[2.2vh_1.2vw]',
+                'animate-rise card-surface relative flex min-h-0 overflow-hidden',
+                textOnly ? 'p-[2.2vh_1.6vw]' : 'p-[2.2vh_1.2vw]',
                 'transition-[transform,box-shadow,background-color,border-color] duration-200 ease-out',
                 interactive && 'cursor-pointer hover:-translate-y-[0.6vh] hover:border-amber/70',
                 pressed === item.id && 'scale-[0.95] border-amber bg-amber/20',
@@ -89,6 +94,12 @@ export function VocabularyBoard({ props }: { props: VocabularyProps }) {
       </div>
     </BoardShell>
   )
+}
+
+/** Columns without the explicit row count: text cards size to their content,
+ *  and a declared `grid-rows-N` would stretch them back to full height. */
+function columnsOnly(count: number): string {
+  return gridShape(count).split(' ')[0]
 }
 
 function clamp01(n: number): number {

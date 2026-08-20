@@ -158,7 +158,20 @@ export function MediaTile({
         <Picture asset={item.asset} className="min-h-0 w-full flex-1 rounded-[1.1rem]" />
       ) : null}
       {text ? (
-        <span className="text-center font-display text-[clamp(1.2rem,2.2vw,2.4rem)] leading-none font-extrabold tracking-tight text-cream">
+        <span
+          className={cx(
+            'text-center font-display leading-none font-extrabold tracking-tight text-cream',
+            // A LABEL under a picture is a caption -- the picture is the
+            // content and the word names it. With no picture the word IS the
+            // content, and it was still being drawn at caption size: half the
+            // board's height of empty navy card around a 38px sentence, under
+            // a 67px question. The answer must not be smaller than the
+            // question that asks for it.
+            item.asset
+              ? 'text-[clamp(1.2rem,2.2vw,2.4rem)]'
+              : 'text-[clamp(1.8rem,3.4vw,3.6rem)]',
+          )}
+        >
           {text}
         </span>
       ) : null}
