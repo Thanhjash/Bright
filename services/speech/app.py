@@ -347,6 +347,11 @@ _VI_LETTER = re.compile(
 _SENTENCE = re.compile(r"[^.!?…]*[.!?…]+[\"'”’)\]]*\s*|[^.!?…]+$")
 
 
+def _ascii_header(value: str) -> str:
+    """Header-safe. HTTP headers are latin-1 and voice names are not."""
+    return value.encode("ascii", "replace").decode("ascii")
+
+
 def _voice_spans(text: str, *, default_voice: str, marked_voice: str) -> list[tuple[str, str]]:
     """Split one teacher line into (voice_id, text) runs, one per sentence.
 
@@ -468,7 +473,12 @@ async def speech(req: SpeechRequest) -> Response:
                     "X-Tts-Queue-Ms": "0",
                     "X-Synth-Ms": str(round(spoken.synth_s * 1000)),
                     "X-Tts-Total-Ms": str(total_ms),
-                    "X-Voice": spoken.voice,
+                    # HTTP headers are latin-1. The preset is a Vietnamese
+                    # name -- "Ngọc Linh" -- and its diacritics made every
+                    # single TTS response a 500: the audio was synthesized and
+                    # cached, then thrown away on the way out, so she went mute
+                    # while the logs showed success.
+                    "X-Voice": _ascii_header(spoken.voice),
                     "X-Tts-Engine": "vieneu",
                     # 0ms synth means it came off disk -- the cache is the whole
                     # reason this engine is affordable, so make it visible.

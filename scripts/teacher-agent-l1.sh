@@ -139,7 +139,7 @@ stop_one() {
 
 stop_all() {
   mkdir -p "$PIDS"
-  for name in hermes core speech; do stop_one "$name"; done
+  for name in hermes core speech vision; do stop_one "$name"; done
   say "teacher-agent stopped"
 }
 
@@ -164,6 +164,17 @@ wait_for() {
     sleep 1
   done
   die "$name did not become ready; inspect $LOGS/$name.log"
+}
+
+start_vision_if_ready() {
+  local py="$ROOT/services/vision/.venv/bin/python"
+  local models="$ROOT/models/vision/face_recognition_sface_2021dec.onnx"
+  if [[ ! -x "$py" || ! -s "$models" ]]; then
+    say "vision skipped (no venv or no models — ./tools/fetch-face-models.py)"
+    return
+  fi
+  export VISION_PORT="${VISION_PORT:-8002}"
+  start_one vision "$py" "$ROOT/services/vision/app.py"
 }
 
 start_speech_if_ready() {
@@ -236,6 +247,7 @@ path.write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8")
 PY
   chmod 0600 "$HERMES_HOME/config.yaml"
   start_speech_if_ready
+  start_vision_if_ready
   start_one core "$CORE_PY" "$ROOT/services/classroom-core/app.py"
   wait_for core "http://127.0.0.1:$CORE_PORT/health"
   start_one hermes "$HERMES_BIN" gateway run --external-supervisor
