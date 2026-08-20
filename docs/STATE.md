@@ -429,6 +429,91 @@ The two Playwright runs need `PLAYWRIGHT_CORE` and `CHROME_PATH` set — see
 
 ---
 
+## 2f. The room got a front door — 2026-08-21
+
+Five hours before a competition recording, against a list the owner made by
+sitting in the room. Every item below was verified by running it, not by a test
+passing.
+
+**She speaks Vietnamese now, and the reason she never did was not the doctrine.**
+Measured in the owner's own session log: **110 TTS calls, every one English**,
+zero VieNeu invocations ever — while **three ASR clips came back `vi`**, i.e. a
+child said in their own words that they were lost and got English back. Four
+causes, three of them bugs: the prompt correctly pushes target-language (keep);
+`index.md` is the only file naming the languages and is **never** in `READ_NOW`,
+though `how-to-teach.md:19` tells her to read it and she gets two library paths
+a turn; **the curriculum contained no Vietnamese sentence at all**; and VieNeu
+only routes on a diacritic she could therefore never emit.
+
+The fix put the words where she already reads — a locked arrival line per period
+in `map.md`, rescue lines in `keys.md` (pulled in on exactly the turns a child
+has spoken), and the rule in `open-a-period`, worded generically because the
+NS-7 lint fails on the word "Vietnamese" in a skill. Unit files are exempt: the
+unit *is* the deployment. Verified live on an opening turn — she said the line
+word for word, then climbed straight back:
+
+```
+Chào các con!  ·  Cô là cô Bright.  ·  Hôm nay mình học cách chào nhau…
+Hello!  ·  Today we learn to say: Hello, I'm Bright.
+```
+
+**A cache lesson worth keeping.** She streams, so the unit that reaches TTS is a
+**sentence**, not the line an author wrote. Warming the whole line left all three
+sentences cold: **18 s of synthesis at the top of the lesson.** `warm-tts.py` now
+warms both, and goes through the running service by default — in-process it needs
+`sea_g2p` from the speech venv, so the tool failed on this box while the service
+it was warming worked fine. 18 s → **34 ms**.
+
+**The front door** (`docs/decisions/2026-08-21-the-front-door.md`). `/` was a bare
+redirect; a period began because a heartbeat noticed a browser holding the audio
+lease. Now it lists the three real periods with exactly one pressable, derived
+from the same `held` count she reasons from. `_open_on_presence` is untouched;
+the page mounts no bus; rollback is deleting one Route line. The trap it nearly
+shipped with: `unlockAudioOnFirstGesture` arms a `{once:true}` listener for the
+*next* pointerdown and only `ClassroomRoute` calls it, so the card press would
+have been spent before the listener existed — **a silent room, no error**.
+`unlockAudioNow()` spends the gesture it is standing in.
+
+It also unblocks curriculum: `_open_on_presence` refuses to open at all when more
+than one unit is authored (`teacher_os.py:1898`), so **a second unit was
+impossible** until a human could choose.
+
+**Enrolment exists.** `POST /vision/enroll` had shipped days earlier with a good
+consent schema and **zero callers** — so `faces.db` was empty and every session
+in the room's history opened as `learner-1`. It now lives on the front door,
+proxied through Core so Core mints the id and hands vision the same one
+(`students.id` and `subjects.subject_id` are equal by convention and nothing in
+SQL enforces it). It also closes the race: the room used to identify six seconds
+*after* the session had already opened.
+
+**The pre-roll fix came back, and it had a worse bug in it than the one it
+fixed.** `3170273` kept ONE 3-second ring for the whole clip while `voiceGate`
+allows `MAX_CLIP_MS = 15_000`; past ~2.7 s the write head laps the start and
+`(write - from + len) % len` returns a wrong length from a wrong offset — a
+**corrupted** clip, not a truncated one. Invisible because every test we had says
+"Fine, thank you." and stops. The ring is now pre-roll only and the utterance
+accumulates in its own buffer. Measured through the real chain:
+
+| | before | after |
+|---|---|---|
+| `"Fine, thank you."` | `"Thank you."` | `"Fine, thank you."` |
+| a 7 s sentence | would have been corrupted | first word and last word both intact |
+
+`tests/node/the_first_word_survives.mjs` carries the long case so it cannot come
+back through a three-word test.
+
+**Retakes.** `REOPEN_AFTER_CLOSE_S = 600` is now env-overridable
+(`BRIGHT_REOPEN_AFTER_CLOSE_S`). After she closes a period the room refuses to
+open for ten minutes, silently, with no log line anyone would look at — set it to
+15 for a rehearsal, and reset `data/bright.db` between takes or `periodsHeld`
+marches on and take two of Period 1 opens as Period 2.
+
+**Still open:** the `LANGUAGES=` injection (the real NS-7 fix — `index.md` is
+still never read); the face threshold, shipped at 0.363 where the reference
+deliberately ran 0.45, with no calibration on real classroom images; an adult
+console for enrolment and deletion; and her improvised Vietnamese is uncached, so
+a sentence she invents mid-lesson costs a cold VieNeu synth.
+
 ## 3. Layer status — honest
 
 | Layer | Status | Truth |

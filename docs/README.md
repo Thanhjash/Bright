@@ -78,6 +78,8 @@ change to the north star.
 | [2026-08-18-evidence-and-practice.md](decisions/2026-08-18-evidence-and-practice.md) | **2026-08-18.** Abundant practice, sparse evidence, honest uncertainty. The two-axis evidence model, item families, and no cameras for attribution |
 | [2026-08-18-teacher-skills.md](decisions/2026-08-18-teacher-skills.md) | **2026-08-18.** The profession lives in the library as skills, not in Hermes' skills dir |
 | [2026-08-18-identity-is-perception.md](decisions/2026-08-18-identity-is-perception.md) | **2026-08-18.** A separate CPU service answers "which `student_id`". The model never recognises anyone |
+| [2026-08-20-the-room-knows-who.md](decisions/2026-08-20-the-room-knows-who.md) | **2026-08-20.** Perception picks the learner before the class opens; a twelfth tool reads that child's own record |
+| [2026-08-21-the-front-door.md](decisions/2026-08-21-the-front-door.md) | **2026-08-21.** `/` lists the real periods and a child presses the next one; enrolment lives there, consented. Inside the room, nothing changes |
 | [option-b-classroom-runtime.md](decisions/option-b-classroom-runtime.md) | Process topology: Hermes sidecar, MCP hands, Stage owns audio, local-Gemma seam |
 | [hermes-over-openclaw.md](decisions/hermes-over-openclaw.md) | Why one agent runtime, not two — with file:line evidence |
 | [fact-check-gpt-brief.md](decisions/fact-check-gpt-brief.md) | The original brief, claim by claim: 25 verdicts |
@@ -86,6 +88,7 @@ change to the north star.
 
 | | |
 |---|---|
+| [data-and-content.md](design/data-and-content.md) | **Where the data is.** The curriculum on disk, the child's record in SQLite, faces in a third store, and how any of it reaches her prompt |
 | [teaching-loop.md](design/teaching-loop.md) | **The workflow.** The day, one turn in full, the board, and the failure/restart doctrine |
 | [tool-surface.md](design/tool-surface.md) | **Her hands.** What teaching requires, the four gaps, the proposed 11 tools, and what she deliberately never gets |
 | [architecture.md](design/architecture.md) | Two control tiers, tool contract, event bus, identity, speech, ownership boundaries |
