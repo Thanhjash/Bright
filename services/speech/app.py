@@ -145,6 +145,11 @@ VOICES: dict[str, str] = {
     "vi": "vi_VN-vais1000-medium.onnx",
 }
 DEFAULT_VOICE = "en"
+# The voice for text carrying the marked script (`_VI_LETTER` below). It is a
+# deployment fact, like ASR_LANGUAGES: a school running one language sets it to
+# that voice, or to a voice id it has not installed, and segmentation stops
+# having anything to choose.
+MARKED_VOICE = os.environ.get("TTS_MARKED_VOICE", "vi")
 
 _state: dict[str, Any] = {
     "voices": {},
@@ -328,7 +333,7 @@ _VI_LETTER = re.compile(
 _SENTENCE = re.compile(r"[^.!?…]*[.!?…]+[\"'”’)\]]*\s*|[^.!?…]+$")
 
 
-def _voice_spans(text: str, *, default_voice: str, other_voice: str) -> list[tuple[str, str]]:
+def _voice_spans(text: str, *, default_voice: str, marked_voice: str) -> list[tuple[str, str]]:
     """Split one teacher line into (voice_id, text) runs, one per sentence.
 
     THE BUG THIS FIXES. Voice was picked once for a whole line, so a line that
@@ -350,6 +355,16 @@ def _voice_spans(text: str, *, default_voice: str, other_voice: str) -> list[tup
     her switches land on them. The cost is a prosody reset at each boundary,
     which is a pause a real teacher also takes between two languages.
 
+    THE CHOICE IS BY SCRIPT, NOT BY "the other one". This first shipped as
+    `other_voice = whichever voice is not the requested one`, which is only
+    correct when the request asked for the un-marked voice. Build a Vietnamese
+    fixture with `--voice vi` and every Vietnamese sentence was handed to the
+    ENGLISH voice -- the exact defect this function exists to fix, running
+    backwards. "Con không biết cô ạ" came back from ASR as
+    'Concom BI letter 1EBT co letter 1E1', and it read as bad Vietnamese ASR
+    rather than as bad Vietnamese audio. `marked_voice` is the voice for text
+    carrying the marked script; `default_voice` speaks everything else.
+
     Not solved here, and named so nobody thinks it is: a Vietnamese sentence
     typed without diacritics still reads as English, and a switch INSIDE one
     sentence still takes one voice. The research's real answer is typed
@@ -361,7 +376,7 @@ def _voice_spans(text: str, *, default_voice: str, other_voice: str) -> list[tup
         chunk = match.group(0)
         if not chunk.strip():
             continue
-        voice = other_voice if _VI_LETTER.search(chunk) else default_voice
+        voice = marked_voice if _VI_LETTER.search(chunk) else default_voice
         if spans and spans[-1][0] == voice:
             spans[-1] = (voice, spans[-1][1] + chunk)
         else:
@@ -421,14 +436,18 @@ async def speech(req: SpeechRequest) -> Response:
     if voice_id not in _state["voices"]:
         raise HTTPException(503, f"no voices loaded; wanted {req.voice!r}")
 
-    # One voice per SENTENCE, not one per line. `voice` is the line's default
-    # -- the voice for anything with no Vietnamese letter in it -- and a
-    # code-switching sentence takes the other one. `segment: false` forces the
-    # whole line through one voice, which is what a fixture or a deliberate
-    # single-language override wants.
-    other = next((v for v in _state["voices"] if v != voice_id), voice_id)
+    # One voice per SENTENCE, not one per line. A sentence carrying the marked
+    # script goes to MARKED_VOICE; everything else goes to the requested voice.
+    #
+    # `default_voice` must not be the marked voice, or an un-marked sentence
+    # inside a line the caller asked for in that voice never gets the other
+    # one. A caller who wants the whole line in one voice says so with
+    # `segment: false` -- that is what the flag is for, and it is what fixtures
+    # and deliberate single-language deployments use.
+    marked = MARKED_VOICE if MARKED_VOICE in _state["voices"] else voice_id
+    plain = voice_id if voice_id != marked else DEFAULT_VOICE
     spans = (
-        _voice_spans(req.input, default_voice=voice_id, other_voice=other)
+        _voice_spans(req.input, default_voice=plain, marked_voice=marked)
         if req.segment and len(_state["voices"]) > 1
         else [(voice_id, req.input)]
     )

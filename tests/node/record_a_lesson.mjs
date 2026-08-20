@@ -41,7 +41,11 @@ await page.evaluate(() => {
   store.subscribe(st => {
     const scene = JSON.stringify({ kind: st.scene?.kind, props: st.scene?.props })
     if (scene !== lastScene) { lastScene = scene; console.log('@@SCENE@@ ' + scene) }
-    const say = st.speech?.text || st.lastSpeech?.text || ''
+    // `st.speech?.text` never existed on this store -- the field is
+    // `speechSubtitle`, with `overlaySubtitle` winning when the server sent
+    // one. Every recording made before 2026-08-20 logged zero spoken lines
+    // and looked like a silent lesson.
+    const say = st.overlaySubtitle || st.speechSubtitle || ''
     if (say && say !== lastSay) { lastSay = say; console.log('@@SAY@@ ' + say) }
   })
 })

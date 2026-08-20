@@ -338,8 +338,64 @@ reason to vary, and the map's pacing law ("two new items per ten minutes",
 "three different partners is a good target") is a law about *variety* that
 nothing has ever asked her to satisfy.
 
-That is a pedagogy problem, so it belongs in a skill, not in Python — most
-likely `take-the-floor` or a new one, and it is the next piece of work.
+That is a pedagogy problem, so it belongs in a skill, not in Python. It went
+into `scaffold-down`, which is already the skill Core names on a witnessed
+`wrong`: a new section tells her to read `THIS_PERIOD` and `USED_SO_FAR`
+together and answer the question no single turn can — *have I been going down a
+rung, or saying the same rung again?* — and to change the **material** rather
+than the wording when the count climbs and nothing on the board has moved.
+
+---
+
+## 2c. She held a spoken conversation — measured 2026-08-20
+
+Every speech test before this one drove **one** utterance and stopped.
+`tests/node/a_child_talks_to_her.mjs` drives a whole lesson through the
+microphone: one WAV of the child's side with silence where she answers, the
+real gate, the real Whisper, the real turn loop.
+
+**Six spoken exchanges in a row**, and the census of that period:
+
+```
+reads      map.md, open-a-period, keys.md, judge-a-response, how-to-teach.md,
+           skills/index.md, scaffold-down, put-up-an-exercise, exercises.md,
+           take-the-floor, elicit-chorally, recover-a-wobble      (12 files)
+clips      track-10          <- a LESSON 2 recording, unusable before today
+images     char-group, char-ben
+exercises  choice            <- the Lesson 2 ex.2 block authored the same day
+outcomes   {wrong: 4, near: 1}   5 rows
+lastSay    "Is it A: Fine, thank you, or B: Hello?"
+```
+
+That last line is the authored payload, on the board, for a child who spoke
+into a microphone.
+
+### The number nobody had measured: what the child actually waits
+
+p50 turn latency is 15.9 s, but that is *model* time. The wait that matters runs
+from the child stopping speaking to the teacher starting:
+
+| | child waits |
+|---|---|
+| turn 1 | **75.7 s** — she is opening the class: reading the map, writing a plan |
+| turn 2 | 23.3 s |
+| turns 3–6 | 18.3 – 19.8 s, still falling |
+
+Two consequences. **A real child waits ~19 s to be answered**, which is the
+latency problem stated in child-time and the strongest argument for local
+Gemma. And **the opening turn is long enough to swallow the next thing the
+child says** — with a flat 40 s gap the fixture's second sentence landed inside
+her first reply and was lost to half-duplex gating. The fixture now uses a
+95 s first gap and 45 s after, both from the table above. A human in the chair
+does not need this; they wait for her to finish. A recording cannot.
+
+### One-word answers are below the floor
+
+`"Hello"` renders in 592 ms and the gate drops anything under
+`MIN_CLIP_MS = 600`, which exists because Whisper invents words on short takes.
+A Grade-3 beginner's most likely utterance is one word. Not fixed — recorded,
+because the fix is a real trade against hallucination and needs child audio to
+settle.
 
 **To re-run the live lesson:**
 
@@ -350,6 +406,20 @@ likely `take-the-floor` or a new one, and it is the next piece of work.
 python3 scripts/rehearse-period.py --pupil scripts/pupils/lesson1.txt
 node tests/node/projector_reads_as_a_classroom.mjs      # no model needed
 ```
+
+**To talk to her, which is the only test that really counts:**
+
+```bash
+./scripts/teacher-up.sh
+python3 tools/build_pupil_conversation.py \
+    --script scripts/pupils/spoken.txt -o /tmp/pupil.wav
+PUPIL_WAV=/tmp/pupil.wav node tests/node/a_child_talks_to_her.mjs
+```
+
+Do **not** pipe that through `tail` — it buffers to EOF and you go blind for the
+whole run. And do not delete a log the running service holds open: the fd stays
+write-only, the file is unrecoverable, and the census for that run is simply
+gone.
 
 Read the result the way that audit did — `refusals=`, `reads=` and
 `images=/clips=/exercises=` in the census, not the pass/fail of a test.

@@ -78,6 +78,39 @@ class, or with the adult, before asking anyone to try.
 - **Never start at the bottom.** The school language is not the medium of
   instruction, and it is not the child's first language either.
 
+## Count the attempts before you choose a rung
+
+`THIS_PERIOD` tells you how many times this objective has been tried and how it
+went — `answer-wellbeing x9 (wrong 8, near 1)` is nine attempts, not one hard
+moment. `USED_SO_FAR` tells you what you have actually spent: which recordings
+you have played, which pictures have been up, whether any exercise has been put
+up at all.
+
+Read them together, because they answer a question no single turn can:
+**have I been going down a rung, or saying the same rung again?**
+
+If that count is climbing and `USED_SO_FAR` has not changed, the descent is not
+happening. Two more of the same is not a third attempt at teaching, it is the
+first attempt repeated. Change the *material*, not the wording:
+
+- a recording you have **not** played — `ASSETS` lists what this unit has
+- a picture that is **not** the one already up
+- an exercise, so they can choose instead of produce
+- a different objective from `OBJECTIVES` and come back to this one later
+
+The map's own pacing law is *"time is not the measure; attempts are"*, and it
+also says **two new items per ten minutes at most**. Both halves matter: do not
+race, and do not idle on one item because it is the one you started with.
+
+## When to leave it for now
+
+A child who has missed the same thing many times in one period is not going to
+get it on the next repetition, and the period has other objectives in it.
+Record what you saw honestly — `near` and `uncertain` are real answers — put it
+down, teach something else, and come back. Carrying the weakest objective into
+the next period's opening is what the map asks for; grinding it flat in this one
+is not.
+
 ## If about a third of the class looks lost
 
 Stop the activity. Do not push through. Go back to the easier version of the

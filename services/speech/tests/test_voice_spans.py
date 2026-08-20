@@ -24,10 +24,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from app import _concat_wavs, _voice_spans
 
 
-def spans(text: str) -> list[tuple[str, str]]:
+def spans(text: str, *, default: str = "en") -> list[tuple[str, str]]:
     return [
         (voice, chunk.strip())
-        for voice, chunk in _voice_spans(text, default_voice="en", other_voice="vi")
+        for voice, chunk in _voice_spans(text, default_voice=default, marked_voice="vi")
     ]
 
 
@@ -72,7 +72,31 @@ def test_a_line_with_no_sentence_end_still_speaks() -> None:
 
 def test_a_line_that_never_switches_is_one_call() -> None:
     """Segmentation must not tax the common case."""
-    assert len(_voice_spans("Listen and repeat.", default_voice="en", other_voice="vi")) == 1
+    assert len(_voice_spans("Listen and repeat.", default_voice="en", marked_voice="vi")) == 1
+
+
+def test_the_marked_script_goes_to_its_voice_whatever_was_requested() -> None:
+    """The regression this file missed the first time.
+
+    The parameter used to be `other_voice` -- "whichever voice is not the
+    requested one" -- which is right only when the request asked for the
+    un-marked voice. Build a Vietnamese fixture with `--voice vi` and every
+    Vietnamese sentence went to the ENGLISH voice: this function's own defect,
+    running backwards. It read as bad Vietnamese ASR, not as bad audio.
+
+    "Con không biết cô ạ" came back from Whisper as
+    'Concom BI letter 1EBT co letter 1E1' -- and forcing `language=vi` did not
+    help, which is what proved the audio was wrong rather than the transcript.
+    """
+    for requested in ("en", "vi"):
+        got = spans("Con không biết cô ạ", default=requested)
+        assert got == [("vi", "Con không biết cô ạ")], (requested, got)
+
+    # And the other direction still holds: English never lands in the marked
+    # voice just because the caller named it.
+    assert spans("Say with me: Fine, thank you.", default="en") == [
+        ("en", "Say with me: Fine, thank you.")
+    ]
 
 
 def _wav(seconds: float, rate: int = 22050) -> bytes:

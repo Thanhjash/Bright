@@ -1,0 +1,23 @@
+# A Grade-3 absolute beginner, SPOKEN — the child's side of a lesson, played
+# through Chromium's fake microphone so the real gate, the real ASR and the
+# real turn loop all run. Nothing here tells her what to teach; every line is
+# only something a child could really say, including the not-understanding.
+#
+# `voice:` is explicit, not detected. This is the one place detection is most
+# wrong: a Vietnamese sentence from a beginner is exactly what a
+# script-counting heuristic mislabels.
+#
+# EVERY LINE IS AT LEAST TWO WORDS, and that is a constraint, not a style. The
+# gate drops anything under MIN_CLIP_MS = 600 because Whisper invents words on
+# short takes, and our own TTS renders a bare "Hello" in 592ms. A real child
+# says it slower, but the fixture cannot, so the fixture says what the unit's
+# target language actually asks for -- "Hello. I'm Minh." -- rather than a
+# single word the gate would refuse. See docs/STATE.md on the one-word gap.
+en: Hello teacher
+en: Hello. I am Minh.
+vi: Con chưa hiểu bài này
+en: Fine, thank you
+en: How are you
+vi: Con không biết cô ạ
+en: Hello, I am Minh
+en: Goodbye teacher
