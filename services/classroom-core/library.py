@@ -98,6 +98,7 @@ def search_library(query: str, *, root: Path | None = None, limit: int = 5) -> d
 
 _OBJECTIVE_ID = re.compile(r"id:\s*`([a-z][a-z0-9-]{2,})`")
 _HYPHEN_ID = re.compile(r"`([a-z]+-[a-z0-9-]+)`")
+_OBJECTIVE_REF = _HYPHEN_ID
 
 
 def list_units(*, root: Path | None = None) -> list[str]:
@@ -167,3 +168,56 @@ def unit_catalog(unit_id: str, *, root: Path | None = None) -> dict[str, list[st
         objectives.update(_OBJECTIVE_ID.findall(text))
         objectives.update(_HYPHEN_ID.findall(text))
     return {"objectives": sorted(objectives), "assets": sorted(set(assets))}
+
+
+# `### Period 1 — Hello, I'm …` — the number and the title an author wrote.
+# Em dash or hyphen, because both get typed.
+_PERIOD_HEAD = re.compile(r"^###\s*Period\s+(\d+)\s*[—\-–]\s*(.+?)\s*$", re.M)
+# `Objectives in play: \`greet-and-name\`, \`answer-a-greeting\`.`
+_IN_PLAY = re.compile(r"^Objectives in play:\s*(.+?)\s*$", re.M)
+
+
+def list_periods(unit_id: str, *, root: Path | None = None) -> list[dict[str, Any]]:
+    """The periods an author wrote in a unit map, in order. Parsed, never judged.
+
+    A period is `### Period N — Title` in `map.md`, with the objectives it puts
+    in play named beneath it. Core reads the number and the words; it reads no
+    meaning into either. Which period comes next, whether one is finished, and
+    what a title implies are all somebody else's questions -- the teacher's, or
+    the lobby's, from evidence Core already keeps.
+
+    Returns [] for a unit with no map or no period headings rather than raising:
+    a unit is allowed to be one long lesson, and the front door simply has
+    nothing to list for it.
+    """
+    name = (unit_id or "").strip()
+    if not name or ".." in name or "/" in name:
+        return []
+    base = ((root or LIBRARY_ROOT) / "units" / name).resolve()
+    library = (root or LIBRARY_ROOT).resolve()
+    try:
+        base.relative_to(library)
+    except ValueError:
+        return []
+    map_md = base / "map.md"
+    if not map_md.is_file():
+        return []
+    text = map_md.read_text(encoding="utf-8")
+
+    heads = list(_PERIOD_HEAD.finditer(text))
+    periods: list[dict[str, Any]] = []
+    for i, head in enumerate(heads):
+        body = text[head.end(): heads[i + 1].start() if i + 1 < len(heads) else len(text)]
+        in_play = _IN_PLAY.search(body)
+        objectives = _OBJECTIVE_REF.findall(in_play.group(1)) if in_play else []
+        periods.append({
+            "n": int(head.group(1)),
+            "title": head.group(2).strip(),
+            "objectives": objectives,
+            # The author's own words as well as the ids. Period 3 says "all of
+            # them, plus `hear-h-and-b`" -- the ids alone would render that
+            # period as the single narrowest thing in the unit, which is the
+            # opposite of what it is.
+            "inPlay": in_play.group(1).rstrip(".").strip() if in_play else "",
+        })
+    return periods

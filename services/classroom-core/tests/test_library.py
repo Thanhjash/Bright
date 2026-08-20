@@ -237,3 +237,26 @@ def test_a_room_with_no_declared_day_still_runs(tmp_path) -> None:
     (tmp_path / "index.md").write_text("# no timetable here\n", encoding="utf-8")
     got = timetable(root=tmp_path)
     assert got == {"timezone": None, "prepare_at": None, "periods": []}
+
+
+def test_list_periods_reads_what_an_author_wrote() -> None:
+    """The front door renders from this, so it must be the map's own words."""
+    from library import list_periods
+
+    periods = list_periods("gs3-u1-hello")
+    assert [p["n"] for p in periods] == [1, 2, 3], "the map declares three periods"
+    assert periods[0]["title"], "a period without a title is an unpressable card"
+    # The ids are the map's, and they are the same ids record_evidence accepts.
+    assert "greet-and-name" in periods[0]["objectives"]
+    # Period 3 says "all of them, plus `hear-h-and-b`". Rendering only the id
+    # would show the widest period in the unit as the narrowest one.
+    assert "all of them" in periods[2]["inPlay"]
+
+
+def test_list_periods_is_quiet_about_units_that_do_not_exist() -> None:
+    """A dark front door beats a 500. Neither case is an error."""
+    from library import list_periods
+
+    assert list_periods("no-such-unit") == []
+    assert list_periods("../../../etc") == []
+    assert list_periods("") == []

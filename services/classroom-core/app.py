@@ -577,6 +577,41 @@ def create_app(settings: Settings | None = None, core: Core | None = None) -> Fa
 
         return teacher_status_payload(get_core())
 
+    @app.get("/library/periods")
+    async def library_periods(unitId: str = "", learnerId: str = "") -> dict[str, Any]:
+        """What is installed on this appliance, and how far this child has got.
+
+        Read-only, and the front door's whole data source. Core reports two
+        things it already knows -- the periods an author wrote, and how many
+        sessions it has itself opened and closed -- and joins them with nothing.
+        It does not say which period is next, whether one is finished, or which
+        card should be pressable. That arithmetic belongs to whoever is
+        looking, and doing it here would be Core deciding what a lesson means.
+
+        `held` is the same COUNT the teacher receives as PERIODS_HELD, for the
+        same learner and unit. The lobby renders from it and she reasons from
+        it, so a card and the class it opens can never disagree.
+        """
+        from library import list_periods, list_units
+
+        core_ = get_core()
+        units = list_units()
+        unit = (unitId or "").strip() or (units[0] if len(units) == 1 else "")
+        learner = (learnerId or "").strip() or core_.settings.default_learner_id
+        held = 0
+        if unit:
+            try:
+                held = core_.db.count_periods_held(student_id=learner, lesson_id=unit)
+            except Exception:  # noqa: BLE001 -- a dark front door must not be a 500
+                held = 0
+        return {
+            "units": units,
+            "unitId": unit,
+            "learnerId": learner,
+            "held": held,
+            "periods": list_periods(unit) if unit else [],
+        }
+
     @app.post("/teacher/session")
     async def teacher_session(body: dict[str, Any] | None = None) -> dict[str, Any]:
         from teacher_os import start_teacher_session

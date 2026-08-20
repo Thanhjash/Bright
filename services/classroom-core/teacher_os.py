@@ -1162,7 +1162,13 @@ def _close_open_teacher_sessions(db: Any, *, learner_id: str, unit_id: str) -> N
 # Stage still holds the audio lease and the pulse still ticks, so without this
 # she would say goodbye and greet the same class three seconds later, forever.
 # A real next period is a timetable event, and Bright has no day clock yet.
-REOPEN_AFTER_CLOSE_S = 600.0
+#
+# Overridable because ten minutes is right for a school and wrong for anyone
+# rehearsing. The failure it causes is silent and looks exactly like a broken
+# room: she closes a period, someone opens the front door again, and NOTHING
+# HAPPENS -- no error, no log line anyone would notice, for ten minutes. That
+# is a lost take, or a lost afternoon of testing. The default is unchanged.
+REOPEN_AFTER_CLOSE_S = float(os.environ.get("BRIGHT_REOPEN_AFTER_CLOSE_S", "600"))
 
 
 def resume_teacher_session(core: Any) -> TeacherOS | None:
