@@ -31,15 +31,21 @@ export function BoardShell({
   return (
     <div
       className={cx(
-        // Top and bottom padding are the overlay's reserved lanes — student
-        // name / listening / mode badge above, subtitle below. The board must
-        // never sit underneath either of them.
+        // Top padding clears the student-name / mode-badge lane above the
+        // board (OverlayLayer's top lane lives in the avatar's column, but
+        // this still keeps board content off the very top edge).
         //
-        // 22vh at the foot is measured, not guessed: three lines of subtitle at
-        // clamp(…,2.15vw,…) with leading-snug is 19.3vh of box plus the lane's
-        // own 2.5vh bottom margin. `line-clamp-3` in SubtitleBar is the other
-        // half of that guarantee — change one and you must change both.
-        'flex h-full w-full flex-col gap-[2vh] p-[9vh_3vw_22vh]',
+        // The bottom used to reserve 22vh here for the subtitle, back when
+        // the subtitle was conceptually "the board's own lane, underneath
+        // it" and the board ran nearly to the bottom of the chalk. It no
+        // longer is: the subtitle, the status dock and the heard chip now
+        // live entirely below the board's OUTER edge (Stage.tsx shortened
+        // the board itself, `BOARD.height`, to open that strip up). Content
+        // inside BoardShell never shares space with them any more, so this
+        // is an ordinary bottom margin, not a reservation — and it must stay
+        // small: RoleplayBoard's role row + four phrase buttons overflowed
+        // and overlapped when this was still 22vh of a now-shorter board.
+        'flex h-full w-full flex-col gap-[2vh] p-[6vh_3vw_4vh]',
         align === 'center' ? 'items-center' : 'items-stretch',
         justify === 'center' ? 'justify-center' : 'justify-between',
         className,

@@ -24,9 +24,10 @@ export function SubtitleBar() {
       aria-live="polite"
     >
       {/* Three lines is the ceiling, and it is a layout guarantee rather than a
-          style choice: BoardShell reserves exactly this much room at the foot of
-          the board, so an unusually long line clips instead of climbing over the
-          activity. At 2.15vw a line holds ~70 characters across the board
+          style choice: this renders inside RoomDock's fixed-height strip below
+          the board (Stage.tsx's `--board-bottom`), so an unusually long line
+          clips instead of pushing the status dock off the bottom of the
+          projector. At 2.15vw a line holds ~70 characters across the board
           column — longer than anything the lesson content produces. */}
       <p
         className={

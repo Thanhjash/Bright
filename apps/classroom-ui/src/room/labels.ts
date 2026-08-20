@@ -38,6 +38,25 @@ export const ROOM_LABELS = {
   boardFault: { cta: 'Bảng đang trục trặc một chút', sub: 'She keeps teaching — the board will come back' },
 } as const satisfies Record<string, RoomLabel>
 
+/** The short lead-in on the heard-echo chip -- "You said:", in the class's own language. */
+export const HEARD_PREFIX = 'Con nói:'
+
+/**
+ * The student camera corner. Face recognition is not built yet (NORTH-STAR
+ * §3, "Identity is the system's job") — these are the honest states a real
+ * component can be in *today*: hardware missing, hardware present but not
+ * streaming, a live self-view, or (once perception ships) a name. No state
+ * here fabricates a video feed or a recognised child.
+ */
+export const CAMERA_LABELS = {
+  noCamera: { cta: 'Không có camera', sub: 'No camera' },
+  off: { cta: 'Camera đang tắt', sub: 'Camera is off' },
+  requesting: { cta: 'Đang bật camera…', sub: 'Turning on…' },
+  live: { cta: 'Con có thể thấy mình', sub: 'You can see yourself' },
+  /** `name` is a first name only — the same bar StudentName already shows. */
+  recognised: (name: string) => ({ cta: `Cô nhận ra: ${name}`, sub: `Recognised: ${name}` }),
+} as const
+
 /** Microphone faults. Shown to the adult who can act on them, on a projector. */
 export const MIC_LABELS = {
   insecure:

@@ -1,5 +1,5 @@
 /**
- * The only chrome on the projector.
+ * The room's one status dock -- the strip below the board.
  *
  * There is no Start button. She opens her own class the moment the Stage
  * claims the audio lease -- the presence gate in `teacher_os.pulse_teacher`.
@@ -8,16 +8,37 @@
  *
  * There is no hold-to-talk either. The room listens whenever she is not
  * speaking (`voiceGate`), because a child in a remote classroom has no
- * keyboard and no mouse. This component is a status chip and a fault banner.
- * Not a chat. Subtitles stay on the board.
+ * keyboard and no mouse.
+ *
+ * This is also where the subtitle lives now (imported from `OverlayLayer`),
+ * and where the heard-echo chip lives. All three used to be three
+ * independently bottom-anchored elements, each claiming the same strip of
+ * screen for itself -- which is exactly how the subtitle and the status pill
+ * ended up printed on top of each other. They are now three children of ONE
+ * flex column, in a fixed order (heard, then subtitle, then the status
+ * card), so they stack instead of collide. Not a chat -- nothing here is
+ * tapped, and nothing here is ever wider than the safe band between the
+ * camera corner and the avatar's column.
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { CORE_HTTP } from '../lib/env'
-import { ROOM_LABELS } from '../room/labels'
+import { CORE_HTTP, IS_MOCK } from '../lib/env'
+import { HEARD_PREFIX, ROOM_LABELS } from '../room/labels'
 import { createMicRecorder } from '../speech/micRecorder'
 import { createVoiceGate } from '../speech/voiceGate'
 import { SttError, transcribe } from '../speech/stt'
 import { useClassroom } from '../store/classroom'
+import { SubtitleBar } from './OverlayLayer/SubtitleBar'
+
+/**
+ * Mock-mode-only visual QA seam, the same shape as `mockClient.ts`'s
+ * `?step=`: it lets a screenshot exercise the heard-echo chip without
+ * driving a real microphone through Core. It is inert (and unread) whenever
+ * `VITE_MOCK` is not `1`, so it never reaches a kiosk build.
+ */
+function mockHeardOverride(): string | null {
+  if (!IS_MOCK || typeof location === 'undefined') return null
+  return new URLSearchParams(location.search).get('heard')
+}
 
 type Status = {
   ok?: boolean
@@ -48,7 +69,7 @@ export function RoomDock() {
   const connected = useClassroom((s) => s.connection.state === 'open' || s.connection.state === 'mock')
   const [status, setStatus] = useState<Status>({})
   const [phase, setPhase] = useState<DockPhase>('asleep')
-  const [heard, setHeard] = useState<string | null>(null)
+  const [heard, setHeard] = useState<string | null>(mockHeardOverride)
   const [hint, setHint] = useState<string | null>(null)
   // The dock's phase comes from /teacher/status, which knows nothing about the
   // microphone. Without this the room went on saying "Tới lượt con nói" while
@@ -179,57 +200,48 @@ export function RoomDock() {
 
   const copy = deaf ? ROOM_LABELS.deaf : labelFor(phase, ready)
 
+  const waiting = phase === 'asleep' || phase === 'fault' || phase === 'waking'
+  // A live mic problem (`hint`) always outranks the resting sub-label -- it
+  // is the more actionable thing to show under the same headline, not a
+  // second banner competing for its own row.
+  const subLine = hint ?? copy.sub
+
   return (
-    <>
-      {/* What the child said, echoed back. It lives BELOW THE BOARD -- the top
-          of the room is chalk now, and this chip was landing on the first line
-          she writes. Everything the system says about itself lives under the
-          board's bottom edge; the chalk is the child's. */}
-      {/* (kept for provenance) It used to live at the TOP of the room --
-          her subtitle owns the bottom, and when both sat in the same corner
-          they overlapped on a real projector. Top = the class, bottom = the
-          teacher. */}
+    // One flex column owns the whole strip below the board: heard chip on
+    // top, the subtitle in the middle, the status card at the foot. Order
+    // here is the stacking order on screen -- nothing in this file positions
+    // a sibling independently any more, which is what let the subtitle and
+    // the status pill land on top of each other before.
+    <div
+      data-stage="chrome"
+      className="pointer-events-none absolute inset-x-0 bottom-0 top-[var(--board-bottom)] z-[28] flex flex-col items-center justify-end gap-[0.8vh] pb-[1.6vh] pl-[var(--camera-col)] pr-[calc(var(--avatar-col)+2vw)]"
+    >
       {heard ? (
         <p
           data-stage="heard"
-          className="pointer-events-none absolute left-1/2 top-[calc(var(--board-bottom)+1vh)] z-[29] max-w-[52%] -translate-x-1/2 truncate rounded-full bg-ink-950/78 px-6 py-2 font-display text-[clamp(0.95rem,1.4vw,1.3rem)] text-cream/90 ring-1 ring-cream/15"
+          className="pointer-events-none max-w-full truncate rounded-full bg-ink-950/70 px-[1.2vw] py-[0.5vh] font-display text-[clamp(0.75rem,1.05vw,1rem)] text-cream/80 ring-1 ring-cream/15"
         >
-          {heard}
-        </p>
-      ) : null}
-    <div
-      data-stage="dock"
-      className="pointer-events-none absolute inset-x-0 bottom-0 z-[28] top-[var(--board-bottom)] flex flex-col items-center justify-end gap-[0.6vh] pb-[2vh] lg:pr-[calc(var(--avatar-col)*0.6)]"
-    >
-      {hint ? (
-        <p className="pointer-events-none max-w-[36rem] text-center font-display text-[clamp(0.95rem,1.4vw,1.2rem)] text-amber">
-          {hint}
+          <span className="text-muted">{HEARD_PREFIX}</span> {heard}
         </p>
       ) : null}
 
-      {phase === 'asleep' || phase === 'fault' || phase === 'waking' ? (
-        <div
-          data-stage="waiting"
-          className="pointer-events-none flex min-h-[4.4rem] items-center justify-center gap-3 rounded-full bg-ink-950/70 px-8 py-4 font-display text-[clamp(1.1rem,1.7vw,1.5rem)] font-bold text-cream/85"
-        >
-          <span className={`h-3 w-3 rounded-full ${light}`} aria-hidden />
-          {copy.cta}
-        </div>
-      ) : (
-        <div
-          data-stage="listening"
-          className={
-            'pointer-events-none flex min-h-[4.6rem] items-center justify-center gap-3 rounded-full px-10 py-4 font-display text-[clamp(1.1rem,1.6vw,1.45rem)] font-bold ' +
-            (phase === 'hearing'
-              ? 'bg-amber/90 text-ink-900'
-              : 'bg-ink-950/70 text-cream/85')
-          }
-        >
-          <span className="flex h-6 items-end gap-1" aria-hidden>
+      <SubtitleBar />
+
+      <div
+        data-stage="dock"
+        className={
+          'pointer-events-none flex items-center gap-[0.6vw] rounded-[1.3rem] px-[1.4vw] py-[0.7vh] font-display ' +
+          (phase === 'hearing' ? 'bg-amber/90 text-ink-900' : 'bg-ink-950/74 text-cream/90')
+        }
+      >
+        {waiting ? (
+          <span className={`h-[0.9vh] w-[0.9vh] min-h-[7px] min-w-[7px] rounded-full ${light}`} aria-hidden />
+        ) : (
+          <span className="flex h-[2.2vh] min-h-[16px] items-end gap-[2px]" aria-hidden>
             {[0, 1, 2, 3].map((i) => (
               <span
                 key={i}
-                className={`w-1.5 rounded-full ${phase === 'hearing' ? 'bg-ink-900' : 'bg-mint'}`}
+                className={`w-[3px] rounded-full ${phase === 'hearing' ? 'bg-ink-900' : 'bg-mint'}`}
                 style={{
                   height: `${[40, 70, 100, 55][i]}%`,
                   animation: phase === 'hearing' ? 'listen 1.1s ease-in-out infinite' : undefined,
@@ -239,14 +251,15 @@ export function RoomDock() {
               />
             ))}
           </span>
-          {copy.cta}
-        </div>
-      )}
-      <p className="pointer-events-none font-display text-[clamp(0.8rem,1.1vw,1rem)] tracking-wide text-cream/70">
-        {copy.sub}
-      </p>
+        )}
+        <span className="flex flex-col items-start leading-tight">
+          <span className="text-[clamp(0.85rem,1.3vw,1.15rem)] font-bold">{copy.cta}</span>
+          <span className={`text-[clamp(0.6rem,0.85vw,0.78rem)] ${phase === 'hearing' ? 'text-ink-900/70' : 'text-cream/65'}`}>
+            {subLine}
+          </span>
+        </span>
+      </div>
     </div>
-    </>
   )
 }
 

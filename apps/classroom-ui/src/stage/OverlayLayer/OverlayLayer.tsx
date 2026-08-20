@@ -1,13 +1,20 @@
 /**
  * OverlayLayer — everything that floats above the board and the avatar
- * (docs/design/runtime-topology.md §4): subtitle, student name, listening indicator, mode badge.
+ * (docs/design/runtime-topology.md §4): student name, mode badge.
  *
  * It is pointer-transparent by construction. Nothing here is ever tapped;
  * the board owns every interaction.
+ *
+ * The subtitle used to have its own bottom lane here, independently
+ * bottom-anchored to the viewport -- and so did `RoomDock`'s status pill, in
+ * its own independently bottom-anchored strip. Two elements each claiming
+ * "the bottom of the screen" as their own is exactly how they ended up
+ * printed on top of each other. The subtitle now renders inside `RoomDock`,
+ * as one flex column with the status dock and the heard-echo chip, so the
+ * three stack instead of collide. See `RoomDock.tsx`.
  */
 import { ModeBadge } from './ModeBadge'
 import { StudentName } from './StudentName'
-import { SubtitleBar } from './SubtitleBar'
 
 export function OverlayLayer() {
   return (
@@ -27,14 +34,6 @@ export function OverlayLayer() {
         <ModeBadge />
         {/* Provider/model mode is facilitator information, not a child-facing
             failure. Classroom capability recovery is shown separately. */}
-      </div>
-
-      {/* Bottom lane: BELOW the board, not over it. What she is saying is for
-          the class to hear; the chalk is for them to read, and a subtitle
-          parked across the foot of the board covers the line she just wrote.
-          `--board-bottom` comes from Stage and is measured off the artwork. */}
-      <div className="flex flex-col items-center px-[4vw] pb-[2vh] pt-[calc(var(--board-bottom)-64vh)] lg:pr-[calc(var(--avatar-col)+2vw)]">
-        <SubtitleBar />
       </div>
     </div>
   )

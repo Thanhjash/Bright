@@ -11,6 +11,7 @@ import { DisconnectedNotice } from './DisconnectedNotice'
 import { useClassroom } from '../store/classroom'
 import { ClassroomNotice } from './ClassroomNotice'
 import { RoomDock } from './RoomDock'
+import { StudentCamera } from './StudentCamera'
 
 const WALL = `${CORE_HTTP}/assets/stage/classroom-board.png`
 
@@ -18,22 +19,31 @@ const WALL = `${CORE_HTTP}/assets/stage/classroom-board.png`
  * The chalk face, measured off the artwork rather than guessed: the green
  * rectangle in `classroom-board.png` runs x 4.7%..90.8%, y 7.8%..87.3%.
  *
- * The width stops well short of that, at 66%, and the gap is deliberate. The
- * right third of the frame is the avatar's column -- she stands in front of the
- * board, and chalk written under her is chalk nobody reads. Everything the
- * SYSTEM says to the adult (the subtitle, the mic warning, the dock) lives in
- * the strip below the board, outside the chalk entirely. The chalk belongs to
- * the child.
+ * Neither dimension uses the full measured rectangle, and both gaps are
+ * deliberate, the same way and for the same reason:
+ *
+ *   · width stops at 66% (not 90.8%) so the right third of the frame is the
+ *     avatar's column -- she stands in front of the board, and chalk written
+ *     under her is chalk nobody reads.
+ *   · height stops at 60% (not 79.5%) so there is a real strip below the
+ *     board for everything the SYSTEM says: the subtitle, the status dock,
+ *     the student's own camera corner. That strip used to be a thin 20% band
+ *     the subtitle and the status pill both fought over and lost -- text
+ *     bled out from under the pill, and the heard-echo chip had nowhere of
+ *     its own to live. A shorter board buys the room the strip needs.
+ *
+ * Both gaps render onto real chalk that was already drawn, never onto wall.
+ * The chalk belongs to the child; the strip below it belongs to the room.
  */
 const BOARD: CSSProperties = {
   left: '4.7%',
   top: '7.8%',
   width: '66%',
-  height: '72%',
+  height: '60%',
 }
 
 /** Where the board's bottom edge sits, so chrome can stay under it. */
-const BOARD_BOTTOM = '80%'
+const BOARD_BOTTOM = '68%'
 
 export function Stage() {
   const scene = useClassroom((s) => s.scene)
@@ -42,7 +52,11 @@ export function Stage() {
     <main
       className="stage-surface relative h-full w-full overflow-hidden bg-ink-950"
       style={
-        { '--avatar-col': '28%', '--board-bottom': BOARD_BOTTOM } as CSSProperties
+        {
+          '--avatar-col': '28%',
+          '--camera-col': '17%',
+          '--board-bottom': BOARD_BOTTOM,
+        } as CSSProperties
       }
     >
       <img
@@ -65,6 +79,16 @@ export function Stage() {
         className="absolute bottom-[-4%] right-[1%] z-20 h-[78%] w-[min(30vw,26%)] min-w-[10rem]"
       >
         <AvatarLayer />
+      </aside>
+
+      {/* The child's own corner -- opposite the avatar's, and entirely below
+          the board's bottom edge, so it never competes with the avatar's
+          column or the chalk above it. */}
+      <aside
+        data-stage="camera-slot"
+        className="absolute bottom-[2%] left-[1.4%] z-20 h-[26%] w-[min(15vw,13%)] min-w-[6.5rem]"
+      >
+        <StudentCamera />
       </aside>
 
       <OverlayLayer />
