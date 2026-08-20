@@ -205,11 +205,12 @@ start_speech_if_ready() {
   # is the floor in both languages, and app.py and the systemd example now
   # default to it too, so this export no longer hides a different value.
   export WHISPER_MODEL="${WHISPER_MODEL:-base}"
-  # VieNeu keeps Vietnamese tones through a code-switch; Piper flattens them to
-  # "Hong Sao Do". It costs RTF ~2, which the cache pays down to a disk read on
-  # every repeat -- see services/speech/tts_vieneu.py. Set TTS_ENGINE=piper for
-  # a box that needs the speed more than the tones.
-  export TTS_ENGINE="${TTS_ENGINE:-vieneu}"
+  # auto: Piper for a line with no Vietnamese in it, VieNeu for one that has.
+  # VieNeu is the only engine that keeps the tones -- Piper flattens
+  # "Không sao đâu" to "Hong Sao Do" -- and it costs 7-9s a line under real
+  # classroom load. This is an English lesson, so most lines do not need it.
+  # TTS_ENGINE=vieneu or =piper forces one engine for everything.
+  export TTS_ENGINE="${TTS_ENGINE:-auto}"
   # The appliance ships to a school with no internet. VieNeu's engine checks
   # the Hugging Face hub when it is built, which on a dead link is a timeout
   # standing between a child and the first thing the teacher says. The weights
