@@ -42,11 +42,11 @@ export const ROOM_LABELS = {
 export const HEARD_PREFIX = 'Con nói:'
 
 /**
- * The student camera corner. Face recognition is not built yet (NORTH-STAR
- * §3, "Identity is the system's job") — these are the honest states a real
- * component can be in *today*: hardware missing, hardware present but not
- * streaming, a live self-view, or (once perception ships) a name. No state
- * here fabricates a video feed or a recognised child.
+ * The student camera corner. Perception ships (`services/vision`, and
+ * `docs/decisions/2026-08-20-the-room-knows-who.md`), so "recognised" is a real
+ * state now — but the others still are too: hardware missing, hardware present
+ * but not streaming, a live self-view. No state here fabricates a video feed or
+ * a recognised child, and the corner never shows a similarity score.
  */
 export const CAMERA_LABELS = {
   noCamera: { cta: 'Không có camera', sub: 'No camera' },
@@ -68,4 +68,33 @@ export const MIC_LABELS = {
   missing:
     'Không tìm thấy micro. Kiểm tra đã cắm chưa, và không có ứng dụng nào đang giữ nó. '
     + '(No microphone was available.)',
+} as const
+
+/**
+ * The front door — `/`, the page before the room.
+ *
+ * Same rule as everything else in this file: these strings are the class's own
+ * language because the first deployment is a Vietnamese school, not because any
+ * code here knows what Vietnamese is.
+ */
+export const LOBBY_LABELS = {
+  title: 'Lớp tiếng Anh của con',
+  subtitle: 'Chọn bài học hôm nay',
+  /** Under a card the child has already been taught. */
+  done: 'Đã học',
+  /** The one card that is pressable. */
+  next: 'Học tiếp',
+  /** Not yet — the period before it has not been held. */
+  locked: 'Chưa mở',
+  /** The room is not ready to be entered yet. */
+  warming: 'Đang chuẩn bị lớp…',
+  ready: 'Lớp đã sẵn sàng',
+  /** Something below the room is down; an adult has to look. */
+  down: 'Lớp chưa mở được — nhờ thầy cô kiểm tra giúp',
+  /** Shown while the browser navigates and she starts the class. */
+  entering: 'Đang vào lớp…',
+  /** The count under the header. */
+  heldCount: (n: number) => (n === 0 ? 'Con chưa học buổi nào' : `Con đã học ${n} buổi`),
+  /** What this period will teach, from the unit map's own words. */
+  inPlay: 'Hôm nay học:',
 } as const

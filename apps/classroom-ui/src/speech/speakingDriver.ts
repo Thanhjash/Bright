@@ -316,6 +316,33 @@ export function isSpeechPlaying(): boolean {
 
 let unlockInstalled = false
 
+/**
+ * Spend a gesture you are already holding.
+ *
+ * `unlockAudioOnFirstGesture` waits for the NEXT pointerdown, which is exactly
+ * wrong when the gesture that matters is the one in your hand. The front door
+ * is that case: the child presses a period card on `/`, and the classroom route
+ * only calls the deferred version once it has mounted -- so the listener is
+ * installed AFTER the only gesture there was, and then waits for one that never
+ * comes. The room stays silent, with no error anywhere, which on a projector
+ * reads as a teacher who will not speak.
+ *
+ * Call this synchronously inside a real user gesture handler. Safe to call more
+ * than once; the player is a singleton.
+ */
+export function unlockAudioNow(): void {
+  if (typeof window === 'undefined')
+    return
+  try {
+    ensurePlayer()
+    // Nothing further will be needed from the deferred path.
+    unlockInstalled = true
+  } catch {
+    // The AudioContext can still refuse; leave the deferred listener armed so
+    // the next gesture -- a tap on the projector -- gets another go.
+  }
+}
+
 export function unlockAudioOnFirstGesture(): void {
   if (typeof window === 'undefined' || unlockInstalled)
     return
