@@ -371,11 +371,6 @@ def render_teacher_turn(ctx: TurnContext, turn_id: str) -> str:
     if said and not event:
         wanted.insert(0, f"units/{unit}/keys.md" if unit else "keys.md")
         wanted.insert(1, "skills/judge-a-response/SKILL.md")
-    # Once the class has actually tried something, "check what landed" is the
-    # next professional move, and it is the one she never made: measured
-    # 2026-08-19, show_exercise was called zero times across two whole periods.
-    # THIS_PERIOD is a count of Core's own rows, so naming the skill on it is
-    # a path lookup on a witnessed fact -- Core still reads none of it.
     if no_reply.strip():
         # `elicit-chorally` already says "Almost nobody -> do not repeat a third
         # time. Something is missing, not quiet." She has never opened it,
@@ -384,10 +379,28 @@ def render_teacher_turn(ctx: TurnContext, turn_id: str) -> str:
         # lists class-wide disengagement as a hand-over, not a thing to out-talk.
         wanted.insert(0, "skills/elicit-chorally/SKILL.md")
         wanted.insert(1, "skills/recover-a-wobble/SKILL.md")
-    if this_period.strip():
-        wanted.append("skills/put-up-an-exercise/SKILL.md")
-        if unit:
-            wanted.append(f"units/{unit}/exercises.md")
+    # UNCONDITIONAL, and it used to be `if this_period.strip():`. THIS_PERIOD is
+    # built from period_evidence, which only fills from record_evidence, which
+    # refuses unless a real child spoke this turn. So she was told about
+    # exercises only AFTER a child had answered -- and putting one up is the
+    # cheapest way to get a child to answer. A bootstrap requiring itself, the
+    # same species as the `wake_in_s` line that opened "Running a drill, or
+    # playing a clip?" to a teacher who could not schedule one.
+    #
+    # This, not the two-file cap, is why show_exercise has been called zero
+    # times in every census ever taken: exercises.md was never a candidate, so
+    # it could not be truncated away. Measured 2026-08-20 across a live period,
+    # nine turns, fifteen reads: conduct and skills only, and not one line of
+    # the material she was there to teach.
+    #
+    # These stay last and the cap stays two. `todo` filters against `already`,
+    # and os_.reads accumulates for the whole period and is never cleared, so
+    # the conduct files drop out as they are read and this pair surfaces on its
+    # own, around the third turn. Pacing is already handled; it needed no
+    # number in Python, and it still has none.
+    wanted.append("skills/put-up-an-exercise/SKILL.md")
+    if unit:
+        wanted.append(f"units/{unit}/exercises.md")
     todo = [path for path in wanted if path not in already]
     # At most two a turn. A turn has an eight-call budget and a child at the
     # other end of it; measured 2026-08-19, naming four files on the opening

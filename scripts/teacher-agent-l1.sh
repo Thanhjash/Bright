@@ -187,6 +187,12 @@ start_speech_if_ready() {
   #   tiny    681ms  "Hello, I'm Ben."      WRONG -- heard a different child
   # base is the floor at which the name is still right. tiny is not a speed
   # win, it is a wrong answer delivered sooner.
+  #
+  # Re-measured on Vietnamese 2026-08-20 (the table above is English only), and
+  # `small` lost: it returns an EMPTY transcript for "Con không biết", 3 times
+  # out of 3, at 3x the latency. Full numbers in services/speech/app.py. base
+  # is the floor in both languages, and app.py and the systemd example now
+  # default to it too, so this export no longer hides a different value.
   export WHISPER_MODEL="${WHISPER_MODEL:-base}"
   start_one speech "$SPEECH_PY" "$ROOT/services/speech/app.py"
 }

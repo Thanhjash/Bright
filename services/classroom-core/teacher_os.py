@@ -1334,11 +1334,25 @@ def _session_recall(os_: TeacherOS) -> list[Any]:
     # her context the moment the turn ends -- she remembers that pictures exist
     # and not what they are called, and invents ids Core then refuses. Listing
     # what is really there is a fact Core witnessed; which one to show is hers.
+    #
+    # WHOLE ids, prefix and all. This line used to strip `asset://`, and then
+    # every tool that takes an asset refused the exact string Core had just
+    # handed her: measured 2026-08-20 over one live period, show_image 4 of 5
+    # refused and play_clip 3 of 3, all `asset-malformed`. The board stayed
+    # blank for the whole lesson. A fix against invented ids that mints a
+    # malformed one is worse than no fix, because the refusal now looks like
+    # her mistake.
+    #
+    # The prefix costs ~8 chars an id on every turn. That is the price of one
+    # spelling: `_as_asset` deliberately does NOT also accept a bare id, for
+    # the reason show_image's own left/right comment records -- a second,
+    # invisible calling convention is a coin flip a small model pays for every
+    # turn. Core hands her the string the contract wants.
     catalog = os_.catalog()
     if catalog["assets"]:
         notes.append(
             RecalledMemory(
-                text="ASSETS=" + ", ".join(a[len("asset://"):] for a in catalog["assets"]),
+                text="ASSETS=" + ", ".join(catalog["assets"]),
                 when="now",
             )
         )

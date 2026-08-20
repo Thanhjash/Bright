@@ -87,7 +87,44 @@ WHISPER_DIR = Path(os.environ.get("WHISPER_DIR", ROOT / "models" / "whisper"))
 # CAVEAT (repeated for a second reason): these are Piper synthetic clips, not
 # a child speaking. They confirm the clamp mechanism works; they do not
 # validate accuracy on real classroom Vietnamese/English code-switching.
-WHISPER_MODEL = os.environ.get("WHISPER_MODEL", "small.en")
+# THE DEFAULT MUST NOT BE AN `.en` CHECKPOINT. Everything above this line --
+# the clamp, the allowed set, the Spanish incident -- is machinery for choosing
+# between two languages, and this default was `small.en` for two days: weights
+# containing exactly one. `.en` has no Vietnamese in it, so forcing
+# `language=vi` on it cannot produce Vietnamese at all. It was masked because
+# scripts/teacher-agent-l1.sh exports WHISPER_MODEL=base and every dev run went
+# through the launcher -- but infra/systemd/bright.env.example, the appliance
+# that ships, carried the same `.en` value and had nobody to mask it.
+#
+# WHY `base` AND NOT `small` -- measured on the running :8001 service
+# 2026-08-20, Piper `vi` clips, ASR_LANGUAGES=en,vi, three repeats each:
+#
+#   "Con không biết"              base  'Bà không biết'                 2.5s
+#                                 small ''  <- EMPTY, 3/3, every time   6.3s
+#   "Con chưa hiểu bài này cô ạ"  base  'phóng chứ hiểu bài này của ạ'  2.5s
+#                                 small 'phong chứ hiểu bài này của ạ'  7.0s
+#   "Chào cô, con tên là Minh"    base  'Chào cố con tay là mình'       2.5s
+#                                 small 'Chào cổ, con tên là mình'      8.1s
+#
+# `small` is better on the long clip and 3x slower, and it returns NOTHING on
+# the short one -- and "Con không biết" is the sentence a stuck child says, the
+# single utterance this system most needs to hear. An empty transcript is not a
+# worse answer, it is silence: the room cannot tell it from a child who never
+# spoke. So `base` is the floor, for the same reason the launcher already gives
+# for preferring it over `tiny`.
+#
+# Neither is good, and neither has been tested on a real child (these are
+# synthetic Piper clips -- the caveat above applies here too). This is the best
+# available choice, not a solved problem.
+#
+# All three declarations now agree: here, teacher-agent-l1.sh:190, and
+# infra/systemd/bright.env.example. A guard in tests/ asserts the shape of the
+# rule rather than the model name, checking the two settings against each
+# other: if ASR_LANGUAGES declares more than one language, the resident weights
+# may not be monolingual. An English-only appliance declares ASR_LANGUAGES=en
+# and is then free to run `.en` -- what the guard refuses is a deployment
+# claiming two languages while shipping one.
+WHISPER_MODEL = os.environ.get("WHISPER_MODEL", "base")
 WHISPER_COMPUTE = os.environ.get("WHISPER_COMPUTE", "int8")
 WHISPER_THREADS = int(os.environ.get("WHISPER_THREADS", "0")) or (os.cpu_count() or 4)
 HOST = os.environ.get("SPEECH_HOST", "127.0.0.1")

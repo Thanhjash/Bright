@@ -57,7 +57,7 @@ not for instruction. Never cook from it.
 content/library/       curriculum — index, conduct, skills, units
 content/media/         asset://… images + clips
 Hermes sidecar :8642   the teacher
-Bright MCP             her hands — 10 typed tools
+Bright MCP             her hands — 11 typed tools
 classroom-core :8004   the OS — I/O, clock, DB, reject, restart
 Stage /classroom       THE room. Board + speaker + body. The only page children see
 packages/airi-bridge   the body (Live2D + lipsync) — nothing else
@@ -66,17 +66,29 @@ speech :8001           Piper TTS + faster-whisper ASR
                        never makes a teaching move
 ```
 
-**The nine live tools.** Do not add a tenth without a decision doc.
-[Why exactly these nine.](decisions/2026-08-18-show-exercise-tool.md)
+**The eleven live tools.** Do not add a twelfth without a decision doc.
+[Why exactly these.](decisions/2026-08-18-show-exercise-tool.md) ·
+[the eleventh](decisions/2026-08-19-she-can-call-the-adult.md)
 
 ```
 LOOK UP    read_library  search_library  read_board
 CHANGE     write_board   show_image      show_exercise  play_clip
 INTEND     plan                                         ← hers; Core never reads it
 REMEMBER   record_evidence
+HAND OVER  call_the_adult(reason, detail?)              ← stops teaching; only a
+                                                          person resumes her
 SPEAK      say(…, wake_in_s?)                           ← ends the turn; may ask
                                                           the room for the next beat
 ```
+
+**Whatever Core prints, Core must accept.** `ASSETS=` once listed the unit's
+assets with `asset://` stripped, and every tool that takes one requires the
+whole form — so she copied exactly what she was handed and was refused
+`asset-malformed`: measured 2026-08-20 over a live period, `show_image` 4 of 5
+and `play_clip` 3 of 3, with a blank board for the whole lesson. The round trip
+is now a test (`test_every_id_core_hands_her_is_an_id_core_accepts`). Note
+`_as_asset` deliberately does **not** also accept a bare id — two spellings of
+one argument is the coin flip `show_image`'s `left`/`right` was deleted for.
 
 **Length bounds never reach the wire.** The provider serving
 `google/gemma-4-26b-a4b-it` returns HTTP 422 for the entire request on
@@ -143,23 +155,86 @@ block was refused and she fell back to talking; `READ_NOW` is capped at two
 files a turn, because naming four on the opening turn spent the whole call
 budget on reading and the class heard silence.
 
-**Not yet re-measured live.** The OpenRouter account is out of paid credit
-(HTTP 402) *and* has spent its 50 free-tier requests for the day (HTTP 429,
-resets 00:00 UTC). Everything above is unit- and integration-verified;
-`tests/test_a_whole_period.py` drives a complete period — plan, recording,
-three pictures, an exercise, honest marking, a scheduled drill beat, her own
-close — through the real machinery with only the brain replaced.
+### Re-measured live 2026-08-20 — and the run before it was a blank board
 
-**To re-run the live lesson when there is model access:**
+The 2026-08-19 numbers above hid a worse failure that only shows in the census
+`refusals` column. Over the live period of 2026-08-20 **before** the fixes:
+
+```
+show_image     5 calls   4 refused   asset-malformed
+play_clip      3 calls   3 refused   asset-malformed
+show_exercise  0 calls               never called in any census, ever
+read_library  15 calls   vs 9 say
+opened: conduct and skills only — 0 × exercises.md, keys.md, practice.md
+```
+
+Seven of eight media moves refused, so the board was blank and no recording
+played for the whole lesson. Three independent causes, all now fixed:
+
+1. **`ASSETS=` stripped `asset://`** and every tool requires it — Core refused
+   the exact string Core had handed her. See §2 above.
+2. **`WHISPER_MODEL` disagreed with itself in three places.** `app.py` defaulted
+   to `small.en` and `infra/systemd/bright.env.example` — *the appliance that
+   ships* — said the same, while `teacher-agent-l1.sh` exported `base`. Every
+   dev run went through the launcher, so the `.en` default was masked on the one
+   box nobody deploys. All three now say `base`; the Vietnamese table is in
+   `services/speech/app.py`, and `small` lost it by returning an **empty**
+   transcript for *"Con không biết"*, 3 runs of 3, at 3× the latency.
+3. **The exercise path was a bootstrap requiring itself.** `READ_NOW` named
+   `exercises.md` only `if this_period.strip()` — i.e. only after evidence
+   existed, which needs a child to have answered, which an exercise is the
+   cheapest way to cause. It was never a *candidate*, so the two-file cap was
+   never what suppressed it.
+
+Same harness, same pupil script, after — a whole period, 15 pupil turns:
+
+```
+PERIOD REPORT   turns=15  p50=16.4s  unit=gs3-u1-hello  minutes=7
+  refusals   0            <- was 7 of 8 media moves
+  clips      track-09
+  images     char-group, u1l1-dialogue-b
+  exercises  -
+  objectives answer-wellbeing
+  outcomes   {correct: 1, near: 1, wrong: 1}
+  reads      map.md, open-a-period, keys.md, judge-a-response, how-to-teach.md,
+             skills/index.md, scaffold-down,
+             put-up-an-exercise, units/gs3-u1-hello/exercises.md   <- FIRST TIME EVER
+
+  PASS played a recording · opened a skill · read the key before judging
+  PASS marking is not degenerate · she spoke every turn · no turn errored
+  FAIL put up an exercise
+  FAIL changed the picture            6/8 period properties hold
+```
+
+**The two remaining failures are one failure, and it is now the top of the
+list.** She read `exercises.md` and still did not call `show_exercise` — so
+naming the file was necessary and is not sufficient. The transcript says why:
+she said *"Fine, thank you"* in **14 of 15 turns**. The child offered *"Hello"*,
+*"I am Minh"*, *"Hi"*, *"Ben"* — introducing himself, which is
+`greet-and-name`, the unit's **first** objective — and she stayed on
+`answer-wellbeing` for the entire period, drilling one phrase and replaying one
+recording. She never left the objective, so she never needed a second picture
+and never reached a task.
+
+This is not an asset bug or a prompt-selection bug; it is her pacing. The unit
+map's law is *"attempts, not time"*, `THIS_PERIOD` counts those attempts and is
+in the state block on every turn, and nothing acts on it. That is the next
+thing to chase, and `show_exercise kind=roleplay` — built, authored as ex.3,
+still never called — is the cheapest way to break the loop in a one-learner
+room.
+
+**To re-run the live lesson:**
 
 ```bash
-# .env is currently pointed at the free tier, which is also the family that
-# ships to the miniPC:  LLM_MODEL=google/gemma-4-26b-a4b-it:free
 ./scripts/teacher-up.sh
-node tests/node/teacher_room_e2e.mjs                    # she opens the class
+# the room only opens itself when someone is in it: the Stage must hold the
+# audio lease, so keep a browser on /classroom for the whole rehearsal
 python3 scripts/rehearse-period.py --pupil scripts/pupils/lesson1.txt
 node tests/node/projector_reads_as_a_classroom.mjs      # no model needed
 ```
+
+Read the result the way that audit did — `refusals=`, `reads=` and
+`images=/clips=/exercises=` in the census, not the pass/fail of a test.
 
 The two Playwright runs need `PLAYWRIGHT_CORE` and `CHROME_PATH` set — see
 `.tools/run-headless.sh`.
@@ -174,7 +249,7 @@ The two Playwright runs need `PLAYWRIGHT_CORE` and `CHROME_PATH` set — see
 | 1 Teacher text | ✅ closed 2026-08-17 | Hermes + library teaches 1:1. Live chats `minh-show` / `minh-c3` |
 | 2 Thin station | ⬛ removed | `/learn` was deleted 2026-08-18. One page: `/classroom` |
 | 3 Voice | ✅ wiring closed 2026-08-18 | Stage speaks `say` via Piper; ASR → `/teacher/turn`. Piper picks en/vi **per line by script**, which is not real bilingual — see §7 |
-| 4 Body + room | 🔴 **NOW** | Live2D + wall + board on Stage: done. **Autonomy: not done.** RoomDock buttons survive only until the presence gate replaces them |
+| 4 Body + room | ✅ wiring closed 2026-08-20 | Live2D + wall + board on Stage. **Autonomy done:** the presence gate opens her own class, the RoomDock buttons are gone, `voiceGate.ts` is a real VAD. Caveat that matters: *presence* is the Stage holding the audio lease, so an open browser tab counts as a class. A person in the room is Layer 5 |
 | 5 Class of 20–40 | ⬜ | fairness, camera → `student_id` only |
 | 6 Local Gemma | ⬜ | swap the Hermes provider profile. Hosted **Gemini 3.7 Flash via OpenRouter** now (§3e). MiMo's one-concurrent-run limit is gone with it — `max_concurrent_runs` is 4, and Core's `_TURN_LOCK` is what keeps her from speaking twice |
 | 7 Giveaway | ⬜ | Hiyori licence, locale-as-config, consent, appliance image |
@@ -362,8 +437,8 @@ the projector. DeepSeek was faster and wrote pinyin instead. Both are
 Chinese-trained; the script guard caught both, and every catch costs a whole
 round-trip, so the leak was a latency bug as well as a safety one.
 
-Benchmarked with the **real** harness prompt and all nine tool schemas, five
-calls each:
+Benchmarked with the **real** harness prompt and the tool schemas as they stood
+that day — nine of the current eleven — five calls each:
 
 ```
 model                          p50      p95   tools/msg  turn_id ok

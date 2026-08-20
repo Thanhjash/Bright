@@ -63,7 +63,7 @@ Everything she is made of, and the one rule that governs each part:
 | Part | What it is | The rule |
 |---|---|---|
 | **Brain** | Hermes, running a small model — hosted now, local Gemma later | replaceable. The contract around it is not (NS-4) |
-| **Hands** | 10 typed tools over MCP: read/search the library, board, image, exercise, clip, plan, say, evidence | Core executes them and may refuse. She never touches a filesystem, a URL or the DOM (NS-3) |
+| **Hands** | 11 typed tools over MCP: read/search the library, board, image, exercise, clip, plan, evidence, call the adult, say | Core executes them and may refuse — and what Core hands her must be what Core accepts. She never touches a filesystem, a URL or the DOM (NS-3) |
 | **Library** | the curriculum: unit maps, keys, practice, media | markdown is the truth. An index is disposable |
 | **Skills** | how to do professional things — open, elicit, scaffold, judge, close, prepare | data, not code. Portable across every subject (NS-6) |
 | **Playbook** | the active unit's map — what this period is for | a map she reads, never a graph she walks |

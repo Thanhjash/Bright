@@ -119,6 +119,62 @@ def test_teacher_request_has_no_move_menu(monkeypatch: pytest.MonkeyPatch):
     assert "review what they named vs only pointed" in remembered
 
 
+def test_the_material_is_named_without_waiting_for_evidence(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """show_exercise was unreachable, and not because of the two-file cap.
+
+    The exercise pair used to be gated on THIS_PERIOD, which is built from
+    period_evidence, which only fills from record_evidence, which refuses
+    unless a real child spoke this turn. She was told about exercises only
+    after a child had answered -- and putting one up is the cheapest way to
+    get a child to answer. So exercises.md was never a candidate at all, and
+    could not be truncated away: measured 2026-08-20 over a live period, nine
+    turns and fifteen reads, not one line of the material.
+
+    Note there is no THIS_PERIOD anywhere in this context. That is the point.
+    """
+    monkeypatch.setenv("BRIGHT_TEACHER_AGENT", "1")
+    ctx = make_ctx()
+    unit = ctx.lesson.lesson_id
+
+    first = render_teacher_turn(ctx, "turn-1")
+    assert "THIS_PERIOD" not in first, "this test is only honest with no evidence"
+
+    # Turn one still spends its two on the move she is about to make -- judging
+    # what the child just said. The material waits its turn; it does not vanish.
+    assert "keys.md" in first
+    assert "the rest next turn" in first
+
+    # Once the conduct files have been read, they drop out of `todo` and the
+    # material surfaces on its own. No count, no clock, no rule in Python.
+    ctx.recalled = [
+        RecalledMemory(
+            text="reads=" + ",".join(
+                (
+                    f"units/{unit}/keys.md",
+                    "skills/judge-a-response/SKILL.md",
+                    f"units/{unit}/map.md",
+                    "how-to-teach.md",
+                    "skills/index.md",
+                )
+            ),
+            when="now",
+        )
+    ]
+    later = render_teacher_turn(ctx, "turn-2")
+    named = [line for line in later.splitlines() if line.startswith("READ_NOW=")]
+    assert named, (
+        "nothing was named at all -- with the conduct files read and the "
+        "material gated behind evidence, READ_NOW goes silent and she is left "
+        "to guess which of 490 authored lines applies"
+    )
+    read_now = named[0]
+    assert "skills/put-up-an-exercise/SKILL.md" in read_now, read_now
+    assert f"units/{unit}/exercises.md" in read_now, read_now
+    assert "the rest next turn" not in read_now, "two files left; nothing is deferred"
+
+
 def test_teacher_heartbeat_is_not_student_speech(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setenv("BRIGHT_TEACHER_AGENT", "1")
     ctx = make_ctx()

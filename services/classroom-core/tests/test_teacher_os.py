@@ -571,6 +571,50 @@ def test_two_asset_show_image_puts_both_assets_on_the_stage() -> None:
     assert props["interaction"] == "none"
 
 
+def test_every_id_core_hands_her_is_an_id_core_accepts() -> None:
+    """ASSETS= must survive the round trip back through the tools.
+
+    It did not. The line stripped `asset://` before showing her the catalogue,
+    and every tool that takes an asset requires the whole form -- so she copied
+    exactly what Core handed her and Core refused it. Measured 2026-08-20 over
+    one live period: show_image 4 of 5 refused, play_clip 3 of 3, all
+    `asset-malformed`. The board was blank the entire lesson.
+
+    This asserts the contract in the only direction that matters: whatever Core
+    prints, Core must accept.
+    """
+    core, _frames = _stage_core()
+    os_ = TeacherOS(core, unit_id="gs3-u1-hello", learner_id="learner-1")
+
+    listed = [
+        item.text[len("ASSETS=") :]
+        for item in teacher_os._session_recall(os_)
+        if item.text.startswith("ASSETS=")
+    ]
+    assert listed, "the unit prints assets; ASSETS= must name them"
+    ids = [part.strip() for part in listed[0].split(",") if part.strip()]
+    assert len(ids) > 1
+
+    refused = [asset for asset in ids if teacher_os._as_asset(asset) is None]
+    assert not refused, f"Core printed ids its own _as_asset refuses: {refused[:3]}"
+    missing = [asset for asset in ids if teacher_os._media_file(asset) is None]
+    assert not missing, f"Core printed ids with no file behind them: {missing[:3]}"
+
+    # And prove it through the tool a child actually sees, not just the helper.
+    picture = next(a for a in ids if a.endswith((".jpg", ".png")))
+    clip = next(a for a in ids if a.endswith(".mp3"))
+
+    async def run() -> tuple[dict, dict]:
+        return (
+            await os_.execute("show_image", {"asset": picture}),
+            await os_.execute("play_clip", {"asset": clip, "transcript": "Hello."}),
+        )
+
+    shown, played = asyncio.run(run())
+    assert shown["ok"] is True, shown
+    assert played["ok"] is True, played
+
+
 def test_show_exercise_refuses_evaluative_text() -> None:
     core, _frames = _stage_core()
     os_ = TeacherOS(core, unit_id="gs3-u1-hello", learner_id="learner-1")
