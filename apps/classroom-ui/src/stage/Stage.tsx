@@ -53,7 +53,7 @@ export function Stage() {
       className="stage-surface relative h-full w-full overflow-hidden bg-ink-950"
       style={
         {
-          '--avatar-col': '28%',
+          '--avatar-col': '33%',
           '--camera-col': '17%',
           '--board-bottom': BOARD_BOTTOM,
         } as CSSProperties
@@ -74,9 +74,28 @@ export function Stage() {
         <SceneRouter scene={scene} />
       </section>
 
+      {/*
+        Bigger, and standing lower so the frame cuts her at the hip.
+
+        The fit is WIDTH-limited (see bright-model.json's own note), so the
+        column's width is the size dial and `bottom` is the crop dial. Measured
+        off tests/.artifacts/board.png at 1920x1080 rather than guessed:
+
+          before   head 33%, cut at the KNEE, legs and socks in frame
+          after    head ~34%, cut at the hip, no legs
+
+        The numbers follow from `fitModel`: rendered model height is
+        canvas.width x 2 x layout.scale x (model.height/model.width), so 26% ->
+        31% of the frame is a 1.21x taller teacher; pushing the slot 17% below
+        the viewport puts the cut line at v ~ 0.55, which the model's landmark
+        table (hair .07, skirt hem .58, knee .71, feet .96) calls the hip.
+
+        Keep `h-` above width/0.713 or the fit flips to height-limited and the
+        width dial silently stops doing anything.
+      */}
       <aside
         data-stage="avatar"
-        className="absolute bottom-[-4%] right-[1%] z-20 h-[78%] w-[min(30vw,26%)] min-w-[10rem]"
+        className="absolute bottom-[-17%] right-[1%] z-20 h-[84%] w-[min(38vw,31%)] min-w-[10rem]"
       >
         <AvatarLayer />
       </aside>
