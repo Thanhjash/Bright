@@ -259,6 +259,7 @@ def render_teacher_turn(ctx: TurnContext, turn_id: str) -> str:
     board_empty = ""
     no_reply = ""
     assets = ""
+    objectives = ""
     student_id = ""
     writing = ""
     images = ""
@@ -283,6 +284,8 @@ def render_teacher_turn(ctx: TurnContext, turn_id: str) -> str:
             no_reply = text[len("NO_REPLY=") :]
         elif text.startswith("ASSETS="):
             assets = text[len("ASSETS=") :]
+        elif text.startswith("OBJECTIVES="):
+            objectives = text[len("OBJECTIVES=") :]
         elif text.startswith("student_id="):
             student_id = text[len("student_id=") :]
         elif text.startswith("writing="):
@@ -325,6 +328,7 @@ def render_teacher_turn(ctx: TurnContext, turn_id: str) -> str:
         ("BOARD", board_empty),
         ("NO_REPLY", no_reply),
         ("ASSETS", assets),
+        ("OBJECTIVES", objectives),
         ("UNIT", unit),
         ("EVENT", event or "student"),
         ("STUDENT_SAID", student_said),
@@ -371,6 +375,18 @@ def render_teacher_turn(ctx: TurnContext, turn_id: str) -> str:
     if said and not event:
         wanted.insert(0, f"units/{unit}/keys.md" if unit else "keys.md")
         wanted.insert(1, "skills/judge-a-response/SKILL.md")
+    # The room answered and it did not land. Exact mirror of the NO_REPLY block
+    # below, keyed off the outcomes THIS_PERIOD now carries: `scaffold-down` is
+    # the procedure for "they tried and missed", and she opened it once, on turn
+    # fourteen, after nine straight wrong answers on the same objective.
+    #
+    # PRESENCE, not a threshold. "Three wrongs means back up" would be pedagogy
+    # written into Python, which NS-6 puts in the library instead -- so Core
+    # reports that wrong answers exist this period and the skill decides what
+    # that is worth. It goes behind keys.md and judge-a-response, which are the
+    # move she is making right now; this is the move after it.
+    if "wrong" in this_period:
+        wanted.insert(2, "skills/scaffold-down/SKILL.md")
     if no_reply.strip():
         # `elicit-chorally` already says "Almost nobody -> do not repeat a third
         # time. Something is missing, not quiet." She has never opened it,

@@ -195,7 +195,8 @@ PERIOD REPORT   turns=15  p50=16.4s  unit=gs3-u1-hello  minutes=7
   images     char-group, u1l1-dialogue-b
   exercises  -
   objectives answer-wellbeing
-  outcomes   {correct: 1, near: 1, wrong: 1}
+  outcomes   {correct: 1, near: 1, wrong: 1}   <- UNDER-REPORTED, see below:
+                                                  SQL held 10 wrongs, not 1
   reads      map.md, open-a-period, keys.md, judge-a-response, how-to-teach.md,
              skills/index.md, scaffold-down,
              put-up-an-exercise, units/gs3-u1-hello/exercises.md   <- FIRST TIME EVER
@@ -206,22 +207,95 @@ PERIOD REPORT   turns=15  p50=16.4s  unit=gs3-u1-hello  minutes=7
   FAIL changed the picture            6/8 period properties hold
 ```
 
-**The two remaining failures are one failure, and it is now the top of the
-list.** She read `exercises.md` and still did not call `show_exercise` — so
-naming the file was necessary and is not sufficient. The transcript says why:
-she said *"Fine, thank you"* in **14 of 15 turns**. The child offered *"Hello"*,
-*"I am Minh"*, *"Hi"*, *"Ben"* — introducing himself, which is
-`greet-and-name`, the unit's **first** objective — and she stayed on
-`answer-wellbeing` for the entire period, drilling one phrase and replaying one
-recording. She never left the objective, so she never needed a second picture
-and never reached a task.
+She said *"Fine, thank you"* in **14 of 15 turns**, and I first read that as bad
+pacing. It was not. **Both of those FAILs were the harness judging the wrong
+period, and the diagnosis changed twice under scrutiny:**
 
-This is not an asset bug or a prompt-selection bug; it is her pacing. The unit
-map's law is *"attempts, not time"*, `THIS_PERIOD` counts those attempts and is
-in the state block on every turn, and nothing acts on it. That is the next
-thing to chase, and `show_exercise kind=roleplay` — built, authored as ex.3,
-still never called — is the cheapest way to break the loop in a one-learner
-room.
+- `count_periods_held` returned **1**, so by the map this was **Period 2 — How
+  are you? Goodbye**, whose objectives are exactly `ask-wellbeing`,
+  `answer-wellbeing`, `take-leave` and whose recording is `track-09`. Her stored
+  plan opens *"Period 2: …"* and she executed it faithfully all period. The
+  scripted pupil is the one who was in Period 1.
+- `exercises.md` was titled *"Exercises — Hello, **Lesson 1**"* and scoped to
+  pages 10–11. **Periods 2 and 3 had no authored payloads at all.** She opened
+  the file, found nothing for her period, and correctly declined. That is the
+  deepest reason `show_exercise` was never called in any census — not
+  prompting, not the two-file cap.
+
+What *was* wrong was smaller and had been invisible for the same reason both
+FAILs were: **our instruments were under-reporting.**
+
+```
+SQL observations   12 rows, all answer-wellbeing, 10 of them `wrong`
+THIS_PERIOD        answer-wellbeing x2                    <- said 2
+period census      outcomes {correct: 1, near: 1, wrong: 1}  <- said 1 wrong
+```
+
+`period_evidence` **deduplicated**, so ten identical failures collapsed to one
+entry. Evidence is a tally of attempts, not a set of things touched, and the
+unit map's whole pacing law is *"Time is not the measure; attempts are"*. Both
+the fact she reads and the census the adult reads said the marking was healthy
+while the child missed the same thing ten times running. Fixed at `add(...,
+tally=True)`; `turn_recorded` already caps it at one row per objective per turn.
+
+`THIS_PERIOD` also threw the outcomes away — it split `objective:outcome:mode`
+and kept `[0]` — so *"tried five times"* and *"failed five times"* rendered
+identically. It now carries them, and a witnessed `wrong` names
+`skills/scaffold-down/SKILL.md` in `READ_NOW`, the exact mirror of the
+`NO_REPLY` block. Presence, not a threshold: *"three wrongs means back up"* is
+pedagogy, and NS-6 keeps pedagogy in the library.
+
+Two more gaps closed while fixing this:
+
+- **`OBJECTIVES=`** now sits beside `ASSETS=`. She opens `map.md` on turn one
+  and never again — `already` is permanent and `store: false` keeps nothing — so
+  from turn two her only continuity was one line of `PLAN` and `LAST_SAY`, which
+  is why the last thing she said predicted the next thing she said.
+- **The wire declared `required: ["id", "text"]`** on choice options while Core
+  enforces `text` **or** `asset`, and `ex.4`'s two picture choices are
+  asset-only. Both the tool and the file say *copy a block whole and send it* —
+  so following the instruction produced a call the schema forbids. Same species
+  as the `content: {}` bug. `test_authored_payloads_are_sendable.py` now runs
+  every authored block through the wire schema **and** real Core, so *"never
+  called"* can no longer quietly mean *"never callable"*.
+
+Lessons 2 and 3 are now authored — the four-turn exchange and the visitor as
+`roleplay`, the listening checks as text `choice`, the phrases and the two first
+sounds as `vocabulary`. They carry no panels of their own (whole-page scans
+only, and the map forbids projecting a page), which is what decided those
+shapes.
+
+### The run after that — 2026-08-20, same harness, still Period 2
+
+```
+PERIOD REPORT   turns=15  p50=15.5s
+  periods held before this one: 1  (the map says what meeting #2 is for)
+  her plan   Period 2: 1. Pre-task: Review greeting...
+  exercises  vocabulary                    <- SHOW_EXERCISE FIRED. First time ever.
+  objectives greet-and-name, answer-wellbeing, take-leave     <- three, was one
+  outcomes   {correct: 3, near: 1, uncertain: 1, wrong: 8}    <- 13 rows, counted
+  reads      ... put-up-an-exercise, exercises.md, scaffold-down
+  refusals   0
+
+  PASS put up an exercise · opened a skill · read the key before judging
+  PASS marking is not degenerate · she spoke every turn · no turn errored
+  FAIL played a recording
+  FAIL changed the picture            6/8
+```
+
+The chain worked end to end and in order: a `wrong` put `scaffold-down` in
+`READ_NOW`, she opened it, and the next outcome on that objective moved
+`wrong → near`. She reached `take-leave` before closing — she left an objective,
+which she had never done. Her Vietnamese asides landed where a stuck child
+needs them (*"Không sao đâu."*, *"Mình khỏe, cảm ơn."*).
+
+**Still 6/8, and honestly so.** She played **no** recording at all this period
+(the last run did), and put up two pictures where the check wants three. And the
+repetition is reduced, not gone: *"Fine, thank you"* is still most of what she
+says for ten turns in the middle. Naming the material and counting the failures
+got her to check what landed and to move on at the end; it did not make her vary
+the route. That is the next thing, and it is a pacing question, not a plumbing
+one.
 
 **To re-run the live lesson:**
 

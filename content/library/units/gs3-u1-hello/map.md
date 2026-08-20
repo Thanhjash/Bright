@@ -180,5 +180,6 @@ Unit 2 — asking someone's name. Tell them that at the close, in one sentence.
 
 - keys: `units/gs3-u1-hello/keys.md`
 - other ways to run it: `units/gs3-u1-hello/practice.md`
-- exercises for `show_exercise` — Lesson 1's numbered activities as prompts,
-  options and correct answers: `units/gs3-u1-hello/exercises.md`
+- exercises for `show_exercise` — every lesson's numbered activities as prompts,
+  options and correct answers, sectioned by lesson:
+  `units/gs3-u1-hello/exercises.md`

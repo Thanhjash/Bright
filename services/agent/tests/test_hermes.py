@@ -175,6 +175,73 @@ def test_the_material_is_named_without_waiting_for_evidence(
     assert "the rest next turn" not in read_now, "two files left; nothing is deferred"
 
 
+def test_a_wrong_answer_names_the_procedure_for_a_wrong_answer(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """The mirror of the NO_REPLY block, and it was missing.
+
+    Nothing named `scaffold-down` on a witnessed miss, so she opened it once --
+    turn fourteen of fifteen, after nine straight wrong answers on the same
+    objective, having drilled one phrase the whole period.
+
+    Presence, not a threshold: "three wrongs means back up" is pedagogy, and
+    NS-6 keeps pedagogy in the library. Core reports that wrongs exist; the
+    skill decides what that is worth.
+    """
+    monkeypatch.setenv("BRIGHT_TEACHER_AGENT", "1")
+    ctx = make_ctx()
+    unit = ctx.lesson.lesson_id
+
+    def read_now(text: str) -> str:
+        line = next((l for l in text.splitlines() if l.startswith("READ_NOW=")), "")
+        assert line, "READ_NOW went silent"
+        return line
+
+    # Turn of the miss: the key and the judging skill still come first, because
+    # judging the answer in front of her is the move she is making right now.
+    ctx.recalled = [
+        RecalledMemory(text="THIS_PERIOD=answer-wellbeing x5 (near 1, wrong 4)", when="now"),
+    ]
+    first = read_now(render_teacher_turn(ctx, "turn-missed"))
+    assert "keys.md" in first and "judge-a-response" in first, first
+
+    # Next turn, with those read, backing off is the move -- and it is named.
+    ctx.recalled = [
+        RecalledMemory(text="THIS_PERIOD=answer-wellbeing x5 (near 1, wrong 4)", when="now"),
+        RecalledMemory(
+            text=f"reads={unit and f'units/{unit}/keys.md'},skills/judge-a-response/SKILL.md",
+            when="now",
+        ),
+    ]
+    second = read_now(render_teacher_turn(ctx, "turn-after"))
+    assert "skills/scaffold-down/SKILL.md" in second, second
+
+    # And with nothing missed, it is not named at all -- no wrong, no wobble.
+    ctx.recalled = [
+        RecalledMemory(text="THIS_PERIOD=answer-wellbeing x2 (correct 2)", when="now"),
+        RecalledMemory(
+            text=f"reads=units/{unit}/keys.md,skills/judge-a-response/SKILL.md",
+            when="now",
+        ),
+    ]
+    landed = read_now(render_teacher_turn(ctx, "turn-ok"))
+    assert "scaffold-down" not in landed, landed
+
+
+def test_the_outcomes_reach_her_not_just_the_count(monkeypatch: pytest.MonkeyPatch):
+    """`x5` alone cannot tell "they tried five times" from "they failed five times"."""
+    monkeypatch.setenv("BRIGHT_TEACHER_AGENT", "1")
+    ctx = make_ctx()
+    ctx.recalled = [
+        RecalledMemory(text="THIS_PERIOD=answer-wellbeing x5 (near 1, wrong 4)", when="now"),
+        RecalledMemory(text="OBJECTIVES=greet-and-name, answer-wellbeing, take-leave", when="now"),
+    ]
+    text = render_teacher_turn(ctx, "turn-state")
+    assert "THIS_PERIOD=answer-wellbeing x5 (near 1, wrong 4)" in text
+    # She reads the map once and never again; the ids have to survive it.
+    assert "OBJECTIVES=greet-and-name, answer-wellbeing, take-leave" in text
+
+
 def test_teacher_heartbeat_is_not_student_speech(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setenv("BRIGHT_TEACHER_AGENT", "1")
     ctx = make_ctx()

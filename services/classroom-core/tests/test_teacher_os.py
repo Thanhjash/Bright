@@ -615,6 +615,84 @@ def test_every_id_core_hands_her_is_an_id_core_accepts() -> None:
     assert played["ok"] is True, played
 
 
+def _record(os_: TeacherOS, objective: str, outcome: str) -> None:
+    """One evidence row, through the real path, with the turn gate satisfied."""
+    os_.turn_kind = None
+    os_.turn_student_text = "Fine"
+    os_.turn_recorded = set()
+
+    async def run() -> dict:
+        return await os_.execute(
+            "record_evidence",
+            {
+                "student_id": "learner-1",
+                "objective_id": objective,
+                "outcome": outcome,
+                "mode": "name",
+            },
+        )
+
+    got = asyncio.run(run())
+    assert got.get("ok") is True, got
+
+
+def test_attempts_are_counted_not_collapsed() -> None:
+    """The pacing law is "attempts are the measure", and attempts were a set.
+
+    `period_evidence` deduplicated, so ten identical `answer-wellbeing wrong`
+    rows became ONE entry. Measured live 2026-08-20: twelve observations in SQL,
+    ten of them wrong, rendered as `THIS_PERIOD=answer-wellbeing x2`, and the
+    period census reported `outcomes {correct: 1, near: 1, wrong: 1}`. Both
+    instruments told us the marking was healthy while the child failed the same
+    thing ten times in a row.
+    """
+    core, _frames = _stage_core()
+    os_ = TeacherOS(core, unit_id="gs3-u1-hello", learner_id="learner-1")
+
+    for _ in range(4):
+        _record(os_, "answer-wellbeing", "wrong")
+    _record(os_, "answer-wellbeing", "near")
+
+    census = teacher_os.period_census(os_)
+    assert census["outcomes"] == {"wrong": 4, "near": 1}, census["outcomes"]
+    assert census["evidenceRows"] == 5
+
+    texts = [item.text for item in teacher_os._session_recall(os_)]
+    line = next(t for t in texts if t.startswith("THIS_PERIOD="))
+    assert "x5" in line, f"four wrongs and a near is five attempts: {line}"
+    assert "wrong 4" in line, (
+        f"'tried five times' and 'failed four times' must not read alike: {line}"
+    )
+
+    # Reads stay a SET -- "did she ever open this" is a different question, and
+    # collapsing repeats there is still right.
+    os_.period_reads.clear()
+    for _ in range(3):
+        os_._note_use("read_library", {}, {"path": "how-to-teach.md"})
+    assert os_.period_reads == ["how-to-teach.md"]
+
+
+def test_she_is_told_the_objectives_after_the_map_leaves_her_context() -> None:
+    """She opens map.md on turn one and never again; store:false keeps nothing.
+
+    Same fix, same reason as ASSETS=: she remembers that objectives exist, not
+    what they are called. Which one to work on stays hers -- the map groups them
+    by period and Core never reads that grouping.
+    """
+    core, _frames = _stage_core()
+    os_ = TeacherOS(core, unit_id="gs3-u1-hello", learner_id="learner-1")
+
+    texts = [item.text for item in teacher_os._session_recall(os_)]
+    line = next((t for t in texts if t.startswith("OBJECTIVES=")), None)
+    assert line, "the unit's objective ids must survive the map going out of context"
+    listed = {part.strip() for part in line[len("OBJECTIVES=") :].split(",")}
+    assert {"greet-and-name", "answer-wellbeing", "take-leave"} <= listed, listed
+
+    # Core lists them; Core must not rank them. No period grouping, no "next".
+    assert "period" not in line.lower()
+    assert "next" not in line.lower()
+
+
 def test_show_exercise_refuses_evaluative_text() -> None:
     core, _frames = _stage_core()
     os_ = TeacherOS(core, unit_id="gs3-u1-hello", learner_id="learner-1")

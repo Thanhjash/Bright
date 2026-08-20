@@ -314,7 +314,26 @@ TOOLS: tuple[dict[str, Any], ...] = (
                 },
                 "options": {
                     "type": "array",
-                    "description": "choice only: 2 to 4 things to pick between.",
+                    "description": (
+                        "choice only: 2 to 4 things to pick between. Each needs "
+                        "`id` plus `text` or `asset` -- a picture choice carries "
+                        "no text at all."
+                    ),
+                    # `text` is NOT required, and saying it was made the authored
+                    # payloads unsendable: ex.4's two items are picture choices,
+                    # `id` + `asset` with no text, and both this tool and the
+                    # file say to copy a block whole. Following that instruction
+                    # produced a call the declared schema forbids -- a provider
+                    # that hard-validates `required` rejects it outright, and one
+                    # that does not invites the model to invent a caption for a
+                    # picture. Same species as the `content: {}` bug: the schema
+                    # describing a tool that does not exist.
+                    #
+                    # The real rule is "id, and at least one of text/asset",
+                    # which this subset cannot spell. It stays where the other
+                    # pedagogy-shaped requirements already live -- Core's
+                    # _clean_media_item, which refuses with a reason she can act
+                    # on -- and arrives here as prose.
                     "items": {
                         "type": "object",
                         "properties": {
@@ -322,7 +341,7 @@ TOOLS: tuple[dict[str, Any], ...] = (
                             "text": {"type": "string"},
                             "asset": {"type": "string"},
                         },
-                        "required": ["id", "text"],
+                        "required": ["id"],
                     },
                 },
                 "correct_id": {
@@ -331,7 +350,11 @@ TOOLS: tuple[dict[str, Any], ...] = (
                 },
                 "items": {
                     "type": "array",
-                    "description": "vocabulary only: 2 to 8 cards.",
+                    "description": (
+                        "vocabulary only: 2 to 8 cards. Each needs `id` plus "
+                        "`text` or `asset` -- a picture card carries no text."
+                    ),
+                    # Same correction as `options` above, for the same reason.
                     "items": {
                         "type": "object",
                         "properties": {
@@ -339,7 +362,7 @@ TOOLS: tuple[dict[str, Any], ...] = (
                             "text": {"type": "string"},
                             "asset": {"type": "string"},
                         },
-                        "required": ["id", "text"],
+                        "required": ["id"],
                     },
                 },
                 "environment": {"type": "string", "description": "roleplay only: where it happens."},

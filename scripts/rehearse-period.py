@@ -86,8 +86,17 @@ def main() -> int:
             print(f"\n  bé ▸ {line or '(im lặng)'}   ({latencies[-1]:.1f}s)")
             print(f"  cô ◂ {said or '(im lặng)'}")
 
-    period = (_get("/teacher/status") or {}).get("period") or {}
+    status = _get("/teacher/status") or {}
+    period = status.get("period") or {}
     outcomes = period.get("outcomes") or {}
+    # WHICH period she was teaching. Without it this report lies: on 2026-08-20
+    # it scored FAIL on "put up an exercise" and "changed the picture" against a
+    # teacher correctly running Period 2, for which no exercise was authored and
+    # whose material is audio. A harness that judges every period by one
+    # period's expectations manufactures failures, and this is the instrument
+    # the whole audit trusts.
+    held = status.get("periodsHeld")
+    plan_line = " ".join((status.get("plan") or "").split())[:96]
     total_ev = period.get("evidenceRows") or 0
     latencies.sort()
     p50 = latencies[len(latencies) // 2] if latencies else 0.0
@@ -115,6 +124,11 @@ def main() -> int:
     print(f"PERIOD REPORT   turns={turns}  p50={p50:.1f}s  "
           f"unit={period.get('unit') or '?'}  minutes={period.get('minutes', 0)}")
     print("=" * 72)
+    if held is not None:
+        print(f"  periods held before this one: {held}  "
+              f"(the unit map says what meeting #{held + 1} is for)")
+    if plan_line:
+        print(f"  her plan   {plan_line}")
     print(f"  reads      {', '.join(period.get('reads') or []) or '-'}")
     print(f"  clips      {', '.join(period.get('clips') or []) or '-'}")
     print(f"  images     {', '.join(period.get('images') or []) or '-'}")

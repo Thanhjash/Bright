@@ -639,12 +639,27 @@ class TeacherOS:
         objective. No teacher line, no child's words, no learner id.
         """
 
-        def add(turn: list[str], period: list[str], value: str) -> None:
+        def add(turn: list[str], period: list[str], value: str, *, tally: bool = False) -> None:
+            """`tally=True` keeps repeats. Everything else is a set of what was touched.
+
+            Reads, clips, images and exercises answer "did she ever use this",
+            so collapsing repeats is right. Evidence answers "how many times has
+            the class tried this", and collapsing repeats there destroys the
+            only number the unit map's pacing law is written against -- "Time is
+            not the measure; attempts are".
+
+            Measured 2026-08-20: ten consecutive `answer-wellbeing wrong` rows
+            in SQL rendered as `THIS_PERIOD=answer-wellbeing x2`, and the period
+            census reported `outcomes {correct: 1, near: 1, wrong: 1}` for a
+            period in which the child got it wrong ten times. Both instruments
+            said the marking was healthy. `turn_recorded` already caps this at
+            one row per objective per turn, so keeping repeats cannot run away.
+            """
             value = value.strip()
             if not value:
                 return
             turn.append(value)
-            if value not in period:
+            if tally or value not in period:
                 period.append(value)
 
         if name == "read_library":
@@ -670,6 +685,7 @@ class TeacherOS:
                         str(arguments.get("mode") or "-"),
                     )
                 ),
+                tally=True,
             )
 
     async def _dispatch(self, name: str, arguments: dict[str, Any]) -> Any:
@@ -1295,17 +1311,29 @@ def _session_recall(os_: TeacherOS) -> list[Any]:
     # What she has already tried THIS period, per objective. The unit map's own
     # pacing law is "Time is not the measure; attempts are", and it was
     # unexecutable because nothing counted attempts.
+    # ...and HOW IT WENT, which this line used to throw away: it split on ":"
+    # and kept only the objective, so "they have tried this ten times" and
+    # "they have failed this ten times" rendered identically. The half of the
+    # fact that would change her mind was the half Core dropped. Measured
+    # 2026-08-20: ten `wrong` in a row on one objective, and she drilled the
+    # same phrase for fourteen of fifteen turns.
+    #
+    # Core is still only counting its own rows -- whether ten wrongs mean back
+    # up is hers, and `scaffold-down` is the skill that says what that looks
+    # like. This value never appears inside a Core `if`.
     if os_.period_evidence:
-        tally: dict[str, int] = {}
+        tally: dict[str, dict[str, int]] = {}
         for row in os_.period_evidence:
-            objective = row.split(":", 1)[0]
-            tally[objective] = tally.get(objective, 0) + 1
-        notes.append(
-            RecalledMemory(
-                text="THIS_PERIOD=" + ", ".join(f"{k} x{v}" for k, v in tally.items()),
-                when="now",
-            )
-        )
+            parts = (row.split(":") + ["?", "?", "-"])[:3]
+            objective, outcome = parts[0], parts[1]
+            seen = tally.setdefault(objective, {})
+            seen[outcome] = seen.get(outcome, 0) + 1
+        entries = []
+        for objective, outcomes in tally.items():
+            total = sum(outcomes.values())
+            detail = ", ".join(f"{name} {n}" for name, n in sorted(outcomes.items()))
+            entries.append(f"{objective} x{total} ({detail})")
+        notes.append(RecalledMemory(text="THIS_PERIOD=" + "; ".join(entries), when="now"))
     # How long she has been talking to nobody. Core holds both marks already;
     # this is the same species of fact as PERIOD_MINUTES.
     #
@@ -1353,6 +1381,23 @@ def _session_recall(os_: TeacherOS) -> list[Any]:
         notes.append(
             RecalledMemory(
                 text="ASSETS=" + ", ".join(catalog["assets"]),
+                when="now",
+            )
+        )
+    # The objective ids this unit records against, for exactly the reason the
+    # assets are listed. She opens map.md on turn one and never again -- READ_NOW
+    # drops it once it is in `already`, and `store: false` means she holds none
+    # of it after the turn ends. From turn two her only continuity is one line
+    # of PLAN and LAST_SAY, which is why the last thing she said is the best
+    # predictor of the next thing she says.
+    #
+    # A path lookup on a file Core does not interpret. WHICH objective to work
+    # on, and when to leave one, stays hers -- the map groups them by period and
+    # Core must never read that grouping.
+    if catalog["objectives"]:
+        notes.append(
+            RecalledMemory(
+                text="OBJECTIVES=" + ", ".join(catalog["objectives"]),
                 when="now",
             )
         )
@@ -1650,6 +1695,24 @@ def _silence_s(os_: TeacherOS) -> float:
     return max(0.0, time.time() - last)
 
 
+def _periods_held(core: Any, os_: Any) -> int | None:
+    """Finished periods for this class on this unit, or None if unknowable.
+
+    Same call `_session_recall` makes for PERIODS_HELD, and it must stay a
+    count: what meeting #N *means* is in the unit map, and Core never looks it
+    up. Never raises -- a missing number must not cost the adult the page.
+    """
+    if os_ is None:
+        return None
+    counter = getattr(getattr(core, "db", None), "count_periods_held", None)
+    if not callable(counter):
+        return None
+    try:
+        return int(counter(student_id=os_.learner_id, lesson_id=os_.unit_id))
+    except Exception:  # noqa: BLE001 -- status is diagnosis; it must always render
+        return None
+
+
 def teacher_phase(core: Any) -> str:
     os_ = getattr(core, "teacher_os", None)
     if os_ is None:
@@ -1688,6 +1751,12 @@ def teacher_status_payload(core: Any) -> dict[str, Any]:
         # For the adult, not for the room: what she says she is doing. Nothing
         # in Core reads this string to decide anything.
         "plan": getattr(os_, "plan", None) or None,
+        # How many periods this class has finished on this unit. Core counts;
+        # the map says what meeting #N means. It is here because without it a
+        # run cannot be read: on 2026-08-20 she was scored FAIL on "put up an
+        # exercise" while correctly teaching Period 2, for which no exercise
+        # was authored -- and nothing on this payload said which period it was.
+        "periodsHeld": _periods_held(core, os_),
         # What this period has actually used so far. The adult can see a lesson
         # that has played no recording and shown one picture before it ends.
         "period": period_census(os_) if os_ is not None else None,
