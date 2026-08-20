@@ -42,13 +42,30 @@ def test_there_is_exactly_one_room_page() -> None:
     # Only the room may touch the loudspeaker. `bus/wiring.ts` drives it and
     # `ClassroomRoute` arms the audio unlock; anything else importing it is a
     # second speaker waiting to happen.
-    allowed = {"ClassroomRoute.tsx"}
+    #
+    # The front door is the one exception, and a narrow one. Browsers only start
+    # an AudioContext inside a real gesture, and the gesture that matters is the
+    # press on a period card -- which is spent before `/classroom` mounts and
+    # arms the deferred unlock. So the lobby may unlock, and may do NOTHING
+    # else: it mounts no bus, so `configureSpeechOutput` is never called for it
+    # and the player it constructs has no way to make a sound.
+    allowed = {"ClassroomRoute.tsx", "LobbyRoute.tsx"}
     drivers = sorted(
         path.name
         for path in ui.rglob("*.tsx")
         if "speakingDriver" in path.read_text(encoding="utf-8")
     )
     assert set(drivers) <= allowed, f"unexpected speakingDriver importers: {drivers}"
+
+    lobby = ui / "routes" / "lobby" / "LobbyRoute.tsx"
+    if lobby.exists():
+        body = lobby.read_text(encoding="utf-8")
+        for forbidden in ("speak(", "startSpeech", "pushSpeech", "configureSpeechOutput"):
+            assert forbidden not in body, f"the front door reached for {forbidden}"
+        assert "BusProvider" not in body, (
+            "the front door must not mount a bus -- the stage-role socket claims "
+            "the audio lease, and Core opens a class the moment it exists"
+        )
 
 
 def test_leases_exist_without_lesson(teacher_client: TestClient):

@@ -21,10 +21,12 @@
  * See `docs/decisions/2026-08-20-the-front-door.md`: the picker is outside the
  * teaching loop, which is why it does not contradict "the room runs itself".
  */
-import { useState } from 'react'
+import { useCallback, useState } from 'react'
 import { useNavigate } from 'react-router'
 import { LOBBY_LABELS as L } from '../../room/labels'
 import { unlockAudioNow } from '../../speech/speakingDriver'
+import type { Who } from './LobbyCamera'
+import { LobbyCamera } from './LobbyCamera'
 import type { CardState, Period } from './usePeriods'
 import { cardState, useInstalled } from './usePeriods'
 
@@ -90,8 +92,14 @@ function PeriodCard({ period, state, onEnter }: {
 
 export function LobbyRoute() {
   const navigate = useNavigate()
-  const { installed, room, failed } = useInstalled()
+  // Once the door knows who this is, the progress it shows is THEIR progress.
+  // Until then it is the deployment's declared learner, which is the same
+  // fallback the room itself uses when perception cannot place anybody.
+  const [who, setWho] = useState<Who | null>(null)
+  const { installed, room, failed } = useInstalled(who?.learnerId)
   const [entering, setEntering] = useState(false)
+
+  const onKnown = useCallback((found: Who) => { setWho(found) }, [])
 
   const ready = Boolean(room?.hermesUp && room?.speechUp) && !failed
   const held = installed?.held ?? 0
@@ -114,6 +122,8 @@ export function LobbyRoute() {
           <p className="text-xl text-muted">{L.subtitle}</p>
           <p className="text-base text-muted/80">{L.heldCount(held)}</p>
         </header>
+
+        <LobbyCamera onKnown={onKnown} />
 
         <div
           data-lobby="readiness"

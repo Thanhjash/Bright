@@ -111,3 +111,78 @@ def identify(image_bytes: bytes) -> Identified | None:
         similarity=float(face.get("similarity") or 0.0),
         at=time.time(),
     )
+
+
+class EnrolmentRefused(Exception):
+    """Vision would not take this frame. Carries what to tell the person."""
+
+
+def enroll(
+    frames: list[bytes],
+    *,
+    subject_id: str,
+    display_name: str,
+    consent_reference: str,
+) -> int:
+    """Bind a face to an id that Core already owns. Deliberate and consented.
+
+    Core creates the learner and hands vision the SAME id, which is the whole
+    point of proxying instead of letting a browser POST to :8002. The two
+    databases -- `students` in bright.db and `subjects` in faces.db -- share an
+    identifier by convention and nothing enforces it; if the browser minted the
+    id, a recognised face would open a brand-new empty record beside the real
+    child's rather than opening theirs.
+
+    Several frames, because one is a pose and not a face: the store appends an
+    embedding per frame under one subject, and matching takes the best. Every
+    frame must contain exactly one clearly detected face -- vision refuses a
+    class photo, which is the rule that a photograph is not consent.
+
+    Raises EnrolmentRefused with a sentence a person can act on. Returns the
+    number of embeddings actually written; a caller that gets 0 has enrolled
+    nobody, whatever the HTTP status said.
+    """
+    written = 0
+    refusal = ""
+    for frame in frames:
+        if not frame:
+            continue
+        payload = json.dumps({
+            "image_base64": base64.b64encode(frame).decode(),
+            "subject_id": subject_id,
+            "display_name": display_name,
+            "consent_confirmed": True,
+            "consent_reference": consent_reference,
+        }).encode()
+        request = urllib.request.Request(
+            VISION_URL + "/vision/enroll",
+            data=payload,
+            headers={"content-type": "application/json"},
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=TIMEOUT_S) as response:
+                json.loads(response.read())
+            written += 1
+        except urllib.error.HTTPError as exc:
+            # 400 is the useful one: "must contain exactly one clearly detected
+            # face". Keep the last reason, keep trying the other frames -- a
+            # child who blinked in one of three has still enrolled.
+            refusal = _refusal_text(exc)
+            log.info("vision refused an enrolment frame (%s)", exc.code)
+        except Exception as exc:  # noqa: BLE001
+            refusal = "the camera service is not answering"
+            log.warning("vision unreachable during enrolment (%s)", exc)
+
+    if written == 0:
+        raise EnrolmentRefused(refusal or "no frame could be enrolled")
+    return written
+
+
+def _refusal_text(exc: urllib.error.HTTPError) -> str:
+    try:
+        detail = json.loads(exc.read()).get("detail")
+        if isinstance(detail, str) and detail.strip():
+            return detail.strip()
+    except Exception:  # noqa: BLE001
+        pass
+    return f"the camera service refused the photo ({exc.code})"

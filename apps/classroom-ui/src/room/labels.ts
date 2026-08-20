@@ -97,4 +97,30 @@ export const LOBBY_LABELS = {
   heldCount: (n: number) => (n === 0 ? 'Con chưa học buổi nào' : `Con đã học ${n} buổi`),
   /** What this period will teach, from the unit map's own words. */
   inPlay: 'Hôm nay học:',
+
+  // ---- the camera at the door -------------------------------------------
+  /** Before any face has been resolved. */
+  looking: 'Cô đang nhìn xem ai đây…',
+  /** A child the room already knows. */
+  hello: (name: string) => `Chào con, ${name}!`,
+  /** Nobody enrolled matches. Never phrased as a failure. */
+  stranger: 'Cô chưa biết con là ai',
+  /** Opens the enrolment form. */
+  imNew: 'Con là bạn mới',
+  /** No camera, or it was refused. The door still works without one. */
+  noCamera: 'Không có camera — vẫn học được bình thường',
+
+  // ---- enrolment, which is a consented act ------------------------------
+  enrolTitle: 'Cho cô nhớ mặt con nhé',
+  enrolName: 'Tên của con',
+  /** The disclosure. It says what is kept and what is not. */
+  enrolWhat:
+    'Máy sẽ chụp ba khung hình và chỉ lưu lại các con số đặc trưng của khuôn mặt, '
+    + 'ngay trên máy này. Ảnh không được lưu lại.',
+  /** Consent is a deliberate act by someone who may give it. */
+  enrolConsent: 'Con đã được thầy cô hoặc bố mẹ đồng ý cho đăng ký khuôn mặt',
+  enrolGo: 'Đăng ký',
+  enrolCancel: 'Thôi, để sau',
+  enrolWorking: 'Đang chụp…',
+  enrolDone: (name: string) => `Xong rồi, ${name}! Cô nhớ con rồi.`,
 } as const

@@ -707,6 +707,83 @@ def create_app(settings: Settings | None = None, core: Core | None = None) -> Fa
             "similarity": round(seen.similarity, 4),
         }
 
+    @app.post("/teacher/enroll")
+    async def teacher_enroll(payload: dict[str, Any]) -> dict[str, Any]:
+        """Bind a face to a learner. Deliberate, consented, before the lesson.
+
+        Core owns the identifier and hands vision the same one, which is why
+        this is a proxy and not a browser POST to :8002. `students` in
+        bright.db and `subjects` in faces.db share an id by convention and
+        nothing enforces it -- if the caller minted the id, a recognised face
+        would open a brand-new empty record beside the child's real one and
+        nobody would notice.
+
+        Consent is not a checkbox this route interprets: it is required by
+        vision's own request TYPE (`consent_confirmed: Literal[True]` plus a
+        non-empty reference), so a request without it is rejected by validation
+        before any logic runs. Core refuses here too, so the failure is a
+        sentence rather than a 422 from a service the caller cannot see.
+
+        Never during a lesson and never on the projector: this is the front
+        door, before the class opens.
+        """
+        import base64
+        import binascii
+        import re as _re
+        import time as _time
+
+        import perception
+
+        name = str(payload.get("displayName") or "").strip()
+        if not name:
+            raise HTTPException(400, "displayName is required")
+        if payload.get("consentConfirmed") is not True:
+            raise HTTPException(400, "consentConfirmed must be true")
+
+        raw_frames = payload.get("frames")
+        if not isinstance(raw_frames, list) or not raw_frames:
+            raise HTTPException(400, "frames must be a non-empty list of base64 images")
+        frames: list[bytes] = []
+        for item in raw_frames[:8]:
+            try:
+                frames.append(base64.b64decode(str(item), validate=True))
+            except (binascii.Error, ValueError):
+                raise HTTPException(400, "a frame is not valid base64")
+
+        # The id is Core's, and it must fit vision's narrower alphabet
+        # (^[a-zA-Z0-9_-]+$). A readable stem so an adult reading either
+        # database can tell who a row is about, and a short suffix because two
+        # children called Minh are not the same child.
+        stem = _re.sub(r"[^a-zA-Z0-9]+", "-", name.lower()).strip("-")[:24] or "learner"
+        learner_id = str(payload.get("learnerId") or "").strip()
+        if not learner_id or not _re.fullmatch(r"[a-zA-Z0-9_-]{1,80}", learner_id):
+            learner_id = f"{stem}-{int(_time.time()) % 100000}"
+
+        reference = str(payload.get("consentReference") or "").strip()
+        if not reference:
+            # Names the act, not the child. A school replaces this with the
+            # signed paper's own reference.
+            reference = f"lobby-self-enrolment:{_time.strftime('%Y-%m-%dT%H:%M:%S')}"
+
+        core_ = get_core()
+        try:
+            written = perception.enroll(
+                frames,
+                subject_id=learner_id,
+                display_name=name,
+                consent_reference=reference,
+            )
+        except perception.EnrolmentRefused as exc:
+            # A person is standing in front of the camera waiting. Tell them
+            # what to do, not what the status code was.
+            raise HTTPException(400, str(exc)) from exc
+
+        # The learner exists in Core from this moment, not from the first
+        # session, so an adult can see who consented before anyone is taught.
+        core_.db.upsert_student(learner_id, name, name)
+        log.info("enrolled learner=%s frames=%d", learner_id, written)
+        return {"ok": True, "learnerId": learner_id, "displayName": name, "frames": written}
+
     @app.post("/teacher/prepare")
     async def teacher_prepare() -> dict[str, Any]:
         """Draft the period now instead of waiting for the nightly job.
