@@ -1072,3 +1072,38 @@ A deliberate hand now beats the convenience one: when `show_exercise`,
 `show_image` or `write_board` ran this turn, `say(board_text)` is **skipped and
 reported** instead of overwriting. She still speaks; the board keeps what she
 put there; the result says why.
+
+
+---
+
+## 2e. What a real person found in ten minutes — 2026-08-20
+
+The owner sat down with a webcam and a microphone and used it. Three things came
+out that no test and no scripted rehearsal had produced.
+
+**The camera loop works with a real face.** Self-view in the corner, the choice
+exercise on the board with the correct option ticked, the heard-echo chip
+showing what he said. That is the whole perception seam running end to end with
+a person in front of it.
+
+**"Fine, thank you" came back as "Thank you." — and the ASR model is innocent.**
+`voiceGate` calls `mic.start()` only *after* energy clears `floor × 2.2`, and
+`start()` is async. So the sound that opens the gate is the one sound never
+recorded. "Fine" is short with a soft onset, exactly the shape that gets eaten.
+Whisper never heard the word; the audio did not contain it. The fix is a
+pre-roll buffer — record continuously, keep the last ~300 ms before the gate
+opened — which is a restructure of `micRecorder`, not a constant to tweak.
+**Not done.** Written here so nobody spends another day blaming the model.
+
+**She answered things nobody said.** Whisper returns
+`no_speech_probability`, `stt.ts` parses it, and `RoomDock` never looked at it:
+**ten of twelve clips in that session came back `no-speech 1.000`** — a chair, a
+cough, the tail of her own reverb — and every one was posted as a turn. That is
+why she asks "Hi, how are you?" into an empty room. Now guarded at 0.9. The
+threshold errs toward dropping a real sentence, because the child repeats it and
+the alternative is a teacher talking to furniture.
+
+That is the fifth and sixth instance of one pattern in a single day: **the
+system measures something, and never tells the part that could act on it.** It
+is worth naming as a review question rather than a series of bugs — when a value
+is computed, ask who reads it.

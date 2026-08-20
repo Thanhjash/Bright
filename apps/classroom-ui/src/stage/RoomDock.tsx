@@ -146,7 +146,18 @@ export function RoomDock() {
     try {
       const heard = await transcribe(clip.audio)
       const heardText = heard.text.trim()
-      if (heardText) {
+      // Whisper's own verdict on whether this was speech at all, which the
+      // room measured and then ignored. Observed in one real session: TEN of
+      // twelve clips came back `no-speech 1.000` -- a chair, a cough, the
+      // teacher's own tail of reverb -- and every one of them was posted as a
+      // turn, so she answered things nobody said. That is why she asks "Hi,
+      // how are you?" into an empty room.
+      //
+      // 0.9 rather than 1.0: the certain cases are what matter here, and a
+      // real utterance in a noisy classroom rarely scores that high. When it
+      // is wrong, the cost is one lost sentence and the child repeats; the
+      // other way round, the cost is the teacher talking to furniture.
+      if (heardText && heard.noSpeechProbability < 0.9) {
         setHeard(heardText)
         setHint(null)
         const res = await fetch(`${CORE_HTTP}/teacher/turn`, {
