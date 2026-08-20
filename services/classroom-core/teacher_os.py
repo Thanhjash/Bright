@@ -311,6 +311,37 @@ def _as_asset(raw: str) -> str | None:
     return text
 
 
+def _caption_for_board(line: str | None, limit: int = 160) -> str:
+    """The line under a picture: whole if it fits, and NEVER cut mid-word.
+
+    This was `[:80]`, which put
+
+        "Chào các con! Cô là cô Bright. Hôm nay mình học cách chào nhau và nói
+         tên mình b"
+
+    on a projector in front of a class -- a sentence amputated inside its last
+    word. A cut word is worse than a shortened caption and much worse than
+    none: a child reading a board sounds out what is written, and "b" is not a
+    word in any of this room's three languages.
+
+    80 was also simply too small. The caption wraps (`ImageBoard`'s figcaption
+    is `max-w-[90%]` with normal wrapping), so two lines of ordinary teacher
+    speech fit comfortably; 160 is that, measured against the board's width at
+    the caption's own type size. Past it, cut at a word boundary and say so
+    with an ellipsis.
+    """
+    text = " ".join((line or "").split())
+    if len(text) <= limit:
+        return text
+    cut = text[:limit]
+    space = cut.rfind(" ")
+    # Only honour the word boundary if it is not so early that the caption
+    # becomes a fragment; a single very long token is better shown clipped.
+    if space > limit * 0.6:
+        cut = cut[:space]
+    return cut.rstrip(" ,;:.\u2014-") + "\u2026"
+
+
 def _media_file(asset: str) -> Any:
     rel = asset[len("asset://") :]
     path = (_MEDIA_ROOT / rel).resolve()
@@ -586,7 +617,7 @@ class TeacherOS:
         bus = getattr(self.core, "bus", None)
         if store is None or bus is None:
             return
-        caption = (self.last_say or "").strip()[:80]
+        caption = _caption_for_board(self.last_say)
         source = getattr(self, "last_board_source", None)
         order = [
             ("exercise", bool(self.last_exercise)),

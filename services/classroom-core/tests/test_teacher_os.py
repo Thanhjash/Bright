@@ -1493,3 +1493,33 @@ def test_the_language_a_child_answered_in_reaches_her() -> None:
     os_.turn_language = None
     assert not any(t.startswith("ANSWERED_IN=") for t in
                    (item.text for item in teacher_os._session_recall(os_)))
+
+
+def test_a_picture_caption_is_never_cut_mid_word() -> None:
+    """A cut word is worse than a shortened caption, and much worse than none.
+
+    Seen on a projector in front of a class: the caption ended "...nói tên mình
+    b" -- a sentence amputated inside its last word, because the caption was a
+    bare `[:80]`. A child reading a board sounds out what is written, and "b"
+    is not a word in any of this room's three languages.
+    """
+    from teacher_os import _caption_for_board
+
+    opening = (
+        "Chào các con! Cô là cô Bright. Hôm nay mình học cách chào nhau "
+        "và nói tên mình bằng tiếng Anh nhé."
+    )
+    # An ordinary teacher line fits whole. This one did not before.
+    assert _caption_for_board(opening) == opening
+    assert len(opening) > 80, "the regression this guards needs a line over 80 chars"
+
+    long_line = " ".join(["hello"] * 100)
+    caption = _caption_for_board(long_line)
+    assert caption.endswith("…")
+    # Whatever is left must be whole words.
+    assert all(word == "hello" for word in caption.rstrip("…").split())
+
+    assert _caption_for_board(None) == ""
+    assert _caption_for_board("   ") == ""
+    # One unbroken monster token has no word boundary to respect; clip it.
+    assert len(_caption_for_board("x" * 300)) <= 161

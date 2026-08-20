@@ -58,7 +58,14 @@ export const MOCK_STEPS: MockStep[] = [
     id: 'market-photo',
     stage: 'HOOK',
     kind: 'image',
-    props: { asset: 'asset://market-stall.webp', caption: 'The morning market' },
+    // A REAL caption length. Core derives the caption from her last spoken
+    // line, so on a live board it is a whole teacher sentence -- not the
+    // three-word label this fixture used to carry, which is why nobody saw
+    // that Core was cutting captions mid-word at 80 characters.
+    props: {
+      asset: 'asset://market-stall.webp',
+      caption: 'Chào các con! Cô là cô Bright. Hôm nay mình học cách chào nhau và nói tên mình bằng tiếng Anh nhé.',
+    },
     say: 'This is a market. Today we are going shopping!',
     holdMs: 4600,
   },
