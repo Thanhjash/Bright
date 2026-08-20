@@ -52,3 +52,8 @@ content/media/gs3/
 # it and how the panels are cut.
 Changemakers - Inputs/
 Changemakers - Inputs.zip
+
+# Vendored upstream source, fetched by tools/fetch-vieneu.sh. Apache-2.0, but it
+# is someone else's repository and does not belong inside ours -- the same
+# reason references/ is not committed.
+third_party/

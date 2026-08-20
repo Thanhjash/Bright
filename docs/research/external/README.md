@@ -65,6 +65,52 @@ The follow-up's §10 is the finding to act on, and it is not a model swap:
    SEA-G2P fail. Not yet done — it needs a home that does not violate the
    `say` accretion tripwire.
 
+### Measured on our own box, 2026-08-20 — VieNeu is real, and it is slow
+
+Fetched with `tools/fetch-vieneu.sh` (Apache-2.0 confirmed, torch-free ONNX CPU
+path, 20 preset voices bundled so no reference clip is needed). Voice
+*Ngọc Linh*, INT8 backbone, compared line-for-line against the resident Piper.
+
+**Sample rate first, because it decides the numbers.** v3 Turbo emits **48 kHz**
+(`v3turbo.py:122`). Writing it as 24 kHz halves the playback speed and doubles
+the apparent duration, which flatters RTF by exactly 2× — a first pass here did
+that and made a model that misses the gate look like one that meets it.
+
+```
+                        synth   audio    RTF   read back through our own ASR
+"Hello. I'm Ben."
+        VieNeu          3.33s   1.36s   2.45   'Hello and Ben.'
+        Piper           0.18s   1.47s   0.12   "Hello, I'm Ben."
+"Con không biết cô ạ"
+        VieNeu          3.26s   1.28s   2.54   'còn không biết quá'
+        Piper           0.12s   0.77s   0.15   'phong không biết của anh.'
+"Không sao đâu. Say with me: Fine, thank you."
+        VieNeu          6.98s   2.80s   2.49   'Không sao đâu, say with me, fine thank you.'
+        Piper           0.46s   2.84s   0.16   'Hong Sao Do, say with me. Fine, thank you.'
+```
+
+**Latency: VieNeu misses the live gate by 3–4×.** The gate is p95 RTF ≤ 0.6 and
+p95 first-audio ≤ 350 ms. VieNeu runs at **RTF 1.9–2.5**; Piper at **0.12–0.16**,
+15–20× faster. A child already waits ~19 s to be answered; three more seconds of
+synthesis is not available.
+
+**Quality: VieNeu wins the one thing it was chosen for.** On the mixed line it
+returns *"Không sao đâu, say with me, fine thank you."* — correct diacritics and
+tones on the Vietnamese, correct English, out of a **single utterance**. Piper
+gets *"Hong Sao Do"*: tones gone, and only after the sentence-splitting hack
+below. That is the intra-sentence code-switching the whole survey was about, and
+it is the first time we have seen it work.
+
+**So neither replaces the other, and the research already said so.** §10 of the
+follow-up: pre-render authored curriculum speech at build time, keep live
+synthesis for genuinely dynamic teacher speech. VieNeu's RTF is irrelevant when
+the audio is made once, months before the lesson, and checked by a human. That
+is now a measurement rather than a quotation.
+
+Still **not adopted**, and the reason has not changed: same-speaker continuity
+across a switch, accent breaks and naturalness need bilingual human raters.
+Intelligibility is a floor, not a pass.
+
 **Shipped 2026-08-20:** the §11 fallback, one voice per *sentence* rather than
 one per line. It was not a nicety. Measured on lines she really said, a single
 Vietnamese letter anywhere put the whole line through the Vietnamese voice, so
