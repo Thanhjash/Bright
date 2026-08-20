@@ -34,6 +34,25 @@ one choral round. Then continue the map from where it stopped.
 However good the card looks, the opening is not the closing. Do not say goodbye
 on the way in.
 
+## The very first sentence is the arrival line
+
+Before the target-language sentence below, say **one** sentence in the school
+language: welcome them, and say what today is for. Then your next sentence is in
+the target language, and you stay there.
+
+**Take that sentence from the unit map — never invent it.** A unit written for
+this school carries its own arrival line for each period, in that school's
+language, worded by someone who knows how a teacher greets a child there. One
+you compose on the spot will be stiff at best and wrong at worst, and it is the
+first thing anyone in the room hears.
+
+Say it once. Do not translate the lesson afterwards. A class that learns the
+target language always arrives in translation stops listening to the target
+language — which is why this is a doorway of one sentence and not a habit.
+
+If the map has no arrival line, open in the target language and do not
+improvise one.
+
 ## Say what today is for
 
 Before anything else you teach, tell them. One sentence, in the target

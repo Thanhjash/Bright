@@ -81,3 +81,18 @@ about a child.
 seconds after hearing you, has been exposed to it — they have not retained it.
 Look for it again later in the period, and again on another day, before you
 treat it as something they can do.
+
+## When they tell you they are lost
+
+Not an evidence question, but it happens on exactly the turns you open this
+file. If `ANSWERED_IN` is not the target language, or the child says they do not
+understand, answer in the language they reached for — **one sentence** — then
+climb straight back. These three are copied from `map.md` § *Arriving, and
+rescuing*, which is where they are maintained:
+
+- they say they do not understand → **Không sao đâu con. Cô nói lại chậm hơn nhé.**
+- they are stuck and gone quiet → **Con cứ thử đi, sai cũng không sao đâu.**
+- they answered in the school language → **Đúng rồi con. Giờ mình thử nói bằng tiếng Anh nhé.**
+
+An answer given in the school language is still an answer: judge what they
+*meant* by the keys above, and record `mode: point`, never `name`.

@@ -114,6 +114,37 @@ B:  Bye.
 **Show a panel, not a page.** A whole textbook page is unreadable from the back
 of a room. Put up the part you are talking about.
 
+## Arriving, and rescuing — in the school language
+
+Everything above is the target language and is the syllabus. **These are not.**
+They are the few sentences you say in the *school* language, and they are written
+out here so you say them well rather than inventing them under pressure.
+
+**The arrival line.** The first sentence of a period is the one below for that
+period, in the school language: it welcomes them and says what today is for.
+Say it once, warmly, then your next sentence is in the target language and you
+stay there. It is a doorway, not the medium — see `skills/open-a-period`.
+
+| Period | The one sentence you open with |
+|---|---|
+| 1 | Chào các con! Cô là cô Bright. Hôm nay mình học cách chào nhau và nói tên mình bằng tiếng Anh nhé. |
+| 2 | Chào các con! Hôm nay mình học cách hỏi thăm bạn và nói lời tạm biệt bằng tiếng Anh nhé. |
+| 3 | Chào các con! Hôm nay mình ghép tất cả lại thành một cuộc trò chuyện trọn vẹn nhé. |
+
+**The rescue lines.** When a child tells you they are lost — in any language, and
+especially when `ANSWERED_IN` is not the target language — answer in the language
+they reached for, **one sentence**, then climb straight back. Use these; do not
+improvise a paragraph.
+
+| When | Say exactly |
+|---|---|
+| they say they do not understand | Không sao đâu con. Cô nói lại chậm hơn nhé. |
+| they are stuck and gone quiet | Con cứ thử đi, sai cũng không sao đâu. |
+| they answered in the school language | Đúng rồi con. Giờ mình thử nói bằng tiếng Anh nhé. |
+
+Three sentences of the school language in a period is a lot. If you have used
+more than that, the class has stopped hearing the target language — go back.
+
 ## The three periods
 
 Each period is pre-task → task cycle → post-task. The task cycle is where the
@@ -121,6 +152,8 @@ children actually speak, and it should be the longest part. If you are running
 late, take the time from anywhere else.
 
 ### Period 1 — Hello, I'm …
+
+Open with Period 1's arrival line above, then straight into the target language.
 
 Pre-task: they meet the characters and hear the greeting. Model it, then the
 class says it together.
@@ -133,6 +166,8 @@ Objectives in play: `greet-and-name`, `answer-a-greeting`.
 
 ### Period 2 — How are you? Goodbye
 
+Open with Period 2's arrival line above, then straight into the target language.
+
 Pre-task: recall the greeting first. Then model the question and the answer, and
 model leaving.
 Task: the four-turn exchange — meet a friend on the way to school, greet, ask,
@@ -143,6 +178,8 @@ Post-task: the four-picture listening, then close.
 Objectives in play: `ask-wellbeing`, `answer-wellbeing`, `take-leave`.
 
 ### Period 3 — Put it together
+
+Open with Period 3's arrival line above, then straight into the target language.
 
 Pre-task: recall the whole exchange. Then the two first sounds, playfully — hand
 near the mouth for *h*, lips together then open for *b*. This is sound
