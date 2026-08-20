@@ -194,6 +194,11 @@ start_speech_if_ready() {
   # is the floor in both languages, and app.py and the systemd example now
   # default to it too, so this export no longer hides a different value.
   export WHISPER_MODEL="${WHISPER_MODEL:-base}"
+  # VieNeu keeps Vietnamese tones through a code-switch; Piper flattens them to
+  # "Hong Sao Do". It costs RTF ~2, which the cache pays down to a disk read on
+  # every repeat -- see services/speech/tts_vieneu.py. Set TTS_ENGINE=piper for
+  # a box that needs the speed more than the tones.
+  export TTS_ENGINE="${TTS_ENGINE:-vieneu}"
   start_one speech "$SPEECH_PY" "$ROOT/services/speech/app.py"
 }
 

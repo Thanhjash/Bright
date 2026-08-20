@@ -150,6 +150,20 @@ DEFAULT_VOICE = "en"
 # that voice, or to a voice id it has not installed, and segmentation stops
 # having anything to choose.
 MARKED_VOICE = os.environ.get("TTS_MARKED_VOICE", "vi")
+# piper | vieneu. VieNeu keeps Vietnamese tones through a code-switch and Piper
+# does not; Piper is 15-20x faster. See services/speech/tts_vieneu.py for the
+# measurement and why a cache is what makes the slow one usable.
+TTS_ENGINE = os.environ.get("TTS_ENGINE", "piper").strip().lower()
+_vieneu: Any = None
+
+
+def vieneu():
+    """Built on first use, never at boot: the room must come up without it."""
+    global _vieneu
+    if _vieneu is None:
+        from tts_vieneu import VieNeuProvider
+        _vieneu = VieNeuProvider()
+    return _vieneu
 
 _state: dict[str, Any] = {
     "voices": {},
@@ -436,6 +450,32 @@ async def speech(req: SpeechRequest) -> Response:
     if voice_id not in _state["voices"]:
         raise HTTPException(503, f"no voices loaded; wanted {req.voice!r}")
 
+    # VieNeu speaks the whole line in one voice ON PURPOSE. Sentence splitting
+    # exists because Piper needs a different voice per language and resets
+    # prosody at every boundary; VieNeu handles the switch inside one utterance,
+    # which is the entire reason it is here. Splitting it would throw that away.
+    if TTS_ENGINE == "vieneu":
+        try:
+            spoken = await asyncio.to_thread(vieneu().synthesize, req.input, speed=req.speed)
+        except Exception as exc:  # noqa: BLE001 -- she must never go mute
+            log.warning("vieneu failed (%s); falling back to piper", exc)
+        else:
+            total_ms = round((time.perf_counter() - request_started) * 1000)
+            return Response(
+                content=spoken.audio,
+                media_type="audio/wav",
+                headers={
+                    "X-Tts-Queue-Ms": "0",
+                    "X-Synth-Ms": str(round(spoken.synth_s * 1000)),
+                    "X-Tts-Total-Ms": str(total_ms),
+                    "X-Voice": spoken.voice,
+                    "X-Tts-Engine": "vieneu",
+                    # 0ms synth means it came off disk -- the cache is the whole
+                    # reason this engine is affordable, so make it visible.
+                    "X-Tts-Cached": "1" if spoken.synth_s == 0.0 else "0",
+                },
+            )
+
     # One voice per SENTENCE, not one per line. A sentence carrying the marked
     # script goes to MARKED_VOICE; everything else goes to the requested voice.
     #
@@ -501,6 +541,7 @@ async def speech(req: SpeechRequest) -> Response:
             "X-Synth-Ms": str(synth_ms),
             "X-Tts-Total-Ms": str(total_ms),
             "X-Voice": voice_id,
+            "X-Tts-Engine": "piper",
         },
     )
 
