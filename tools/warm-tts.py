@@ -105,7 +105,20 @@ def main() -> int:
         wanted += [l.strip() for l in Path(args.also).read_text(encoding="utf-8").splitlines()
                    if l.strip() and not l.startswith("#")]
 
-    seen = list(dict.fromkeys(wanted))
+    # She streams, and the stage speaks each sentence as it arrives -- so the
+    # cache key is a SENTENCE, not the line an author wrote. Measured 2026-08-21
+    # on the opening turn: the whole arrival line was warm and the three
+    # sentences it is actually said in were all cold, 18s of synthesis at the
+    # top of the lesson. Warm both; the whole-line entry still covers a
+    # deployment that ever sends one.
+    pieces: list[str] = []
+    for line in wanted:
+        pieces.append(line)
+        parts = [s.strip() for s in re.split(r"(?<=[.!?…])\s+", line) if s.strip()]
+        if len(parts) > 1:
+            pieces += parts
+
+    seen = list(dict.fromkeys(pieces))
     if not seen:
         print("nothing to warm")
         return 1
