@@ -1955,6 +1955,26 @@ async def pulse_teacher(core: Any, *, force: bool = False, reason: str = "tick")
         return {"ok": True, "action": "asleep", "phase": "asleep", "reason": reason}
     if _TURN_LOCK.locked():
         return {"ok": True, "action": "busy", "phase": "thinking", "reason": reason}
+
+    # Nobody is there.
+    #
+    # The stage lease was only ever checked on the way IN (`_open_on_presence`).
+    # Once a session was open the pulse kept taking turns with no such check, so
+    # a room whose projector had been closed went on being taught: she asked
+    # questions into an empty room, nudged, waited, nudged again, and every one
+    # of those was a model turn nobody heard. It could not happen before because
+    # there was no way out of `/classroom` -- there is now, so this is the guard
+    # that makes a door safe.
+    #
+    # It is a presence FACT, the same one that opens the class, read the same
+    # way. Core is not deciding anything about the lesson: the session stays
+    # open, and walking back in re-attaches to the same period.
+    leases = getattr(core, "capability_leases", None)
+    if leases is not None:
+        leases.expire()
+        if not getattr(leases, "stage_owner", None):
+            return {"ok": True, "action": "empty_room", "phase": "asleep", "reason": "no_stage"}
+
     if not hermes_up():
         return {"ok": False, "action": "wait", "phase": "fault", "reason": "hermes"}
     silence = _silence_s(os_)

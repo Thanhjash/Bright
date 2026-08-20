@@ -21,8 +21,9 @@
  * See `docs/decisions/2026-08-20-the-front-door.md`: the picker is outside the
  * teaching loop, which is why it does not contradict "the room runs itself".
  */
-import { useCallback, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router'
+import { CORE_HTTP } from '../../lib/env'
 import { LOBBY_LABELS as L } from '../../room/labels'
 import { unlockAudioNow } from '../../speech/speakingDriver'
 import type { Who } from './LobbyCamera'
@@ -101,8 +102,34 @@ export function LobbyRoute() {
 
   const onKnown = useCallback((found: Who) => { setWho(found) }, [])
 
-  const ready = Boolean(room?.hermesUp && room?.speechUp) && !failed
+  const servicesUp = Boolean(room?.hermesUp && room?.speechUp) && !failed
+  const ready = servicesUp && Boolean(room?.prepared)
   const held = installed?.held ?? 0
+
+  /**
+   * Ask her to draft the period while nobody is waiting.
+   *
+   * This is "the agent works in the background" in its safe form.
+   * `prepare_period` runs ONE turn with a restricted tool set -- it cannot
+   * `say`, cannot touch the board, cannot mark anybody -- and it refuses
+   * outright if a class is in progress. Fired at most once per mount, only when
+   * the services are up, no class is open, and nothing is drafted yet.
+   *
+   * A resident background agent would be the wrong answer on this box: the
+   * model, Whisper and VieNeu share one CPU budget, and a loop holding the turn
+   * lock would delay the child's first word -- the one moment that matters
+   * most. Discrete and pre-scheduled beats always-on.
+   */
+  const asked = useRef(false)
+  useEffect(() => {
+    if (asked.current || !servicesUp || !room || room.sessionOpen || room.prepared)
+      return
+    asked.current = true
+    void fetch(`${CORE_HTTP}/teacher/prepare`, { method: 'POST' }).catch(() => {
+      // Unprepared is slow, never broken. The pill keeps saying so.
+      asked.current = false
+    })
+  }, [servicesUp, room])
 
   function enter() {
     // THE line that decides whether the video has sound. Browsers only start an
@@ -131,11 +158,27 @@ export function LobbyRoute() {
         >
           <span
             className={`h-3 w-3 rounded-full ${
-              entering ? 'bg-sky' : ready ? 'bg-mint' : failed ? 'bg-coral' : 'bg-amber'
-            }`}
+              entering
+                ? 'bg-sky'
+                : ready
+                  ? 'bg-mint'
+                  : failed
+                    ? 'bg-coral'
+                    : servicesUp
+                      ? 'bg-sky'
+                      : 'bg-amber'
+            } ${!ready && !failed ? 'animate-pulse' : ''}`}
           />
-          <span className="text-lg text-cream">
-            {entering ? L.entering : failed ? L.down : ready ? L.ready : L.warming}
+          <span data-lobby="readiness-text" className="text-lg text-cream">
+            {entering
+              ? L.entering
+              : failed
+                ? L.down
+                : ready
+                  ? L.ready
+                  : servicesUp
+                    ? L.drafting
+                    : L.warming}
           </span>
         </div>
 

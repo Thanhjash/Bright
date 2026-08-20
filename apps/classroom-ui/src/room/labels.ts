@@ -38,6 +38,9 @@ export const ROOM_LABELS = {
   boardFault: { cta: 'Bảng đang trục trặc một chút', sub: 'She keeps teaching — the board will come back' },
 } as const satisfies Record<string, RoomLabel>
 
+/** The door out of the room, back to the front page. Not a lesson control. */
+export const LEAVE_LABEL = 'Ra ngoài'
+
 /** The short lead-in on the heard-echo chip -- "You said:", in the class's own language. */
 export const HEARD_PREFIX = 'Con nói:'
 
@@ -88,6 +91,8 @@ export const LOBBY_LABELS = {
   locked: 'Chưa mở',
   /** The room is not ready to be entered yet. */
   warming: 'Đang chuẩn bị lớp…',
+  /** Services are up; she is reading the unit and drafting today's period. */
+  drafting: 'Cô đang soạn bài cho hôm nay…',
   ready: 'Lớp đã sẵn sàng',
   /** Something below the room is down; an adult has to look. */
   down: 'Lớp chưa mở được — nhờ thầy cô kiểm tra giúp',

@@ -39,6 +39,23 @@ python3 "$ROOT/tools/warm-tts.py" >/dev/null 2>&1 \
   && echo "retake: the unit's spoken lines are warm" \
   || echo "retake: WARNING could not warm TTS -- the opening line will be slow"
 
+# Draft the period while nobody is waiting.
+#
+# Resetting the database deletes `lesson_plans` along with everything else --
+# including the `prepare:<unit>` row -- so without this every take films the
+# cold first turn: ~70 seconds of her reading the unit map and writing a plan
+# while the class looks at a blank board. `start_teacher_session` already
+# replays a prepared plan when one exists; this is what makes one exist.
+#
+# It runs with a restricted tool set (PREPARE_TOOLS) and cannot say a word, so
+# it is safe to fire at a room with nobody in it.
+echo "retake: asking her to draft the period (about a minute, nobody is waiting)…"
+if curl -sf -X POST --max-time 240 "http://127.0.0.1:${CORE_PORT:-8004}/teacher/prepare" >/dev/null; then
+  echo "retake: the period is drafted -- the opening turn will be a greeting, not homework"
+else
+  echo "retake: WARNING the period is NOT drafted -- the first turn will take about a minute"
+fi
+
 echo
 echo "  the door:  http://127.0.0.1:3000/"
 echo "  the room:  http://127.0.0.1:3000/classroom"

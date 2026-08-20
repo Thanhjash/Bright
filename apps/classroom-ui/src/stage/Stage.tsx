@@ -11,6 +11,7 @@ import { DisconnectedNotice } from './DisconnectedNotice'
 import { useClassroom } from '../store/classroom'
 import { ClassroomNotice } from './ClassroomNotice'
 import { RoomDock } from './RoomDock'
+import { LeaveTheRoom } from './LeaveTheRoom'
 import { StudentCamera } from './StudentCamera'
 
 const WALL = `${CORE_HTTP}/assets/stage/classroom-board.png`
@@ -110,6 +111,7 @@ export function Stage() {
         <StudentCamera />
       </aside>
 
+      <LeaveTheRoom />
       <OverlayLayer />
       <RoomDock />
       <ClassroomNotice />

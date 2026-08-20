@@ -33,6 +33,18 @@ export interface RoomReadiness {
   hermesUp: boolean
   speechUp: boolean
   sessionOpen: boolean
+  /**
+   * Has she drafted this period yet?
+   *
+   * The services being up is NOT the same as the room being ready, and the
+   * difference is the worst seventy seconds of the demo: on a cold start the
+   * first turn is her reading the unit map and writing a plan while the class
+   * watches a blank board. A prepared plan (`lesson_plans`, keyed
+   * `prepare:<unit>`) is replayed by `start_teacher_session`, so the opening
+   * turn becomes a greeting instead of homework. Saying "ready" while that is
+   * still to come is a lie the pill used to tell.
+   */
+  prepared: boolean
 }
 
 /** Slow on purpose: nothing here changes between one child and the next. */
@@ -84,10 +96,12 @@ export function useInstalled(learnerId?: string): {
             .filter((p): p is Period => p !== null),
         })
         const status = statusRes as Record<string, unknown>
+        const prepare = status.lastPrepare as { ok?: unknown } | null | undefined
         setRoom({
           hermesUp: status.hermesUp === true,
           speechUp: status.speechUp === true,
           sessionOpen: status.sessionOpen === true,
+          prepared: Boolean(prepare && prepare.ok !== false),
         })
         setFailed(false)
       }
