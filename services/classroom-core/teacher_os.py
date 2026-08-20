@@ -1422,6 +1422,34 @@ def _session_recall(os_: TeacherOS) -> list[Any]:
         notes.append(RecalledMemory(text="board=" + json.dumps(os_.last_present, ensure_ascii=False), when="now"))
     if os_.reads:
         notes.append(RecalledMemory(text="reads=" + ",".join(dict.fromkeys(os_.reads)), when="now"))
+    # What she has USED this period, as opposed to what is on the board right
+    # now. `images=`/`clip=`/`exercise=` above are the current scene and say
+    # nothing about the twenty minutes before it.
+    #
+    # period_census has carried exactly this since it was written, and its own
+    # docstring names the reason: "No clip played all period is the finding,
+    # and no single turn can show it." That finding went to /teacher/status for
+    # the adult and was never once shown to the person who could act on it.
+    # Measured 2026-08-20: a whole period with clips=[] beside an ASSETS= line
+    # offering ten recordings, and two pictures where the map wants the picture
+    # to change.
+    #
+    # Core is listing its own rows. WHICH recording, and whether to play one at
+    # all, stays hers -- and this is the "shown state, not owned state" NS-5
+    # asks for, not a transcript.
+    used = [
+        ("clips", os_.period_clips),
+        ("images", os_.period_images),
+        ("exercises", os_.period_exercises),
+    ]
+    notes.append(
+        RecalledMemory(
+            text="USED_SO_FAR=" + "; ".join(
+                f"{label} {', '.join(values) if values else 'none'}" for label, values in used
+            ),
+            when="now",
+        )
+    )
     if os_.last_say:
         notes.append(RecalledMemory(text="last_teacher_line=" + os_.last_say, when="now"))
     # PLAN replaces BEATS. BEATS was a log Core wrote ABOUT her -- the last

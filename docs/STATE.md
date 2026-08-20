@@ -292,10 +292,54 @@ needs them (*"Không sao đâu."*, *"Mình khỏe, cảm ơn."*).
 **Still 6/8, and honestly so.** She played **no** recording at all this period
 (the last run did), and put up two pictures where the check wants three. And the
 repetition is reduced, not gone: *"Fine, thank you"* is still most of what she
-says for ten turns in the middle. Naming the material and counting the failures
-got her to check what landed and to move on at the end; it did not make her vary
-the route. That is the next thing, and it is a pacing question, not a plumbing
-one.
+says for ten turns in the middle.
+
+Chasing *that* turned up the fourth instance of the same pattern, and the most
+embarrassing one. `period_census` has carried `clips` / `images` / `exercises`
+since the day it was written, and its own docstring says why:
+
+> *"No clip played all period is the finding, and no single turn can show it."*
+
+That finding went to `/teacher/status`, for the adult, and **was never once
+shown to the person who could act on it.** She had `images=` and `clip=` — the
+*current scene* — and nothing at all about the twenty minutes before it. So a
+period with `clips=[]` sat next to an `ASSETS=` line offering ten recordings and
+she had no way to notice the gap.
+
+`USED_SO_FAR=clips none; images char-mai, char-minh; exercises vocabulary` now
+rides in the state block beside `OBJECTIVES=`. Same species as the three fixes
+above, same fix: Core witnessed it, computed it, showed a human, and told her
+nothing. It is the "shown state, not owned state" NS-5 asks for — a list of her
+own moves, not a transcript.
+
+### The run after that — 7/8
+
+```
+PERIOD REPORT   turns=15  p50=15.9s   refusals 0
+  clips      track-09          <- played 6 times; last run played NONE
+  images     char-mai, char-minh
+  exercises  vocabulary
+  outcomes   {correct: 2, near: 1, wrong: 10}     13 rows
+
+  PASS played a recording   <- was FAIL
+  PASS put up an exercise
+  FAIL changed the picture                        7/8
+```
+
+She also used `write_board` for the first time in any of these runs, and the
+`wrong → scaffold-down → near` chain repeated, so it is behaviour and not luck.
+
+**The one that is left is the honest one.** She can now *see* `images char-mai,
+char-minh` and still does not put up a third; she plays the same `track-09` six
+times rather than reaching for `track-10`. Every fix so far worked by removing
+a fact she was missing, and she is no longer missing this one — which is the
+evidence that the remaining problem is not information. It is that she has no
+reason to vary, and the map's pacing law ("two new items per ten minutes",
+"three different partners is a good target") is a law about *variety* that
+nothing has ever asked her to satisfy.
+
+That is a pedagogy problem, so it belongs in a skill, not in Python — most
+likely `take-the-floor` or a new one, and it is the next piece of work.
 
 **To re-run the live lesson:**
 

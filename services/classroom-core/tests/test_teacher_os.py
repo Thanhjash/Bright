@@ -693,6 +693,49 @@ def test_she_is_told_the_objectives_after_the_map_leaves_her_context() -> None:
     assert "next" not in line.lower()
 
 
+def test_she_is_told_what_she_has_already_used_this_period() -> None:
+    """"No clip played all period" was the adult's finding and never hers.
+
+    period_census has carried clips/images/exercises since it was written, and
+    its docstring names the reason: no single turn can show it. That went to
+    /teacher/status and stopped there. Measured 2026-08-20: a whole period with
+    clips=[] beside an ASSETS= line offering ten recordings.
+
+    `images=`/`clip=` in the same block are the CURRENT scene, which says
+    nothing about the twenty minutes before it -- so this is a different fact,
+    not a duplicate one.
+    """
+    core, _frames = _stage_core()
+    os_ = TeacherOS(core, unit_id="gs3-u1-hello", learner_id="learner-1")
+
+    def line() -> str:
+        texts = [item.text for item in teacher_os._session_recall(os_)]
+        return next(t for t in texts if t.startswith("USED_SO_FAR="))
+
+    # An empty period must SAY it is empty. Omitting the line when nothing has
+    # been used is the bug BOARD=empty was added to fix: "nothing yet" and "I
+    # was not told" would read identically.
+    assert "clips none" in line(), line()
+
+    async def run() -> None:
+        await os_.execute("show_image", {"asset": "asset://gs3/panels/char-mai.jpg"})
+        await os_.execute(
+            "play_clip",
+            {"asset": "asset://gs3/audio/track-09.mp3", "transcript": "How are you?"},
+        )
+
+    asyncio.run(run())
+    after = line()
+    assert "clips track-09" in after, after
+    assert "images char-mai" in after, after
+
+    # It is the period, not the board: put a different picture up and the first
+    # one must still be listed.
+    asyncio.run(os_.execute("show_image", {"asset": "asset://gs3/panels/char-ben.jpg"}))
+    both = line()
+    assert "char-mai" in both and "char-ben" in both, both
+
+
 def test_show_exercise_refuses_evaluative_text() -> None:
     core, _frames = _stage_core()
     os_ = TeacherOS(core, unit_id="gs3-u1-hello", learner_id="learner-1")

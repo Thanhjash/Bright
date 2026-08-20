@@ -241,6 +241,14 @@ def test_the_outcomes_reach_her_not_just_the_count(monkeypatch: pytest.MonkeyPat
     # She reads the map once and never again; the ids have to survive it.
     assert "OBJECTIVES=greet-and-name, answer-wellbeing, take-leave" in text
 
+    # And what she has already spent this period -- "no clip all period" was a
+    # finding the adult console could see and she could not.
+    ctx.recalled = [
+        RecalledMemory(text="USED_SO_FAR=clips none; images char-mai; exercises none", when="now"),
+    ]
+    spent = render_teacher_turn(ctx, "turn-used")
+    assert "USED_SO_FAR=clips none; images char-mai; exercises none" in spent
+
 
 def test_teacher_heartbeat_is_not_student_speech(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setenv("BRIGHT_TEACHER_AGENT", "1")
