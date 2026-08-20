@@ -24,6 +24,7 @@ import asyncio
 import io
 import logging
 import os
+import re
 import time
 import wave
 from contextlib import asynccontextmanager
@@ -246,6 +247,11 @@ app.add_middleware(
 class SpeechRequest(BaseModel):
     input: str = Field(min_length=1, max_length=4000)
     voice: str = DEFAULT_VOICE
+    # Per-sentence voice selection. On by default because a teacher line that
+    # code-switches is the normal case here, not the exception. Turn it off to
+    # force one voice over the whole line -- fixtures, or a deployment that
+    # deliberately runs one language.
+    segment: bool = True
     # OpenAI-compat fields we accept and ignore
     model: str | None = None
     response_format: str | None = None
@@ -310,6 +316,86 @@ async def set_model(req: ModelRequest) -> dict[str, Any]:
         }
 
 
+# A letter that exists in Vietnamese and in no English word. Presence is a
+# CERTAINTY, not a vote: counting Latin letters against Vietnamese ones marked
+# "Chuối" as English, because a Vietnamese word is mostly plain Latin letters
+# with one diacritic on it.
+_VI_LETTER = re.compile(
+    "[ÀÁẢÃẠĂẰẮẲẴẶÂẦẤẨẪẬÈÉẺẼẸÊỀẾỂỄỆÌÍỈĨỊÒÓỎÕỌÔỒỐỔỖỘƠỜỚỞỠỢÙÚỦŨỤƯỪỨỬỮỰỲÝỶỸỴĐ"
+    "àáảãạăằắẳẵặâầấẩẫậèéẻẽẹêềếểễệìíỉĩịòóỏõọôồốổỗộơờớởỡợùúủũụưừứửữựỳýỷỹỵđ]"
+)
+# Sentence-ish boundaries, kept WITH the sentence they end.
+_SENTENCE = re.compile(r"[^.!?…]*[.!?…]+[\"'”’)\]]*\s*|[^.!?…]+$")
+
+
+def _voice_spans(text: str, *, default_voice: str, other_voice: str) -> list[tuple[str, str]]:
+    """Split one teacher line into (voice_id, text) runs, one per sentence.
+
+    THE BUG THIS FIXES. Voice was picked once for a whole line, so a line that
+    code-switches got ONE voice for all of it. Measured on lines she really
+    said, 2026-08-20:
+
+        "How are you? Mình khỏe, cảm ơn. Listen and say: Fine, thank you."
+        "Không sao đâu. Say with me: Fine, thank you."
+
+    Both contain a Vietnamese letter, so both were spoken entirely by the
+    Vietnamese voice -- including "Listen and say: Fine, thank you.", which is
+    the English pronunciation the child is supposed to copy. In a lesson whose
+    whole point is the target language, the model utterance was wrong, and
+    `say` never fails so no census could ever show it.
+
+    Sentence granularity is the documented fallback in the code-switching
+    research (section 11: "span synthesis using one closely matched voice"),
+    chosen over per-word because "punctuation boundaries are forgiving" and
+    her switches land on them. The cost is a prosody reset at each boundary,
+    which is a pause a real teacher also takes between two languages.
+
+    Not solved here, and named so nobody thinks it is: a Vietnamese sentence
+    typed without diacritics still reads as English, and a switch INSIDE one
+    sentence still takes one voice. The research's real answer is typed
+    language spans carried down from the teacher, who already knows which span
+    is which -- this is the boring fix that stops the bleeding meanwhile.
+    """
+    spans: list[tuple[str, str]] = []
+    for match in _SENTENCE.finditer(text):
+        chunk = match.group(0)
+        if not chunk.strip():
+            continue
+        voice = other_voice if _VI_LETTER.search(chunk) else default_voice
+        if spans and spans[-1][0] == voice:
+            spans[-1] = (voice, spans[-1][1] + chunk)
+        else:
+            spans.append((voice, chunk))
+    return spans or [(default_voice, text)]
+
+
+def _concat_wavs(chunks: list[bytes]) -> bytes:
+    """Join same-format PCM WAVs into one. Piper voices share 16-bit mono output.
+
+    Sample rates can differ between voices; refuse rather than emit audio that
+    plays at the wrong pitch, and let the caller fall back to one voice.
+    """
+    if len(chunks) == 1:
+        return chunks[0]
+    params = None
+    frames: list[bytes] = []
+    for chunk in chunks:
+        with wave.open(io.BytesIO(chunk), "rb") as wf:
+            current = (wf.getnchannels(), wf.getsampwidth(), wf.getframerate())
+            if params is None:
+                params = current
+            elif current != params:
+                raise ValueError(f"voice formats differ: {params} vs {current}")
+            frames.append(wf.readframes(wf.getnframes()))
+    out = io.BytesIO()
+    with wave.open(out, "wb") as wf:
+        wf.setnchannels(params[0])
+        wf.setsampwidth(params[1])
+        wf.setframerate(params[2])
+        wf.writeframes(b"".join(frames))
+    return out.getvalue()
+
+
 def _synthesize(voice_id: str, text: str, speed: float) -> tuple[bytes, float]:
     voice = _state["voices"][voice_id]
     buf = io.BytesIO()
@@ -335,12 +421,44 @@ async def speech(req: SpeechRequest) -> Response:
     if voice_id not in _state["voices"]:
         raise HTTPException(503, f"no voices loaded; wanted {req.voice!r}")
 
+    # One voice per SENTENCE, not one per line. `voice` is the line's default
+    # -- the voice for anything with no Vietnamese letter in it -- and a
+    # code-switching sentence takes the other one. `segment: false` forces the
+    # whole line through one voice, which is what a fixture or a deliberate
+    # single-language override wants.
+    other = next((v for v in _state["voices"] if v != voice_id), voice_id)
+    spans = (
+        _voice_spans(req.input, default_voice=voice_id, other_voice=other)
+        if req.segment and len(_state["voices"]) > 1
+        else [(voice_id, req.input)]
+    )
+
     queued = time.perf_counter()
     async with _tts_lock:
         queue_ms = round((time.perf_counter() - queued) * 1000)
-        inference = asyncio.create_task(
-            asyncio.to_thread(_synthesize, voice_id, req.input, req.speed)
-        )
+
+        async def run() -> tuple[bytes, float]:
+            pieces: list[bytes] = []
+            spent = 0.0
+            for span_voice, span_text in spans:
+                chunk, elapsed = await asyncio.to_thread(
+                    _synthesize, span_voice, span_text, req.speed
+                )
+                pieces.append(chunk)
+                spent += elapsed
+            try:
+                return _concat_wavs(pieces), spent
+            except ValueError as exc:
+                # Voices disagree on sample rate. One voice at the wrong pitch
+                # is worse than one voice in the wrong language, so fall back
+                # rather than emit it.
+                log.warning("cannot join spans (%s); using %s for the whole line", exc, voice_id)
+                whole, elapsed = await asyncio.to_thread(
+                    _synthesize, voice_id, req.input, req.speed
+                )
+                return whole, spent + elapsed
+
+        inference = asyncio.create_task(run())
         try:
             data, dt = await asyncio.shield(inference)
         except asyncio.CancelledError:

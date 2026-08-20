@@ -19,26 +19,28 @@ import { SPEECH_URL } from '../lib/env'
 import { useClassroom } from '../store/classroom'
 
 /**
- * Which Piper voice says this line.
+ * The line's DEFAULT voice. The speech service picks per sentence from here.
  *
- * It used to compare counts: `viet > latin`. That is wrong for exactly the
- * words this teacher says most. "Chuối" scores one Vietnamese letter against
- * four Latin ones and came out English, so the single word she code-switches
- * to was mispronounced every time. Vietnamese words are mostly plain Latin
- * letters with one diacritic on them; counting was never going to work.
+ * This used to choose one voice for the whole line, and that was the bug.
+ * Measured on lines she really said, 2026-08-20:
  *
- * A Vietnamese-only letter is a certainty, not a vote. If one appears, the
- * line is Vietnamese. Nothing else in the ASCII range can tell us otherwise.
+ *   "How are you? Mình khỏe, cảm ơn. Listen and say: Fine, thank you."
+ *   "Không sao đâu. Say with me: Fine, thank you."
+ *
+ * Each contains a Vietnamese letter, so each was spoken end to end by the
+ * Vietnamese voice — including the English the child is meant to copy. In a
+ * lesson about the target language that is the one thing that must be right,
+ * and `say` never fails, so no census could show it.
+ *
+ * The heuristic itself moved to services/speech (`_voice_spans`), where both
+ * voices are already resident and one request can still return one WAV. Two
+ * copies of a language rule on either side of an HTTP call is exactly the
+ * "second, invisible spelling" this codebase deletes on sight.
  */
-function pickVoice(text: string): 'en' | 'vi' {
+function defaultVoice(): 'en' | 'vi' | undefined {
   const forced = import.meta.env.VITE_TTS_VOICE
-  if (forced === 'en' || forced === 'vi') return forced
-  return VIETNAMESE_LETTER.test(text) ? 'vi' : 'en'
+  return forced === 'en' || forced === 'vi' ? forced : undefined
 }
-
-/** Letters that exist in Vietnamese and in no English word. */
-const VIETNAMESE_LETTER =
-  /[ÀÁẢÃẠĂẰẮẲẴẶÂẦẤẨẪẬÈÉẺẼẸÊỀẾỂỄỆÌÍỈĨỊÒÓỎÕỌÔỒỐỔỖỘƠỜỚỞỠỢÙÚỦŨỤƯỪỨỬỮỰỲÝỶỸỴĐàáảãạăằắẳẵặâầấẩẫậèéẻẽẹêềếểễệìíỉĩịòóỏõọôồốổỗộơờớởỡợùúủũụưừứửữựỳýỷỹỵđ]/
 
 export type PlaybackStatus = 'completed' | 'cancelled' | 'failed'
 export type SpeechBehavior = 'queue' | 'interrupt' | 'replace'
@@ -101,7 +103,11 @@ async function tts(
   const res = await fetch(`${SPEECH_URL}/audio/speech`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ input: text, voice: pickVoice(text) }),
+    // A forced voice is a deliberate single-language override, so it also
+    // turns segmentation off; otherwise the service decides per sentence.
+    body: JSON.stringify(
+      defaultVoice() ? { input: text, voice: defaultVoice(), segment: false } : { input: text },
+    ),
     signal,
   })
   if (!res.ok) {
