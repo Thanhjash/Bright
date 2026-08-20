@@ -210,6 +210,12 @@ start_speech_if_ready() {
   # every repeat -- see services/speech/tts_vieneu.py. Set TTS_ENGINE=piper for
   # a box that needs the speed more than the tones.
   export TTS_ENGINE="${TTS_ENGINE:-vieneu}"
+  # The appliance ships to a school with no internet. VieNeu's engine checks
+  # the Hugging Face hub when it is built, which on a dead link is a timeout
+  # standing between a child and the first thing the teacher says. The weights
+  # are already in the local cache -- tools/fetch-vieneu.sh put them there --
+  # so tell the hub library to trust that and never reach out.
+  export HF_HUB_OFFLINE="${HF_HUB_OFFLINE:-1}"
   start_one speech "$SPEECH_PY" "$ROOT/services/speech/app.py"
 }
 
