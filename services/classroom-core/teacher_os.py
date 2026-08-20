@@ -1262,7 +1262,29 @@ async def prepare_period(core: Any, *, unit_id: str) -> dict[str, Any]:
             core.teacher_os = None
             core.session_id = prior_session
             core.student_id = prior_student
-    return {"ok": bool(got.get("ok")), "unitId": unit_id, "error": got.get("error")}
+
+    # Judge preparation by what it LEFT BEHIND, not by whether she spoke.
+    #
+    # The harness's terminal contract requires a successful `say` to call a
+    # turn complete (hermes.py: "teacher agent did not say") -- and `say` is
+    # precisely what PREPARE_TOOLS forbids, because the Stage is the only
+    # loudspeaker and nobody is in the room. So every preparation that did its
+    # job correctly reported itself as a failure, the nightly job has been
+    # failing silently since it was written, and `lastPrepare.ok` was never
+    # once true. Nothing downstream noticed, because nothing read it.
+    #
+    # What preparation is FOR is a plan. If one is on disk, it worked.
+    drafted = ""
+    getter = getattr(core.db, "get_lesson_plan", None)
+    if callable(getter):
+        drafted = str((getter(prepared_plan_id(unit_id)) or {}).get("plan") or "")
+    if drafted:
+        return {"ok": True, "unitId": unit_id, "planChars": len(drafted)}
+    return {
+        "ok": False,
+        "unitId": unit_id,
+        "error": got.get("error") or "she drafted no plan",
+    }
 
 
 def start_teacher_session(core: Any, *, unit_id: str, learner_id: str, learner_name: str) -> TeacherOS:

@@ -57,12 +57,12 @@ function PeriodCard({ period, state, onEnter }: {
       data-lobby="period"
       data-period={period.n}
       data-state={state}
-      className={`flex w-full items-center gap-5 rounded-3xl border-2 p-5 text-left transition ${TONE[state]} ${
+      className={`flex w-full items-center gap-[1.6vw] rounded-3xl border-2 p-[1.8vh_1.6vw] text-left transition ${TONE[state]} ${
         pressable ? 'cursor-pointer hover:brightness-110' : 'cursor-default opacity-70'
       }`}
     >
       <span
-        className={`grid h-16 w-16 shrink-0 place-items-center rounded-2xl font-display text-3xl font-extrabold ${
+        className={`grid h-[clamp(3.5rem,5vw,5.5rem)] w-[clamp(3.5rem,5vw,5.5rem)] shrink-0 place-items-center rounded-2xl font-display text-[clamp(1.7rem,2.6vw,2.8rem)] font-extrabold ${
           state === 'next' ? 'bg-amber text-ink-900' : 'bg-ink-900 text-muted'
         }`}
       >
@@ -70,13 +70,13 @@ function PeriodCard({ period, state, onEnter }: {
       </span>
 
       <span className="min-w-0 flex-1">
-        <span className="block font-display text-2xl font-extrabold text-cream">
+        <span className="block font-display text-[clamp(1.4rem,2.4vw,2.6rem)] font-extrabold text-cream">
           {period.title}
         </span>
         {period.objectives.length > 0 && (
           <span className="mt-2 flex flex-wrap gap-2">
             {period.objectives.map(o => (
-              <span key={o} className="rounded-full bg-ink-900/80 px-3 py-1 text-sm text-muted">
+              <span key={o} className="rounded-full bg-ink-900/80 px-3 py-1 text-[clamp(0.8rem,1.05vw,1.15rem)] text-muted">
                 {o}
               </span>
             ))}
@@ -84,7 +84,7 @@ function PeriodCard({ period, state, onEnter }: {
         )}
       </span>
 
-      <span className={`shrink-0 rounded-full px-4 py-2 font-display text-base font-extrabold ${BADGE[state]}`}>
+      <span className={`shrink-0 rounded-full px-[1.6vw] py-[1.2vh] font-display text-[clamp(0.95rem,1.35vw,1.5rem)] font-extrabold ${BADGE[state]}`}>
         {state === 'done' ? L.done : state === 'next' ? L.next : L.locked}
       </span>
     </button>
@@ -143,18 +143,18 @@ export function LobbyRoute() {
 
   return (
     <main className="min-h-full w-full overflow-y-auto bg-ink-900 px-[6vw] py-[6vh]">
-      <div className="mx-auto flex w-full max-w-3xl flex-col gap-8">
+      <div className="mx-auto flex w-full max-w-5xl flex-col gap-[1.8vh]">
         <header className="flex flex-col gap-2">
-          <h1 className="font-display text-5xl font-extrabold text-cream">{L.title}</h1>
-          <p className="text-xl text-muted">{L.subtitle}</p>
-          <p className="text-base text-muted/80">{L.heldCount(held)}</p>
+          <h1 className="font-display text-[clamp(2.4rem,4.4vw,4.6rem)] leading-tight font-extrabold text-cream">{L.title}</h1>
+          <p className="text-[clamp(1.1rem,1.7vw,1.9rem)] text-muted">{L.subtitle}</p>
+          <p className="text-[clamp(0.95rem,1.2vw,1.4rem)] text-muted/80">{L.heldCount(held)}</p>
         </header>
 
         <LobbyCamera onKnown={onKnown} />
 
         <div
           data-lobby="readiness"
-          className="flex items-center gap-3 rounded-2xl bg-ink-800 px-5 py-4"
+          className="flex items-center gap-3 rounded-2xl bg-ink-800 px-5 py-[1.4vh]"
         >
           <span
             className={`h-3 w-3 rounded-full ${
@@ -169,7 +169,7 @@ export function LobbyRoute() {
                       : 'bg-amber'
             } ${!ready && !failed ? 'animate-pulse' : ''}`}
           />
-          <span data-lobby="readiness-text" className="text-lg text-cream">
+          <span data-lobby="readiness-text" className="text-[clamp(1rem,1.5vw,1.7rem)] text-cream">
             {entering
               ? L.entering
               : failed
