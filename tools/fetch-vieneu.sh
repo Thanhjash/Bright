@@ -3,9 +3,9 @@
 #
 # WHY THIS EXISTS. The appliance ships to a school with no internet, so every
 # byte the room needs has to be pulled here, on a machine that has a network,
-# and carried. And `third_party/` is gitignored -- it is someone else's
-# repository -- so without this script a fresh checkout cannot rebuild the
-# speech stack at all.
+# and carried. And it lands in `references/`, which is gitignored -- it is
+# someone else's repository, and it sits beside the other vendored sources --
+# so without this script a fresh checkout cannot rebuild the speech stack.
 #
 # WHAT IT IS. Apache-2.0, torch-free on CPU, ONNX Runtime, bilingual VI-EN by
 # design, with 20 preset voices bundled in the source (no reference clip
@@ -20,7 +20,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-SRC="$ROOT/third_party/VieNeu-TTS"
+SRC="$ROOT/references/VieNeu-TTS"
 PY="${VIENEU_PYTHON:-$ROOT/services/speech/.venv/bin/python}"
 
 if [[ ! -x "$PY" ]]; then
@@ -58,7 +58,7 @@ echo "fetching weights (INT8 backbone + MOSS codec, ~165MB + codec)…"
 import sys, time
 from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1] if "__file__" in dir() else Path.cwd()
-sys.path.insert(0, str(Path("third_party/VieNeu-TTS/src").resolve()))
+sys.path.insert(0, str(Path("references/VieNeu-TTS/src").resolve()))
 from vieneu._v3_turbo_engine.onnx_runtime_lite import OnnxV3LiteEngine
 t = time.perf_counter()
 OnnxV3LiteEngine(onnx_subfolder="onnx_int8", threads=0)
