@@ -73,9 +73,19 @@ export interface MicRecorder {
 /** How much audio to keep behind the gate. 300ms covers a soft onset like the
  *  /f/ in "Fine" without dragging in the tail of whatever came before. */
 const PRE_ROLL_MS = 300
-/** Ring length. Longer than any single utterance the gate will allow, so the
- *  pre-roll is always available and the memory cost stays a few hundred KB. */
-const RING_SECONDS = 3
+/** Ring length. It holds the pre-roll and NOTHING ELSE.
+ *
+ *  This was 3 seconds and described as "longer than any single utterance the
+ *  gate will allow", which was simply untrue: `voiceGate` starts a capture with
+ *  `MAX_CLIP_MS = 15_000`. Anything past ~2.7s lapped the ring, and the slice
+ *  arithmetic `(write - from + len) % len` then returned a WRONG length from a
+ *  WRONG offset -- a corrupted clip, not a truncated one, which is worse than
+ *  the bug the ring exists to fix and would have appeared on the first long
+ *  sentence a child said.
+ *
+ *  So the ring only ever has to be longer than PRE_ROLL_MS, and the utterance
+ *  itself accumulates in a separate buffer that nothing overwrites. */
+const RING_SECONDS = 1
 
 export function createMicRecorder(onDeviceFailure?: (failure: MicFailure) => void): MicRecorder {
   let stream: MediaStream | null = null
@@ -102,7 +112,13 @@ export function createMicRecorder(onDeviceFailure?: (failure: MicFailure) => voi
   let ringWrite = 0
   let ringFilled = 0
   let ringRate = 48000
-  let captureFrom = -1
+  // The utterance being recorded right now. Allocated per capture and released
+  // on stop, so it is sized by what the gate actually allows rather than by a
+  // guess -- 15s of 48kHz float32 is ~2.9MB, held only while a child is
+  // speaking. Nothing is ever appended here unless a capture is running.
+  let capture: Float32Array | null = null
+  let captureLen = 0
+  let capturing = false
   let samples: Float32Array<ArrayBuffer> | null = null
   let watchedTrack: MediaStreamTrack | null = null
   let permission: PermissionStatus | null = null
@@ -230,6 +246,17 @@ export function createMicRecorder(onDeviceFailure?: (failure: MicFailure) => voi
           ringWrite = (ringWrite + 1) % buf.length
         }
         ringFilled = Math.min(buf.length, ringFilled + input.length)
+        // Straight-line append, no wrapping: the clip cannot eat its own start.
+        if (capturing && capture) {
+          const room = capture.length - captureLen
+          if (room > 0) {
+            const take = Math.min(room, input.length)
+            capture.set(take === input.length ? input : input.subarray(0, take), captureLen)
+            captureLen += take
+          }
+          // Full means the cap timer is about to fire anyway. Stop appending
+          // rather than grow without limit; the tail is the least valuable end.
+        }
       }
       src.connect(tap)
       // A ScriptProcessor only runs while connected to a destination. Route it
@@ -246,15 +273,17 @@ export function createMicRecorder(onDeviceFailure?: (failure: MicFailure) => voi
     }
   }
 
-  /** Ring slice from `from` to now, as a 16-bit mono WAV the ASR already eats. */
-  function readRing(from: number): Blob | null {
-    const buf = ring
-    if (!buf) return null
-    const length = (ringWrite - from + buf.length) % buf.length
-    if (length < 1) return null
+  /** The captured utterance as a 16-bit mono WAV the ASR already eats.
+   *
+   *  faster-whisper resamples on the way in (`decode_audio`), so writing the
+   *  context's own rate is correct and avoids resampling twice. */
+  function wavFromCapture(): Blob | null {
+    const buf = capture
+    const length = captureLen
+    if (!buf || length < 1) return null
     const out = new Int16Array(length)
     for (let i = 0; i < length; i++) {
-      const v = buf[(from + i) % buf.length]
+      const v = buf[i]
       out[i] = Math.max(-32768, Math.min(32767, Math.round(v * 32767)))
     }
     const header = new ArrayBuffer(44)
@@ -294,10 +323,22 @@ export function createMicRecorder(onDeviceFailure?: (failure: MicFailure) => voi
       }
       recorder.start()
       startedAt = performance.now()
-      // Begin the clip BEFORE the gate said so. This is the whole fix.
+      // Begin the clip BEFORE the gate said so. This is the whole fix: copy the
+      // last PRE_ROLL_MS out of the ring, then let the tap append live audio
+      // after it. The word that opened the gate is already in that copy.
+      capture = null
+      captureLen = 0
+      capturing = false
       if (ring) {
-        const back = Math.min(ringFilled, Math.round(ringRate * PRE_ROLL_MS / 1000))
-        captureFrom = (ringWrite - back + ring.length) % ring.length
+        const capMs = Math.max(500, Math.min(MAX_UTTERANCE_MS, maxDurationMs))
+        const room = Math.ceil(ringRate * (capMs + PRE_ROLL_MS) / 1000)
+        const back = Math.min(ringFilled, ring.length, Math.round(ringRate * PRE_ROLL_MS / 1000))
+        const buf = new Float32Array(room)
+        const from = (ringWrite - back + ring.length) % ring.length
+        for (let i = 0; i < back; i++) buf[i] = ring[(from + i) % ring.length]
+        capture = buf
+        captureLen = back
+        capturing = true
       }
 
       capTimer = setTimeout(() => {
@@ -312,16 +353,22 @@ export function createMicRecorder(onDeviceFailure?: (failure: MicFailure) => voi
       capTimer = undefined
       if (!active || active.state === 'inactive') return Promise.resolve(null)
 
-      const durationMs = performance.now() - startedAt
-      const from = captureFrom
-      captureFrom = -1
+      capturing = false
+      const pcm = wavFromCapture()
+      // The PCM's own length, not the wall clock since start(). They differ by
+      // the pre-roll, and the gate checks this number against MIN_CLIP_MS --
+      // reporting the shorter one would drop clips that are long enough.
+      const durationMs = pcm && captureLen > 0
+        ? (captureLen / ringRate) * 1000
+        : performance.now() - startedAt
+      capture = null
+      captureLen = 0
       return new Promise<Clip>((resolve) => {
         active.onstop = () => {
-          // The ring is the good clip: it starts before the gate opened, so it
-          // still has the word that opened it. The MediaRecorder blob is the
-          // fallback for a browser with no AudioContext, and it is the one
+          // The captured PCM is the good clip: it starts before the gate opened,
+          // so it still has the word that opened it. The MediaRecorder blob is
+          // the fallback for a browser with no AudioContext, and it is the one
           // that loses the first word.
-          const pcm = from >= 0 ? readRing(from) : null
           resolve({
             audio: pcm ?? new Blob(chunks, { type: active.mimeType || 'audio/webm' }),
             durationMs,
@@ -372,7 +419,9 @@ export function createMicRecorder(onDeviceFailure?: (failure: MicFailure) => voi
       ring = null
       ringWrite = 0
       ringFilled = 0
-      captureFrom = -1
+      capture = null
+      captureLen = 0
+      capturing = false
     },
   }
 }
