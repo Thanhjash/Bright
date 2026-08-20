@@ -153,7 +153,20 @@ MARKED_VOICE = os.environ.get("TTS_MARKED_VOICE", "vi")
 # piper | vieneu. VieNeu keeps Vietnamese tones through a code-switch and Piper
 # does not; Piper is 15-20x faster. See services/speech/tts_vieneu.py for the
 # measurement and why a cache is what makes the slow one usable.
-TTS_ENGINE = os.environ.get("TTS_ENGINE", "piper").strip().lower()
+# auto | piper | vieneu.
+#
+# AUTO IS THE RIGHT DEFAULT AND HERE IS WHY. VieNeu is the only engine that
+# keeps Vietnamese tones through a code-switch, and it costs 7-9s per new line
+# under real classroom load (Core + Hermes + Chromium + Whisper all resident),
+# on top of ~19s of model time. Piper costs ~0.2s and flattens "Không sao đâu"
+# to "Hong Sao Do".
+#
+# But this is an ENGLISH lesson: most of what she says carries no Vietnamese at
+# all, and for those lines the two engines are close -- Piper is arguably
+# better. So spend the slow engine only where it is the only one that works:
+# a line carrying the marked script. Measured over a live period, that was a
+# minority of her lines, which turns a 7s-per-line tax into an occasional one.
+TTS_ENGINE = os.environ.get("TTS_ENGINE", "auto").strip().lower()
 _vieneu: Any = None
 
 
@@ -459,7 +472,9 @@ async def speech(req: SpeechRequest) -> Response:
     # exists because Piper needs a different voice per language and resets
     # prosody at every boundary; VieNeu handles the switch inside one utterance,
     # which is the entire reason it is here. Splitting it would throw that away.
-    if TTS_ENGINE == "vieneu":
+    wants_marked = bool(_VI_LETTER.search(req.input))
+    use_vieneu = TTS_ENGINE == "vieneu" or (TTS_ENGINE == "auto" and wants_marked)
+    if use_vieneu:
         try:
             spoken = await asyncio.to_thread(vieneu().synthesize, req.input, speed=req.speed)
         except Exception as exc:  # noqa: BLE001 -- she must never go mute

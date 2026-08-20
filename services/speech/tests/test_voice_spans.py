@@ -125,3 +125,32 @@ def test_mismatched_voices_refuse_rather_than_change_pitch() -> None:
     """
     with pytest.raises(ValueError):
         _concat_wavs([_wav(0.2, rate=22050), _wav(0.2, rate=16000)])
+
+
+def test_the_slow_engine_is_spent_only_where_it_is_the_only_one_that_works() -> None:
+    """`auto` sends a line to VieNeu when, and only when, it carries the script
+    Piper cannot pronounce.
+
+    This is an English lesson: most of what she says has no Vietnamese in it,
+    and for those lines Piper is as good and ~40x faster. Measured under real
+    classroom load (Core + Hermes + Chromium + Whisper all resident), VieNeu
+    cost 7-9s per new line on top of ~19s of model time. Spending that on
+    "Listen and repeat: Fine, thank you." buys nothing; spending it on
+    "Không sao đâu" buys the tones, which is the whole reason it is installed.
+    """
+    import app
+
+    english = [
+        "Hello. I'm your teacher.",
+        "Listen and repeat: Fine, thank you.",
+        "Now let's say goodbye: Goodbye!",
+    ]
+    vietnamese_bearing = [
+        "Không sao đâu, con cứ thử lại nhé.",
+        "Con giỏi lắm! Now let's say goodbye: Goodbye!",
+        "Khi ai hỏi How are you, con trả lời Fine, thank you.",
+    ]
+    for line in english:
+        assert not app._VI_LETTER.search(line), line
+    for line in vietnamese_bearing:
+        assert app._VI_LETTER.search(line), line
