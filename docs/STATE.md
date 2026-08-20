@@ -1010,3 +1010,65 @@ Do not create a branch, commit, or merge to `main` unless the owner asks.
 | Ecological validity — passing every gate while failing with real children | Unaddressed |
 | API key rotation before any public demo | **Two now.** The MiMo key, and an OpenRouter key that was pasted into a chat transcript on 2026-08-19. Rotate both |
 | Whisper on real child L2 speech | No model validated for this; `base` is a demo choice, not a production claim. Mixed VI/EN in one sentence fails outright — "Chuối" is heard as "Joy" |
+
+---
+
+## 2d. ASR and TTS, measured without spending model credit — 2026-08-20
+
+`tools/speech_roundtrip.py` synthesizes a line and reads it straight back
+through our own ASR. The speech service is local and free; the teacher is not.
+Every question about voice or hearing gets answered here, not by paying for a
+live period to discover the microphone was wrong.
+
+It measures **intelligibility**: if our own ASR cannot recover the words, a
+child certainly cannot. It is a floor, not the acceptance gate — speaker
+similarity, accent breaks and naturalness need bilingual human raters
+(research §12), and nothing may be called *adopted* on machine evidence alone.
+
+```
+kind  voice   asr      lang  words   line -> heard
+en    en     2293ms    en    2/2     Hello. I'm Ben.      -> "Hello, I'm Ben."
+en    en     2425ms    en    3/3     How are you?         -> 'How are you?'
+en    en     2681ms    en    3/3     Fine, thank you.     -> 'Fine, thank you.'
+en    en     2430ms    en    1/1     Goodbye.             -> 'Goodbye.'
+en    en     2500ms    en    6/6     Listen and repeat: Fine, thank you.
+vi    vi     2744ms    vi    3/5     Con chưa hiểu bài này  -> 'Bỏ chứ hiểu bài này'
+vi    vi     2463ms    vi    2/4     Con không biết cô ạ    -> 'và không biết của anh.'
+vi    vi     2715ms    vi    0/3     Không sao đâu.         -> ''          <- EMPTY
+mix   en/vi  2516ms    en    6/9     Không sao đâu. Say with me: Fine, thank you.
+mix   en/vi  4461ms    vi    5/12    How are you? Mình khỏe, cảm ơn. Listen and say: ...
+                                     content words recovered: 31/48 (65%)
+```
+
+**English is solid: 15/15 content words, four of five lines verbatim.** The
+target language — the thing a child copies and the thing we mark them on — is
+heard correctly. That is the half that had to work.
+
+**Vietnamese is the weak link: 5/12**, and a short line came back **empty**.
+Same failure shape as the `small` weights: silence and "the child said nothing"
+are indistinguishable to the room.
+
+**Mixed lines lose whichever half the clamp did not pick.** The decoder
+conditions one language over the whole utterance, so `en` swallowed
+*"Không sao đâu"* and `vi` mangled *"Listen and say"*. This is the ASR mirror of
+the TTS bug fixed in `a4268ab`, and the research predicted it exactly:
+*"utterance-level language conditioning can bias code-switched decoding"*. Now
+confirmed on our own audio rather than quoted.
+
+It does **not** justify swapping the ASR family — the research is explicit that
+nothing changes before the 72-child locked evaluation. It does say where the
+next real work is: per-span decoding, or PhoWhisper as the cheap bake-off.
+
+### The board fight `say` was losing
+
+Recorded live: she called `show_exercise(choice)` and said *"Look at the board.
+How does Mai answer? A or B?"* in one message — and the board showed her
+`board_text` instead, so the class was asked to choose between options it could
+not see. Our own standing prompt causes it (*"Put every tool call you already
+know you need in ONE message — including say"*) and warns about the outcome two
+paragraphs later.
+
+A deliberate hand now beats the convenience one: when `show_exercise`,
+`show_image` or `write_board` ran this turn, `say(board_text)` is **skipped and
+reported** instead of overwriting. She still speaks; the board keeps what she
+put there; the result says why.

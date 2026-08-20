@@ -837,7 +837,30 @@ class TeacherOS:
             # names what happened to the board while `ok` stays True.
             raw_board = str(arguments.get("board_text") or "")
             board_text = _clean_board_markdown(raw_board) if raw_board else None
-            if board_text:
+            # A DELIBERATE HAND BEATS THE CONVENIENCE ONE. show_exercise,
+            # show_image and write_board are whole tools she chose to call;
+            # board_text rides along on say. When both land in the same message
+            # the chalk used to win by arriving last, and it silently threw the
+            # other one away.
+            #
+            # That is not hypothetical and it is our own doing: the standing
+            # prompt says "Put every tool call you already know you need in ONE
+            # message -- including say". Recorded live 2026-08-20, she called
+            # show_exercise(choice) and said "Look at the board. How does Mai
+            # answer? A or B?" in one message -- and the board showed her
+            # board_text instead, so the class was asked to choose between
+            # options it could not see. The same standing prompt warns about
+            # exactly that outcome two paragraphs further down.
+            #
+            # Degrade loudly, as the rest of this branch already does: the line
+            # is spoken, the board keeps what she deliberately put there, and
+            # the result says why so the next turn is not a guess.
+            if board_text and any(tool in BOARD_TOOLS for tool in self.turn_tools):
+                board_result = (
+                    "skipped: the board already shows what you put up this turn -- "
+                    "board_text would have replaced it"
+                )
+            elif board_text:
                 board_result = "applied"
                 self.last_writing = board_text
                 self.last_present = {"layout": "text", "slots": {"main": board_text}}
