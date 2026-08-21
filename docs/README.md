@@ -88,6 +88,7 @@ change to the north star.
 
 | | |
 |---|---|
+| [the-silent-failure.md](design/the-silent-failure.md) | **Read this first when something "just does nothing".** One bug shape that cost most of 2026-08-21 in six components, what each instance looked like, the rules that came out of it, and what is still open |
 | [data-and-content.md](design/data-and-content.md) | **Where the data is.** The curriculum on disk, the child's record in SQLite, faces in a third store, and how any of it reaches her prompt |
 | [teaching-loop.md](design/teaching-loop.md) | **The workflow.** The day, one turn in full, the board, and the failure/restart doctrine |
 | [tool-surface.md](design/tool-surface.md) | **Her hands.** What teaching requires, the four gaps, the proposed 11 tools, and what she deliberately never gets |

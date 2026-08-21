@@ -569,6 +569,56 @@ and *leaving does not end the period*.
   own UI process hot-reloads fine. If a UI fix appears to do nothing, restart the
   server before doubting the fix.
 
+## 2h. The day the room would not speak — 2026-08-21
+
+Six failures, one shape, written up in full as
+[design/the-silent-failure.md](design/the-silent-failure.md). Read that file
+before debugging anything that "just does nothing". The short version:
+
+**She opened the class perfectly and the greeting never reached a speaker.**
+Census `ok=True`, read the unit map, read open-a-period, put the picture up,
+called `say` — and NOT ONE synthesis request in the five minutes that followed.
+`speech.say` spoke only if it already held the audio lease; the rescue for
+exactly that sat twenty lines below on `speech.turn.started`. Two more doors onto
+the same failure came out of the audit: `stage.lease.granted` was the one speech
+event the transport gate did not pass, and `speech.text.delta` had no rescue at
+all. Plus a `PendingSpeech` hold-and-replay queue that could never hold anything
+— `pending` was never assigned — so the file read as though the race was handled.
+
+**A child spoke all session and was never heard.** peak/RMS logging settled it in
+one measurement: his clips came in at rms 0.042-0.094 against a real-speech
+reference of 0.0796. The microphone was fine. `vad_filter=True` ran Silero at 0.5
+over the whole clip, decided a child talking at ordinary volume across a room
+with a fan contains no speech ANYWHERE, and handed Whisper an empty array. The
+teammate's system hears him fine and runs whisper.cpp with no VAD. Now off by
+default (`ASR_VAD_FILTER=1` restores it).
+
+**Whisper was six times slower than it needed to be.** 16s of clean audio decoded
+in 2.3s; 3.4s of live mic audio took 11.4s. faster-whisper's default
+`temperature` is a fallback ladder and a repetition loop fails the compression
+check on every rung. Forced to fire on one clip: 7110ms → 874ms.
+
+**An hour went into a "flaky model" that was switched off.** `402 Insufficient
+credits` was flattened into `"teacher agent did not say"`, and `hermesUp` stayed
+green.
+
+**And a diagnostic that failed the way the bug does.** The ASR clip dump was
+pasted into the TTS route where `audio` is not in scope; `NameError` into a bare
+`except: pass`, no file, no error.
+
+### Two hours lost to the environment, not the code
+
+- **WSL kept dying.** `journalctl -b -1`: SIGBUS across python, hermes, dash and
+  **init** in the same second, with `Write-error on swap-device`. `swap.vhdx` is
+  a sparse file on a C: drive at 100% (836MB free of 553GB) — it cannot grow, so
+  any write to swap fails and every process holding swapped pages dies.
+  `swapoff -a` removes the failure mode; the box has 31GB and the stack uses 3.
+- **`pkill -f <pattern>` matches this agent's own command line.** Third time.
+  Kill by port: `ss -lptn 'sport = :3001'`.
+- **Vite does not see edits under `/mnt/d`** (WSL 9p), so a dev server started
+  before a change serves stale modules and every measurement reads "no change".
+  Cost an hour three separate times. `retake.sh` restarts the UI now.
+
 ## 3. Layer status — honest
 
 | Layer | Status | Truth |
