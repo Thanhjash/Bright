@@ -597,9 +597,24 @@ def create_app(settings: Settings | None = None, core: Core | None = None) -> Fa
         core_ = get_core()
         units = list_units()
         unit = (unitId or "").strip() or (units[0] if len(units) == 1 else "")
-        learner = (learnerId or "").strip() or core_.settings.default_learner_id
+        # WHO IS ASKING, OR NOBODY.
+        #
+        # This used to fall back to `settings.default_learner_id` -- a
+        # single-learner scaffold with no rows -- and answer 200 OK. So a child
+        # with seventeen observations was told they had none, confidently, and
+        # nothing anywhere said a different subject had been substituted.
+        # Measured over the filmed period: thirty of thirty-two calls arrived
+        # with no `learnerId`, because the door only knows one once its camera
+        # has placed a face.
+        #
+        # Requiring the parameter would be worse: the lobby polls this on mount,
+        # would 422 forever, and the background prepare it gates would never
+        # fire. So answer -- but answer "I do not know who you are", which the
+        # caller can render honestly, instead of somebody else's empty record.
+        learner = (learnerId or "").strip()
+        known = bool(learner)
         held = 0
-        if unit:
+        if unit and known:
             try:
                 held = core_.db.count_periods_held(student_id=learner, lesson_id=unit)
             except Exception:  # noqa: BLE001 -- a dark front door must not be a 500
@@ -612,9 +627,15 @@ def create_app(settings: Settings | None = None, core: Core | None = None) -> Fa
         # deliberately do NOT count -- a progress bar that fills on "not quite"
         # is a progress bar that lies to a child about what they can do.
         done: set[str] = set()
-        if unit:
+        if unit and known:
             try:
                 for row in core_.db.list_observations(student_id=learner) or []:
+                    # This unit's evidence only. Another unit's `greet-and-name`
+                    # is another unit's business, and the teacher's own COVERED
+                    # line already draws that line -- a card and the class it
+                    # opens must not disagree.
+                    if str(row.get("activity_id") or "") != unit:
+                        continue
                     if str(row.get("result") or "") == "correct":
                         done.add(str(row.get("skill") or ""))
             except Exception:  # noqa: BLE001 -- a dark front door beats a 500
@@ -628,7 +649,11 @@ def create_app(settings: Settings | None = None, core: Core | None = None) -> Fa
         return {
             "units": units,
             "unitId": unit,
-            "learnerId": learner,
+            "learnerId": learner or None,
+            # Whether `held` and `covered` are about anybody at all. Without
+            # this, "nobody asked" and "asked, and they have done nothing" are
+            # the same answer on the wire.
+            "learnerKnown": known,
             "held": held,
             "periods": periods,
         }

@@ -19,9 +19,9 @@
  *               ships. Core would hand this component a name resolved from
  *               a `student_id`; this file never resolves a face itself.
  */
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { CAMERA_LABELS } from '../room/labels'
-import { useIdentify } from './useIdentify'
+import { useIdentify, type Identified } from './useIdentify'
 
 type CameraStatus = 'requesting' | 'live' | 'off' | 'no-camera'
 
@@ -76,7 +76,20 @@ export function StudentCamera({ recognisedName }: { recognisedName?: string } = 
   }, [])
 
   // Only ask while there is actually a picture to send.
-  useIdentify(videoRef, status === 'live', (who) => setSeen(who.displayName || undefined))
+  //
+  // MEMOISED, and that is the whole point. `useIdentify` is built to stop --
+  // MAX_TRIES = 10, and it gives up the moment the room is confident, because
+  // "re-identifying the same child for the rest of the period is pure cost".
+  // Its effect depends on this callback, so a fresh arrow on every render tore
+  // the effect down and rebuilt it, resetting `done` and `tries` each time.
+  // Measured over the filmed period on 2026-08-21: fifty-five identifications
+  // in thirty-one minutes against a stated cap of ten, burning the CPU the
+  // decoder was short of. Nothing errored; the budget was simply never spent.
+  // `LobbyRoute` gets this right twenty lines from its own poller.
+  const onIdentified = useCallback((who: Identified) => {
+    setSeen(who.displayName || undefined)
+  }, [])
+  useIdentify(videoRef, status === 'live', onIdentified)
 
   const named = recognisedName ?? seen
   const label = status === 'live'

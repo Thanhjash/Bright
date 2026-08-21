@@ -30,6 +30,17 @@ export interface Period {
 export interface Installed {
   unitId: string
   learnerId: string
+  /**
+   * Whether `held` and every `covered` above are about anybody at all.
+   *
+   * The door only learns a learner id once its camera has placed a face, and
+   * for every poll before that Core is answering about nobody. It used to
+   * answer about the deployment's scaffold learner instead, so a child with
+   * seventeen witnessed answers was shown an empty bar with no hint that a
+   * different subject had been substituted. Zero and "not known" must not
+   * render identically.
+   */
+  learnerKnown: boolean
   held: number
   periods: Period[]
 }
@@ -97,6 +108,7 @@ export function useInstalled(learnerId?: string): {
         setInstalled({
           unitId: typeof body.unitId === 'string' ? body.unitId : '',
           learnerId: typeof body.learnerId === 'string' ? body.learnerId : '',
+          learnerKnown: body.learnerKnown === true,
           held: typeof body.held === 'number' ? body.held : 0,
           periods: (Array.isArray(body.periods) ? body.periods : [])
             .map(asPeriod)

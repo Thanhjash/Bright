@@ -389,3 +389,65 @@ def test_stage_cannot_submit_broadcast_speech_capability(client: TestClient):
         denied = ws.receive_json()
         assert denied["type"] == "error"
         assert denied["payload"]["code"] == "control_input_lease_required"
+
+
+def test_the_front_door_never_answers_for_a_learner_nobody_asked_about(
+    client: TestClient, settings: Settings
+) -> None:
+    """A confident empty answer about the wrong child is worse than no answer.
+
+    This route used to fall back to `settings.default_learner_id` -- a
+    single-learner scaffold with no rows -- whenever `learnerId` was omitted,
+    and return 200 OK. Measured over the filmed period on 2026-08-21: thirty of
+    thirty-two calls omitted it, because the door only learns an id once its
+    camera has placed a face. So a child with seventeen `correct` observations
+    was shown an empty progress bar all lesson, and nothing said a different
+    subject had been substituted.
+    """
+    from db import Database
+
+    db = Database(settings.db_path)
+    db.upsert_student("thien-1", "Thien", "Thien")
+    db.record_observation(
+        "thien-1", "greet-and-name", "correct", "unit=gs3-u1-hello",
+        activity_id="gs3-u1-hello",
+    )
+
+    anonymous = client.get("/library/periods").json()
+    assert anonymous["learnerKnown"] is False
+    assert anonymous["learnerId"] is None
+    assert anonymous["held"] == 0
+    # It still describes what is INSTALLED -- the door must not go dark.
+    assert anonymous["periods"], anonymous
+    for period in anonymous["periods"]:
+        assert period["covered"] == [], period
+
+    named = client.get("/library/periods", params={"learnerId": "thien-1"}).json()
+    assert named["learnerKnown"] is True
+    assert named["learnerId"] == "thien-1"
+    covered = [o for period in named["periods"] for o in period["covered"]]
+    assert "greet-and-name" in covered, named["periods"]
+
+
+def test_coverage_is_scoped_to_the_unit_it_was_earned_in(
+    client: TestClient, settings: Settings
+) -> None:
+    """Another unit's `greet-and-name` is another unit's business.
+
+    `observations.skill` is not unique across units, so counting every row for
+    a learner marks a period covered on evidence earned somewhere else. The
+    teacher's own COVERED line filters by unit; a card and the class it opens
+    must not disagree.
+    """
+    from db import Database
+
+    db = Database(settings.db_path)
+    db.upsert_student("thien-2", "Thien", "Thien")
+    db.record_observation(
+        "thien-2", "greet-and-name", "correct", "unit=some-other-unit",
+        activity_id="some-other-unit",
+    )
+
+    body = client.get("/library/periods", params={"learnerId": "thien-2"}).json()
+    covered = [o for period in body["periods"] for o in period["covered"]]
+    assert covered == [], body["periods"]

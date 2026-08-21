@@ -57,7 +57,11 @@ type Status = {
   learnerName?: string | null
 }
 
-type DockPhase = 'asleep' | 'waking' | 'speaking' | 'listen' | 'hearing' | 'thinking' | 'fault'
+/** Consecutive status-poll failures before the strip admits a fault. One is a
+ *  hiccup; three (7.5s) is Core being gone. */
+const STATUS_FAILURES_BEFORE_FAULT = 3
+
+type DockPhase = 'asleep' | 'speaking' | 'listen' | 'hearing' | 'thinking' | 'fault'
 
 async function readJson(res: Response): Promise<Record<string, unknown>> {
   const text = await res.text()
@@ -88,6 +92,8 @@ export function RoomDock() {
   const deviceFailureRef = useRef<((failure: MicFailure) => void) | null>(null)
   const mic = useRef(createMicRecorder((failure) => deviceFailureRef.current?.(failure)))
   const phaseRef = useRef<DockPhase>('asleep')
+  /** Consecutive `/teacher/status` failures. Reset by any answer at all. */
+  const failures = useRef(0)
   /** The latest status, readable from async code without re-creating the
    *  submit callback every poll. Carries the child's name for the decoder. */
   const statusRef = useRef<Status>({})
@@ -107,6 +113,7 @@ export function RoomDock() {
       try {
         const body = (await fetch(`${CORE_HTTP}/teacher/status`).then((r) => r.json())) as Status
         if (cancel) return
+        failures.current = 0
         setStatus(body)
         statusRef.current = body
         if (phaseRef.current === 'hearing') return
@@ -119,7 +126,19 @@ export function RoomDock() {
           setDock('asleep')
         }
       } catch {
-        if (!cancel && phaseRef.current === 'asleep') setDock(connected ? 'fault' : 'asleep')
+        // A DEAD STATUS POLL MUST EVENTUALLY SAY SO, WHATEVER THE DOCK SAYS NOW.
+        //
+        // This rescued exactly one phase -- `asleep` -- so if `/teacher/status`
+        // died while the strip read "Tới lượt con nói" or "Cô đang nghĩ", it
+        // went on reading that for the rest of the class. A crashed Core looked,
+        // from the back of the room, like a teacher still thinking.
+        //
+        // One failure is a hiccup and must not flicker a fault onto a projector;
+        // three in a row (7.5s) is Core being gone.
+        if (cancel) return
+        failures.current += 1
+        if (phaseRef.current === 'asleep') setDock(connected ? 'fault' : 'asleep')
+        else if (failures.current >= STATUS_FAILURES_BEFORE_FAULT) setDock('fault')
       }
     }
     void tick()
@@ -131,7 +150,7 @@ export function RoomDock() {
   }, [connected, setDock, speaking])
 
   useEffect(() => {
-    if (phaseRef.current === 'hearing' || phaseRef.current === 'thinking' || phaseRef.current === 'waking') return
+    if (phaseRef.current === 'hearing' || phaseRef.current === 'thinking') return
     if (status.sessionOpen) setDock(speaking ? 'speaking' : 'listen')
   }, [setDock, speaking, status.sessionOpen])
 
@@ -196,7 +215,12 @@ export function RoomDock() {
       // real utterance in a noisy classroom rarely scores that high. When it
       // is wrong, the cost is one lost sentence and the child repeats; the
       // other way round, the cost is the teacher talking to furniture.
-      if (heardText && heard.noSpeechProbability < 0.9) {
+      // `transcribe` already threw for anything at or above 0.6 (`stt.ts`), and
+      // for empty text, so both halves of the old `heardText && < 0.9` guard
+      // were unreachable -- dead code whose comment described enforcement that
+      // had moved two layers away. The real threshold lives in `stt.ts`; one
+      // spelling of a rule, not two.
+      if (heardText) {
         setHeard(heardText)
         setHint(null)
         turnInFlight.current = true
@@ -216,7 +240,12 @@ export function RoomDock() {
     } catch (err) {
       // A clip with no speech in it is the normal case in a room with noise,
       // not a fault worth shouting about on the projector.
-      if (err instanceof SttError && err.failure === 'empty') setHint(null)
+      // SAY SOMETHING. `setHint(null)` left a child who had just spoken looking
+      // at a light that said "your turn" and no sign they had been heard at
+      // all -- and `ROOM_LABELS.unclear` ("Cô chưa nghe rõ") existed all along,
+      // wired to nothing. Noise is the normal case in a real room; being told
+      // to say it again is not a fault, it is an invitation.
+      if (err instanceof SttError && err.failure === 'empty') setHint(ROOM_LABELS.unclear.sub)
       else setHint(err instanceof SttError ? err.message : 'The teacher needs a moment.')
       setDock('listen')
     } finally {
@@ -292,7 +321,7 @@ export function RoomDock() {
 
   const copy = deaf ? ROOM_LABELS.deaf : labelFor(phase, ready)
 
-  const waiting = phase === 'asleep' || phase === 'fault' || phase === 'waking'
+  const waiting = phase === 'asleep' || phase === 'fault'
   // A live mic problem (`hint`) always outranks the resting sub-label -- it
   // is the more actionable thing to show under the same headline, not a
   // second banner competing for its own row.
@@ -374,8 +403,6 @@ function labelFor(phase: DockPhase, ready: boolean): { cta: string; sub: string 
       return ROOM_LABELS.listening
     case 'fault':
       return ROOM_LABELS.fault
-    case 'waking':
-      return ROOM_LABELS.waking
     default:
       return ready ? ROOM_LABELS.comingReady : ROOM_LABELS.comingWaiting
   }

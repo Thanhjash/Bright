@@ -100,6 +100,14 @@ export function LobbyCamera({ onKnown }: { onKnown: (who: Who) => void }) {
     if (phase !== 'looking')
       return
     let cancel = false
+    /** One attempt that did not place a face -- whatever the reason. */
+    const missed = () => {
+      if (cancel || settled.current)
+        return
+      misses.current += 1
+      if (misses.current >= STRANGER_TRIES)
+        setPhase('stranger')
+    }
     const tick = async () => {
       const video = videoRef.current
       if (!video || settled.current)
@@ -113,8 +121,24 @@ export function LobbyCamera({ onKnown }: { onKnown: (who: Who) => void }) {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ image_base64: frame }),
         })
-        if (!res.ok || cancel)
+        if (cancel)
           return
+        if (!res.ok) {
+          // A REFUSAL IS STILL AN ANSWER FOR THIS COUNTER.
+          //
+          // `misses` used to move only on a 2xx that said "not recognised", so
+          // with vision or Core down the door stayed on `looking` for ever and
+          // the "I'm new" offer -- the ONLY way into the room for a face the
+          // appliance has never seen -- never appeared. A child would stand in
+          // front of a camera that was looking at nothing, with no way in.
+          //
+          // The offer is safe to show either way: enrolment is a deliberate,
+          // consented act, and if perception really is down the attempt fails
+          // loudly with a message an adult can act on, which is strictly better
+          // than a door that waits silently for ever.
+          missed()
+          return
+        }
         const body = await res.json() as { recognised?: boolean, studentId?: string, displayName?: string }
         if (body.recognised && body.studentId) {
           settled.current = true
@@ -124,12 +148,14 @@ export function LobbyCamera({ onKnown }: { onKnown: (who: Who) => void }) {
           onKnown(found)
           return
         }
-        misses.current += 1
-        if (misses.current >= STRANGER_TRIES)
-          setPhase('stranger')
+        missed()
       }
       catch {
-        // Perception is optional. Never let it surface at the door.
+        // Perception is optional and must never surface at the door as an
+        // error -- but "we could not ask" still has to move the counter, or
+        // the door never offers the child a way in. Same reasoning as the
+        // !res.ok branch above.
+        missed()
       }
     }
     void tick()

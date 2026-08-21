@@ -35,7 +35,6 @@ export const ROOM_LABELS = {
    *  not read as a fault -- it is an invitation. */
   tooShort: { cta: 'Cô chưa kịp nghe', sub: 'Con nói dài hơn một chút nhé' },
   fault: { cta: 'Cô đang kiểm tra lớp', sub: 'She will start again herself' },
-  waking: { cta: 'Cô đang tới bảng', sub: '' },
   comingReady: { cta: 'Cô sắp bắt đầu', sub: 'She opens the class herself' },
   comingWaiting: { cta: 'Đang chuẩn bị lớp', sub: 'Waiting for the teacher' },
   /**
@@ -109,6 +108,10 @@ export const LOBBY_LABELS = {
   entering: 'Đang vào lớp…',
   /** The count under the header. */
   heldCount: (n: number) => (n === 0 ? 'Con chưa học buổi nào' : `Con đã học ${n} buổi`),
+  /** Before the camera has placed a face, the room is not counting ANYBODY's
+   *  lessons. Saying "you have had none" would be a claim about a child the
+   *  door has not met. */
+  heldUnknown: 'Cô chưa biết con là ai — bấm vào bài để bắt đầu',
   /** How much of a period the room has actually witnessed. */
   objectives: (done: number, total: number) => `${done}/${total} mục tiêu`,
   /** What this period will teach, from the unit map's own words. */

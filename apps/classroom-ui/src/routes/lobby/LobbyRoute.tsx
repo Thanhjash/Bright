@@ -59,10 +59,12 @@ const TONE: Record<CardState, { card: string; node: string; badge: string }> = {
   },
 }
 
-function PeriodCard({ period, state, index, onEnter }: {
+function PeriodCard({ period, state, index, learnerKnown, onEnter }: {
   period: Period
   state: CardState
   index: number
+  /** Whether `covered` is about anybody. False until the door places a face. */
+  learnerKnown: boolean
   onEnter: () => void
 }) {
   const pressable = state === 'next'
@@ -114,7 +116,10 @@ function PeriodCard({ period, state, index, onEnter }: {
         {/* Honest progress. `covered` counts only objectives the room witnessed
             go RIGHT — a bar that fills on "not quite" lies to a child about
             what they can do. */}
-        {total > 0 ? (
+        {/* No bar until the room knows whose progress this would be. An empty
+            bar and "we have not met you" are different facts, and drawing 0%
+            for an unidentified child is a claim about a child nobody met. */}
+        {total > 0 && learnerKnown ? (
           <span className="flex items-center gap-[0.8vw]">
             <span className="h-[0.9vh] min-h-[6px] flex-1 overflow-hidden rounded-full bg-ink-950/70">
               <span
@@ -152,6 +157,7 @@ export function LobbyRoute() {
   const servicesUp = Boolean(room?.hermesUp && room?.speechUp) && !failed
   const ready = servicesUp && Boolean(room?.prepared)
   const held = installed?.held ?? 0
+  const learnerKnown = installed?.learnerKnown ?? false
   const periods = installed?.periods ?? []
 
   /**
@@ -232,7 +238,9 @@ export function LobbyRoute() {
               {L.title}
             </h1>
             <p className="text-[clamp(1rem,1.5vw,1.7rem)] text-muted">{L.subtitle}</p>
-            <p className="text-[clamp(0.8rem,1.1vw,1.2rem)] text-muted/60">{L.heldCount(held)}</p>
+            <p className="text-[clamp(0.8rem,1.1vw,1.2rem)] text-muted/60">
+              {learnerKnown ? L.heldCount(held) : L.heldUnknown}
+            </p>
           </header>
 
           <LobbyCamera onKnown={onKnown} />
@@ -273,6 +281,7 @@ export function LobbyRoute() {
               period={period}
               index={i}
               state={cardState(period, held)}
+              learnerKnown={learnerKnown}
               onEnter={enter}
             />
           ))}
