@@ -33,6 +33,25 @@ fi
 BRIGHT_REOPEN_AFTER_CLOSE_S="${BRIGHT_REOPEN_AFTER_CLOSE_S:-15}" \
   "$ROOT/scripts/teacher-agent-l1.sh" start
 
+# Restart the UI too, and do NOT trust hot reload.
+#
+# Vite's file watcher does not see edits under /mnt/d (the WSL 9p bridge), so a
+# dev server started before a change goes on serving the old modules. That cost
+# an hour three separate times on 2026-08-21 -- every measurement said "no
+# change" and the fix looked wrong when it was the server that was stale. The
+# launcher does not manage the UI, so it is restarted here where a person will
+# actually see it happen.
+UI_PORT="${UI_PORT:-3000}"
+UI_PID="$(ss -lptn "sport = :$UI_PORT" 2>/dev/null | grep -o 'pid=[0-9]*' | head -1 | cut -d= -f2 || true)"
+[[ -n "${UI_PID:-}" ]] && kill "$UI_PID" 2>/dev/null && sleep 2
+( cd "$ROOT/apps/classroom-ui" && nohup pnpm dev --port "$UI_PORT" \
+    > "$ROOT/.runtime/teacher-agent/logs/ui.log" 2>&1 & disown )
+for _ in $(seq 1 40); do
+  curl -sf -o /dev/null --max-time 2 "http://127.0.0.1:$UI_PORT/" && break
+  sleep 2
+done
+echo "retake: the room is serving current code on :$UI_PORT"
+
 # The arrival line is the first thing anyone hears and VieNeu is ~10s cold.
 # Warming is idempotent and takes seconds when everything is already cached.
 python3 "$ROOT/tools/warm-tts.py" >/dev/null 2>&1 \

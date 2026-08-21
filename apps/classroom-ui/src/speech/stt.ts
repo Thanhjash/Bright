@@ -98,21 +98,54 @@ function clamp01(n: number): number {
   return Math.min(1, Math.max(0, n))
 }
 
+export interface TranscribeOptions {
+  signal?: AbortSignal
+  /**
+   * Pin the decoder to one language instead of letting it detect.
+   *
+   * Used for the second and later phrases of a sentence, taken from what the
+   * first phrase came back as. Two effects: it skips a whole `detect_language`
+   * pass per phrase (the service's own header measures forcing at ~35% faster),
+   * and it stops one sentence flapping between `en` and `vi` halfway through.
+   */
+  language?: string | null
+  /**
+   * Return an empty transcript instead of throwing when nothing was heard.
+   *
+   * A phrase that turns out to be a breath is ordinary and must not break the
+   * chain of phrases around it. A whole UTTERANCE that turns out to be nothing
+   * is still an error, so the default is unchanged.
+   */
+  allowEmpty?: boolean
+}
+
 /**
- * Transcribe one utterance.
+ * Transcribe one utterance, or one phrase of one.
  *
- * @throws {SttError} always, on every failure — never returns a blank result.
+ * @throws {SttError} on every failure — unless `allowEmpty`, which downgrades
+ *   "nothing was heard" to an empty result.
  */
-export async function transcribe(audio: Blob, signal?: AbortSignal): Promise<Transcript> {
-  if (audio.size < MIN_BYTES)
+export async function transcribe(
+  audio: Blob,
+  options: AbortSignal | TranscribeOptions = {},
+): Promise<Transcript> {
+  // Historically the second argument was the signal itself; keep that working.
+  const opts: TranscribeOptions =
+    options instanceof AbortSignal ? { signal: options } : options
+  const { signal, language, allowEmpty } = opts
+
+  if (audio.size < MIN_BYTES) {
+    if (allowEmpty) return emptyTranscript(language ?? null)
     throw new SttError(
       'empty',
       'No sound reached the microphone. Check it is not muted, then try again.',
     )
+  }
 
   const form = new FormData()
   // The field name is `file` — that is the service's contract, not a convention.
   form.append('file', audio, `utterance.${extensionFor(audio.type)}`)
+  if (language) form.append('language', language)
 
   let res: Response
   try {
@@ -150,17 +183,21 @@ export async function transcribe(audio: Blob, signal?: AbortSignal): Promise<Tra
     typeof body.noSpeechProbability === 'number'
       ? clamp01(body.noSpeechProbability)
       : 0
-  if (noSpeechProbability >= NO_SPEECH_THRESHOLD)
+  if (noSpeechProbability >= NO_SPEECH_THRESHOLD) {
+    if (allowEmpty) return emptyTranscript(readLanguage(body), noSpeechProbability)
     throw new SttError(
       'empty',
       'No reliable speech was detected. Move closer to the microphone and try again.',
     )
-  if (!text)
+  }
+  if (!text) {
+    if (allowEmpty) return emptyTranscript(readLanguage(body), noSpeechProbability)
     throw new SttError('empty', 'Nothing was heard. Check the microphone and try again.')
+  }
 
   return {
     text,
-    language: typeof body.language === 'string' && body.language ? body.language : null,
+    language: readLanguage(body),
     confidence: readConfidence(body),
     serviceMs: typeof body.ms === 'number' ? body.ms : 0,
     queueMs: typeof body.queueMs === 'number' ? body.queueMs : 0,
@@ -175,4 +212,21 @@ function extensionFor(mime: string): string {
   if (mime.includes('mp4')) return 'mp4'
   if (mime.includes('wav')) return 'wav'
   return 'webm'
+}
+
+function readLanguage(body: TranscriptionResponse): string | null {
+  return typeof body.language === 'string' && body.language ? body.language : null
+}
+
+/** A phrase that carried no words. Not an error, and not a result either. */
+function emptyTranscript(language: string | null, noSpeechProbability = 1): Transcript {
+  return {
+    text: '',
+    language,
+    confidence: 0,
+    serviceMs: 0,
+    queueMs: 0,
+    inferMs: 0,
+    noSpeechProbability,
+  }
 }

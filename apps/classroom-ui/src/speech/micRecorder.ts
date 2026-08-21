@@ -56,6 +56,16 @@ export interface Clip {
   durationMs: number
 }
 
+/** A phrase cut out of a capture that is still running. */
+export interface Slice {
+  audio: Blob
+  /** Where this slice began, so the next one can start exactly here. */
+  fromSample: number
+  /** Where it ended. Hand this back as the next `fromSample`. */
+  toSample: number
+  durationMs: number
+}
+
 export interface MicRecorder {
   /** Opens and meters the answer-station mic without beginning a take. */
   prepare(): Promise<void>
@@ -66,6 +76,26 @@ export interface MicRecorder {
   /** 0…1, RMS of the live input. 0 when not recording. */
   level(): number
   recording(): boolean
+  /**
+   * A WAV of everything recorded since `fromSample`, WITHOUT stopping.
+   *
+   * This is how a phrase is cut out of a sentence while the child keeps
+   * talking. It reads the same growing buffer `stop()` will later read and
+   * mutates nothing, so the recorder never notices and no audio is lost at a
+   * boundary.
+   *
+   * Ranges are SAMPLE INDICES, never wall clock. The gate's `performance.now()`
+   * and the audio clock drift apart, and sample 0 is PRE_ROLL_MS *before* the
+   * gate opened — so only sample indices can guarantee that fragment N+1 starts
+   * exactly where fragment N ended. Gap-free and overlap-free by construction,
+   * which is the property the whole live-text feature rests on.
+   *
+   * Returns null when there is nothing new, or after `stop()` has released the
+   * buffer — which is why the tail must be sliced BEFORE `stop()` is awaited.
+   */
+  sliceSince(fromSample: number): Slice | null
+  /** Samples per second of the captured PCM — the AudioContext's own rate. */
+  sampleRate(): number
   /** Drops the stream and the audio graph. Safe to call repeatedly. */
   release(): void
 }
@@ -277,13 +307,14 @@ export function createMicRecorder(onDeviceFailure?: (failure: MicFailure) => voi
    *
    *  faster-whisper resamples on the way in (`decode_audio`), so writing the
    *  context's own rate is correct and avoids resampling twice. */
-  function wavFromCapture(): Blob | null {
+  function wavFrom(from: number, to: number): Blob | null {
     const buf = capture
-    const length = captureLen
+    const start = Math.max(0, from)
+    const length = Math.min(to, captureLen) - start
     if (!buf || length < 1) return null
     const out = new Int16Array(length)
     for (let i = 0; i < length; i++) {
-      const v = buf[i]
+      const v = buf[start + i]
       out[i] = Math.max(-32768, Math.min(32767, Math.round(v * 32767)))
     }
     const header = new ArrayBuffer(44)
@@ -298,6 +329,11 @@ export function createMicRecorder(onDeviceFailure?: (failure: MicFailure) => voi
     view.setUint32(28, ringRate * 2, true); view.setUint16(32, 2, true)
     view.setUint16(34, 16, true); put(36, 'data'); view.setUint32(40, bytes, true)
     return new Blob([header, out.buffer], { type: 'audio/wav' })
+  }
+
+  /** The whole capture so far. Unchanged behaviour, expressed as a range. */
+  function wavFromCapture(): Blob | null {
+    return wavFrom(0, captureLen)
   }
 
   function pickMime(): string | undefined {
@@ -377,6 +413,25 @@ export function createMicRecorder(onDeviceFailure?: (failure: MicFailure) => voi
         }
         active.stop()
       })
+    },
+
+    sliceSince(fromSample: number) {
+      // Read `captureLen` ONCE. `onaudioprocess` runs on the main thread, so it
+      // cannot interleave with this function — but reading the bound twice
+      // would still be a latent bug the day this moves to an AudioWorklet.
+      const to = captureLen
+      const audio = wavFrom(fromSample, to)
+      if (!audio) return null
+      return {
+        audio,
+        fromSample,
+        toSample: to,
+        durationMs: ((to - fromSample) / ringRate) * 1000,
+      }
+    },
+
+    sampleRate() {
+      return ringRate
     },
 
     level() {
