@@ -692,6 +692,69 @@ def test_she_is_told_the_objectives_after_the_map_leaves_her_context() -> None:
     assert "period" not in line.lower()
     assert "next" not in line.lower()
 
+    # DECLARED objectives, and nothing that merely looks like one.
+    #
+    # The catalog used to union a loose `\`hyphenated-token\`` pattern over every
+    # markdown file in the unit, so a skill name and an audio track were offered
+    # to her as things to teach -- and `record_evidence` accepted them, which
+    # made a child's progress recordable against a sound file.
+    assert "track-09" not in listed, listed
+    assert "scaffold-down" not in listed, listed
+    assert listed == {
+        "greet-and-name",
+        "answer-a-greeting",
+        "ask-wellbeing",
+        "answer-wellbeing",
+        "take-leave",
+        "hear-h-and-b",
+    }, listed
+
+
+def test_she_is_told_which_objectives_the_room_has_seen_go_right() -> None:
+    """The fix for forty turns on one objective and never a second.
+
+    Filmed 2026-08-21: forty evidence rows, all `greet-and-name`, and the
+    period's other objective never attempted once in fifty-one student turns.
+    SKILL_CARD could not have told her -- it is built from rows that exist, so
+    it can only ever name what she has already tried. COVERED is the fact it
+    cannot carry: what this room has WATCHED them get right.
+
+    Same species as PERIODS_HELD, and legal for the same reason -- Core counts
+    what it witnessed. It ranks nothing and names no period.
+    """
+    rows: list[dict[str, object]] = []
+    core, _frames = _stage_core()
+    core.db = SimpleNamespace(
+        record_observation=lambda *a, **k: 1,
+        list_observations=lambda **k: list(rows),
+    )
+    os_ = TeacherOS(core, unit_id="gs3-u1-hello", learner_id="learner-1")
+
+    def covered() -> str | None:
+        texts = [item.text for item in teacher_os._session_recall(os_)]
+        return next((t for t in texts if t.startswith("COVERED=")), None)
+
+    # Nothing witnessed yet: the line is absent rather than empty. An empty
+    # COVERED= and a missing one would read identically to her.
+    assert covered() is None
+
+    # `near` is an honest answer and deliberately does not count -- the front
+    # door uses the same rule, so a card and the class it opens cannot disagree.
+    rows.append({"skill": "greet-and-name", "result": "near", "activity_id": "gs3-u1-hello"})
+    assert covered() is None
+
+    rows.append({"skill": "greet-and-name", "result": "correct", "activity_id": "gs3-u1-hello"})
+    line = covered()
+    assert line == "COVERED=greet-and-name", line
+
+    # Another unit's evidence is another unit's business.
+    rows.append({"skill": "take-leave", "result": "correct", "activity_id": "some-other-unit"})
+    assert covered() == "COVERED=greet-and-name", covered()
+
+    # It reports; it does not advise. No ranking, no period, no "next".
+    assert "next" not in (covered() or "").lower()
+    assert "period" not in (covered() or "").lower()
+
 
 def test_she_is_told_what_she_has_already_used_this_period() -> None:
     """"No clip played all period" was the adult's finding and never hers.

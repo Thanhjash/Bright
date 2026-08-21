@@ -96,9 +96,13 @@ def search_library(query: str, *, root: Path | None = None, limit: int = 5) -> d
     return {"hits": hits}
 
 
+# An objective is DECLARED, with `id:` in front of it. Anything else that
+# happens to be a backticked hyphenated word is not one.
 _OBJECTIVE_ID = re.compile(r"id:\s*`([a-z][a-z0-9-]{2,})`")
-_HYPHEN_ID = re.compile(r"`([a-z]+-[a-z0-9-]+)`")
-_OBJECTIVE_REF = _HYPHEN_ID
+# A loose reference to an id, for prose that MENTIONS objectives rather than
+# declaring them -- `Objectives in play: \`greet-and-name\`, ...`. Correct there,
+# and only there: it cannot tell an objective from any other backticked token.
+_OBJECTIVE_REF = re.compile(r"`([a-z]+-[a-z0-9-]+)`")
 
 
 def list_units(*, root: Path | None = None) -> list[str]:
@@ -165,8 +169,15 @@ def unit_catalog(unit_id: str, *, root: Path | None = None) -> dict[str, list[st
     for path in sorted(base.glob("*.md")):
         text = path.read_text(encoding="utf-8")
         assets.update(_ASSET.findall(text))
+        # DECLARED objectives only.
+        #
+        # This used to union the loose reference pattern as well, so anything
+        # backticked with a hyphen in it became an objective: measured on the one
+        # authored unit, `scaffold-down` (a skill) and `track-09` (an audio file)
+        # were both offered to her as things to teach, and `record_evidence`'s
+        # allow-list accepted them -- a child's progress recordable against a
+        # sound file. Six declared, eight shipped.
         objectives.update(_OBJECTIVE_ID.findall(text))
-        objectives.update(_HYPHEN_ID.findall(text))
     return {"objectives": sorted(objectives), "assets": sorted(set(assets))}
 
 

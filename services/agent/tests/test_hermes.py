@@ -1058,3 +1058,40 @@ def test_a_quiet_room_is_handed_to_her_without_an_escape_hatch() -> None:
     assert "they are thinking" in thinking
     assert "reply HEARTBEAT_OK" in thinking, "a thinking class keeps its silence"
     assert "the floor is yours" not in thinking
+
+
+def test_a_state_note_core_sends_actually_reaches_the_prompt(monkeypatch) -> None:
+    """The renderer drops any note whose prefix it does not know, in silence.
+
+    `render_teacher_turn` dispatches `ctx.recalled` by prefix into named locals
+    and then re-orders them into a fixed table. A note whose prefix is in
+    neither list is not rendered, does not raise, and is not logged -- Core
+    would go on sending it every turn to a model that never sees it.
+
+    COVERED was added on 2026-08-21 for exactly the failure that costs a
+    lesson, so it gets the test that proves the wire is connected. Any future
+    note needs the same two edits and the same proof.
+    """
+    monkeypatch.setenv("BRIGHT_TEACHER_AGENT", "1")
+    ctx = make_ctx()
+    ctx.recalled = [
+        RecalledMemory(text="OBJECTIVES=greet-and-name, answer-a-greeting", when="now"),
+        RecalledMemory(text="COVERED=greet-and-name", when="now"),
+    ]
+    text = render_teacher_turn(ctx, "turn-teach")
+    assert "COVERED=greet-and-name" in text, text[-2000:]
+    # And it is not confused with the fuller list beside it.
+    assert "OBJECTIVES=greet-and-name, answer-a-greeting" in text
+
+
+def test_an_unknown_state_note_is_dropped_and_that_is_the_hazard(monkeypatch) -> None:
+    """Documents the failure mode above rather than asserting it is fine.
+
+    If this ever starts failing because unknown prefixes DO render, that is an
+    improvement -- delete this test and the warning it carries.
+    """
+    monkeypatch.setenv("BRIGHT_TEACHER_AGENT", "1")
+    ctx = make_ctx()
+    ctx.recalled = [RecalledMemory(text="INVENTED_PREFIX=something", when="now")]
+    text = render_teacher_turn(ctx, "turn-teach")
+    assert "INVENTED_PREFIX" not in text

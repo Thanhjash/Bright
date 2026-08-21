@@ -1588,6 +1588,30 @@ def _session_recall(os_: TeacherOS) -> list[Any]:
             notes.append(RecalledMemory(text="SKILL_CARD=" + card, when="now"))
         if past:
             notes.append(RecalledMemory(text="PAST=" + past, when="now"))
+        # WHICH OBJECTIVES THE ROOM HAS ACTUALLY SEEN GO RIGHT.
+        #
+        # Measured over a filmed thirty-minute period on 2026-08-21: forty
+        # evidence rows, every one of them the same objective, and the period's
+        # second objective never attempted once in fifty-one student turns.
+        # SKILL_CARD could not have told her -- it is keyed on rows that exist,
+        # so it can only ever name what she has already tried. It is circular by
+        # construction: the thing not yet attempted is exactly the thing it
+        # cannot mention.
+        #
+        # This is the same species of act as PERIODS_HELD, and legal for the
+        # same reason: Core counts what it witnessed. It does not say which
+        # objective is next, does not rank them, and does not know which period
+        # they belong to -- the map groups them and Core still never reads that
+        # grouping. `correct` only, matching the front door's own definition at
+        # app.py (`covered`): a bar that fills on "not quite" lies to a child.
+        covered = sorted({
+            str(row.get("skill") or "")
+            for row in rows
+            if str(row.get("result") or "") == "correct"
+            and str(row.get("activity_id") or "") == os_.unit_id
+        } - {""})
+        if covered:
+            notes.append(RecalledMemory(text="COVERED=" + ", ".join(covered), when="now"))
     return notes
 
 

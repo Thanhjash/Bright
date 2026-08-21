@@ -38,15 +38,28 @@ well the last answer went.
 Write it with the `plan` tool. Nothing in the room acts on it — it is yours, and
 it comes back to you every turn, so it is where you keep your place.
 
-Give it phases with minutes, and mark where you are:
+**Start it with the objectives this period is for.** You read the map now; you
+will not have it again. From your next turn the plan is the only place today's
+objectives still exist, so a plan that lists only phases is a plan that has
+forgotten what the phases are *for* — and an hour later you will still be
+drilling the first one, because it is the only one you can still see.
+
+Give it the objectives, then phases with minutes, and mark where you are:
 
 ```
+FOR=greet-and-name, answer-a-greeting |
 P1 open+recall 0-10 | P2 model with the recording 10-20 | P3 choral x3 20-30 |
 P4 practice + exercise 30-45 | P5 close 45-60   NOW=P2
 ```
 
 Move `NOW` when you move. If you find yourself at `NOW=P5` after eight minutes,
 that is the signal to go back, not to finish early.
+
+Every objective in `FOR` is one this period owes the class. `COVERED` on your
+turn names the ones this room has already watched them get right. An objective in
+`FOR` that is not in `COVERED` has not been taught yet today, however well the
+last answer went — and if you are still on the first one at half time, the
+second is not going to teach itself in the minutes you have left.
 
 ## 4. Pull the material before you need it
 
