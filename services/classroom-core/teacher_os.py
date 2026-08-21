@@ -1877,6 +1877,15 @@ def teacher_phase(core: Any) -> str:
     return "listening"
 
 
+def _learner_display_name(core: Any, os_: Any) -> str:
+    """Whatever this deployment calls the child in the room. Never a guess."""
+    seen = getattr(core, "identified_learner", None)
+    if seen is not None and getattr(seen, "display_name", ""):
+        return str(seen.display_name)
+    settings = getattr(core, "settings", None)
+    return str(getattr(settings, "default_learner_name", "") or "")
+
+
 def teacher_status_payload(core: Any) -> dict[str, Any]:
     os_ = getattr(core, "teacher_os", None)
     fault = getattr(core, "last_teacher_fault", None)
@@ -1890,6 +1899,15 @@ def teacher_status_payload(core: Any) -> dict[str, Any]:
         "ok": os_ is not None,
         "unitId": getattr(os_, "unit_id", None),
         "learnerId": getattr(os_, "learner_id", None),
+        # The child's own name, for the decoder -- not for the teacher.
+        #
+        # Whisper `base` heard "Hello, I'm Thanh" as "Hello, I'm Tan": an
+        # English-weighted model meeting a Vietnamese name. The room already
+        # KNEW the name -- perception resolved it before the class opened -- and
+        # was simply not telling the part that could have used it. Passed to the
+        # speech service as a decoding hint, it costs nothing and fixes the one
+        # word a child cares most about hearing back correctly.
+        "learnerName": getattr(core, "student_name", None) or _learner_display_name(core, os_),
         "hasBoard": bool(getattr(os_, "last_writing", None) or getattr(os_, "last_images", None)),
         "lastFault": fault,
         "lastSay": getattr(os_, "last_say", None),

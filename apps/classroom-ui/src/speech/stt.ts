@@ -103,7 +103,30 @@ function clamp01(n: number): number {
  *
  * @throws {SttError} always, on every failure — never returns a blank result.
  */
-export async function transcribe(audio: Blob, signal?: AbortSignal): Promise<Transcript> {
+export interface TranscribeOptions {
+  signal?: AbortSignal
+  /**
+   * A few words the decoder should expect — in practice the child's own name.
+   *
+   * Whisper `base` heard "Hello, I'm Thanh" as "Hello, I'm Tan": an
+   * English-weighted model meeting a Vietnamese name. The room already knew the
+   * name, from the camera, and was simply not telling the part that could use
+   * it.
+   *
+   * Kept SHORT on purpose. A long prompt biases the whole transcript, and a
+   * decoder told what it will hear is a decoder that hears it whether or not it
+   * was said.
+   */
+  hint?: string | null
+}
+
+export async function transcribe(
+  audio: Blob,
+  options: AbortSignal | TranscribeOptions = {},
+): Promise<Transcript> {
+  // The second argument used to be the signal itself; keep that working.
+  const opts: TranscribeOptions = options instanceof AbortSignal ? { signal: options } : options
+  const { signal, hint } = opts
   if (audio.size < MIN_BYTES)
     throw new SttError(
       'empty',
@@ -113,6 +136,7 @@ export async function transcribe(audio: Blob, signal?: AbortSignal): Promise<Tra
   const form = new FormData()
   // The field name is `file` — that is the service's contract, not a convention.
   form.append('file', audio, `utterance.${extensionFor(audio.type)}`)
+  if (hint) form.append('hint', hint)
 
   let res: Response
   try {

@@ -585,6 +585,13 @@ async def transcriptions(
     file: UploadFile = File(...),
     language: str | None = Form(default=None),
     languages: str | None = Form(default=None),
+    # A few words the decoder should expect. The room sends the child's own
+    # name, which perception already resolved -- `base` heard "I'm Thanh" as
+    # "I'm Tan", and the name is the one word a child notices getting wrong.
+    # Deliberately tiny: a long prompt biases the whole transcript, and a
+    # decoder that has been told what it will hear is a decoder that hears it
+    # whether or not it was said (NS-5 in miniature).
+    hint: str | None = Form(default=None),
     model: str | None = Form(default=None),  # noqa: ARG001 — OpenAI-compat, ignored
 ) -> JSONResponse:
     request_started = time.perf_counter()
@@ -611,7 +618,8 @@ async def transcriptions(
             raise HTTPException(499, "client disconnected before inference")
         inference = asyncio.create_task(
             asyncio.to_thread(
-                provider.transcribe, audio, language=language, languages=allowed_languages
+                provider.transcribe, audio, language=language,
+                languages=allowed_languages, hint=(hint or "")[:60] or None
             )
         )
         try:

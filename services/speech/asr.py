@@ -65,6 +65,7 @@ class AsrProvider(Protocol):
         *,
         language: str | None = None,
         languages: Sequence[str] = DEFAULT_LANGUAGES,
+        hint: str | None = None,
     ) -> AsrResult: ...
 
 
@@ -113,6 +114,7 @@ class FasterWhisperProvider:
         *,
         language: str | None = None,
         languages: Sequence[str] = DEFAULT_LANGUAGES,
+        hint: str | None = None,
     ) -> AsrResult:
         from faster_whisper.audio import decode_audio
 
@@ -190,6 +192,11 @@ class FasterWhisperProvider:
             no_speech_threshold=0.6,
             vad_filter=VAD_FILTER,
             condition_on_previous_text=False,
+            # Names, and nothing else. `condition_on_previous_text` stays False
+            # -- this biases the vocabulary for ONE utterance, it does not carry
+            # a running transcript forward, which is what makes one hallucinated
+            # word poison every word after it.
+            initial_prompt=(hint or None),
         )
         rows = list(segments)  # faster-whisper inference is lazy
         finished = time.perf_counter()

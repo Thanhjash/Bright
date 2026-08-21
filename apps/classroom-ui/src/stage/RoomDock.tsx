@@ -51,6 +51,9 @@ type Status = {
   turnBusy?: boolean
   lastSay?: string | null
   lastFault?: { error?: string } | null
+  /** Whoever the room believes is in front of the camera. Sent to the decoder
+   *  as a hint so a child's own name is not the word it gets wrong. */
+  learnerName?: string | null
 }
 
 type DockPhase = 'asleep' | 'waking' | 'speaking' | 'listen' | 'hearing' | 'thinking' | 'fault'
@@ -77,6 +80,9 @@ export function RoomDock() {
   const [deaf, setDeaf] = useState(false)
   const mic = useRef(createMicRecorder())
   const phaseRef = useRef<DockPhase>('asleep')
+  /** The latest status, readable from async code without re-creating the
+   *  submit callback every poll. Carries the child's name for the decoder. */
+  const statusRef = useRef<Status>({})
 
   const setDock = useCallback((next: DockPhase) => {
     phaseRef.current = next
@@ -94,6 +100,7 @@ export function RoomDock() {
         const body = (await fetch(`${CORE_HTTP}/teacher/status`).then((r) => r.json())) as Status
         if (cancel) return
         setStatus(body)
+        statusRef.current = body
         if (phaseRef.current === 'hearing') return
         if (body.sessionOpen) {
           if (body.turnBusy) setDock('thinking')
@@ -144,7 +151,7 @@ export function RoomDock() {
     inFlight.current = true
     setDock('thinking')
     try {
-      const heard = await transcribe(clip.audio)
+      const heard = await transcribe(clip.audio, { hint: statusRef.current.learnerName })
       const heardText = heard.text.trim()
       // Whisper's own verdict on whether this was speech at all, which the
       // room measured and then ignored. Observed in one real session: TEN of
