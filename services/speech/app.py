@@ -517,6 +517,14 @@ async def speech(req: SpeechRequest) -> Response:
         else [(voice_id, req.input)]
     )
 
+    # Keep the last clip on disk when asked. The only way to answer "is the
+    # microphone sending speech or sending rubbish" is to look at the bytes.
+    if os.environ.get("ASR_DUMP"):
+        try:
+            Path(os.environ["ASR_DUMP"]).write_bytes(audio)
+        except Exception:  # noqa: BLE001 -- a diagnostic must never break a lesson
+            pass
+
     queued = time.perf_counter()
     async with _tts_lock:
         queue_ms = round((time.perf_counter() - queued) * 1000)
@@ -630,12 +638,15 @@ async def transcriptions(
         "decodeMs": asr_result.decode_ms,
         "inferMs": asr_result.infer_ms,
         "audioS": asr_result.audio_s,
+        "peak": asr_result.peak,
+        "rms": asr_result.rms,
     }
     log.info(
-        "asr %dB %s (%s, %dms = %d queue + %d decode + %d infer; no-speech %.3f)",
+        "asr %dB %s (%s, %dms = %d queue + %d decode + %d infer; "
+        "no-speech %.3f; peak %.3f rms %.4f)",
         len(audio), result["model"], result["language"], result["ms"],
         result["queueMs"], result["decodeMs"], result["inferMs"],
-        result["noSpeechProbability"],
+        result["noSpeechProbability"], result["peak"], result["rms"],
     )
     return JSONResponse(result, headers={
         "X-Stt-Model": result["model"],

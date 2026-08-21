@@ -25,6 +25,11 @@ export const ROOM_LABELS = {
   thinking: { cta: 'Cô đang nghĩ', sub: 'One moment' },
   listening: { cta: 'Tới lượt con nói', sub: 'Your turn — just speak' },
   deaf: { cta: 'Cô chưa nghe được', sub: 'The room cannot hear — check the microphone' },
+  /** The microphone worked and the room recorded something, but there were no
+   *  words in it. Different from `deaf`, which means nothing is listening at
+   *  all — and the child must be able to tell those apart, because one is
+   *  "say it again" and the other is "fetch an adult". */
+  unclear: { cta: 'Cô chưa nghe rõ', sub: 'Con nói lại giúp cô nhé' },
   fault: { cta: 'Cô đang kiểm tra lớp', sub: 'She will start again herself' },
   waking: { cta: 'Cô đang tới bảng', sub: '' },
   comingReady: { cta: 'Cô sắp bắt đầu', sub: 'She opens the class herself' },
