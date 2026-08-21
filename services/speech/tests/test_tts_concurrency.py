@@ -49,3 +49,36 @@ async def _exercise_cancelled_tts_lock(monkeypatch):
         raise AssertionError("cancelled speech request did not propagate cancellation")
     await second
     assert calls == 2
+
+
+def test_a_line_with_nothing_to_say_answers_instead_of_crashing(monkeypatch):
+    """The regression test for two of her sentences going missing on camera.
+
+    2026-08-21, twice in one lesson: `wave.Error: # channels not specified` out
+    of `_synthesize`, a 500 to the browser, and the segment silently skipped
+    mid-line. Piper writes the WAV header inside its loop over synthesized
+    chunks, so text the phonemiser cannot voice never writes one.
+
+    The engine must not be reached at all, and the caller must get something it
+    can play, or the rest of the line goes down with the chunk.
+    """
+    asyncio.run(_exercise_unsayable(monkeypatch))
+
+
+async def _exercise_unsayable(monkeypatch):
+    def explode(*_args, **_kwargs):
+        raise AssertionError("the engine was handed text with nothing to say")
+
+    monkeypatch.setattr(speech_app, "_synthesize", explode)
+    monkeypatch.setitem(speech_app._state, "voices", {"en": object()})
+
+    for unsayable in ("...", "…", "?!", "🙂"):
+        response = await speech_app.speech(
+            speech_app.SpeechRequest(input=unsayable, voice="en")
+        )
+        assert response.status_code == 200, unsayable
+        assert response.media_type == "audio/wav"
+        # Visible, not silent: a skipped line an adult can find in a header and
+        # a log is the whole difference from the 500 that left no record.
+        assert response.headers["X-Tts-Skipped"] == "1", unsayable
+        assert response.body, "an empty body is not a playable WAV"

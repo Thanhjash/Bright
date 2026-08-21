@@ -154,3 +154,77 @@ def test_the_slow_engine_is_spent_only_where_it_is_the_only_one_that_works() -> 
         assert not app._VI_LETTER.search(line), line
     for line in vietnamese_bearing:
         assert app._VI_LETTER.search(line), line
+
+
+# ---------------------------------------------------------------- unsayable
+#
+# Two requests during a filmed lesson on 2026-08-21 returned 500 with
+# `wave.Error: # channels not specified`, and two of her sentences were dropped
+# by the browser mid-line. Piper writes the WAV header inside its loop over
+# synthesized chunks, so text the phonemiser cannot voice produces no chunks, no
+# header, and an exception on close.
+
+
+def test_a_sentence_splitter_will_hand_over_punctuation_eventually() -> None:
+    """The premise. If this stops being true the guard below is unnecessary."""
+    from app import _SENTENCE
+
+    chunks = [m.group(0) for m in _SENTENCE.finditer("Good. ... Hello.")]
+    assert any(not any(ch.isalnum() for ch in c) for c in chunks), chunks
+
+
+def test_nothing_a_voice_can_say_is_not_sent_to_the_engine() -> None:
+    from app import speakable
+
+    assert not speakable("...")
+    assert not speakable("…")
+    assert not speakable("?!")
+    assert not speakable("   ")
+    assert not speakable("")
+    assert not speakable("🙂")
+    assert not speakable("— —")
+
+
+def test_anything_with_a_letter_or_a_digit_in_it_is_said() -> None:
+    from app import speakable
+
+    # Any script. The service must not know which language it is holding (NS-7).
+    assert speakable("Hello.")
+    assert speakable("Ừm…")
+    assert speakable("Chào các con!")
+    assert speakable("3")
+    # A single letter among punctuation is still a thing someone said.
+    assert speakable("A.")
+
+
+def test_an_unsayable_chunk_is_dropped_and_the_rest_of_the_line_survives() -> None:
+    """Dropping the chunk keeps the sentence audible; raising lost all of it."""
+    got = spans("Hello. ... I'm Ben.")
+    assert got, got
+    joined = "".join(text for _voice, text in got)
+    assert "Hello." in joined
+    assert "I'm Ben." in joined
+
+
+def test_a_line_with_nothing_sayable_in_it_yields_no_spans() -> None:
+    """And the route answers that with a valid empty WAV rather than a 500.
+
+    The old fallback was `spans or [(default_voice, text)]`, which sent the
+    unsayable text to the engine anyway -- precisely the case it looked like it
+    was guarding.
+    """
+    assert spans("...") == []
+    assert spans("   ") == []
+
+
+def test_the_empty_wav_is_a_wav() -> None:
+    """The player has to be able to parse it, or the line still breaks."""
+    import io
+    import wave
+
+    from app import _silence_wav
+
+    with wave.open(io.BytesIO(_silence_wav()), "rb") as wf:
+        assert wf.getnchannels() == 1
+        assert wf.getsampwidth() == 2
+        assert wf.getnframes() == 0

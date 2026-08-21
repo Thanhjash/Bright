@@ -112,7 +112,7 @@ is provenance only — never cook from it.
 ```bash
 cd services/classroom-core && python -m pytest -q
 cd services/agent          && python -m pytest -q
-cd services/speech         && python -m pytest tests/ -q
+cd services/speech         && .venv/bin/python -m pytest tests/ -q
 cd services/vision         && .venv/bin/python -m pytest tests/ -q
 cd apps/classroom-ui       && pnpm exec tsc --noEmit
 ```

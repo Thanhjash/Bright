@@ -360,6 +360,29 @@ _VI_LETTER = re.compile(
 _SENTENCE = re.compile(r"[^.!?…]*[.!?…]+[\"'”’)\]]*\s*|[^.!?…]+$")
 
 
+# A character that can carry a sound. Letters and digits in any script -- the
+# service must not know which language it is being handed (NS-7).
+_SPEAKABLE = re.compile(r"[^\W_]", re.UNICODE)
+
+
+def speakable(text: str) -> bool:
+    """Is there anything here a voice can actually say?
+
+    Piper writes the WAV header INSIDE its loop over synthesized chunks, so text
+    the phonemiser cannot voice yields no chunks, no header, and a
+    `wave.Error: # channels not specified` when the file is closed. Observed
+    twice during a filmed lesson on 2026-08-21: two of her sentences returned
+    500 and were dropped by the browser mid-line, and because the log line
+    naming the text is written only on success, we know two were lost and
+    cannot know which.
+
+    A sentence splitter that keeps punctuation with the sentence it ends will
+    hand over `"..."` or a lone emoji sooner or later. Neither is a failure --
+    there is simply nothing to say -- so the room should skip it, not raise.
+    """
+    return bool(_SPEAKABLE.search(text or ""))
+
+
 def _ascii_header(value: str) -> str:
     """Header-safe. HTTP headers are latin-1 and voice names are not."""
     return value.encode("ascii", "replace").decode("ascii")
@@ -406,14 +429,38 @@ def _voice_spans(text: str, *, default_voice: str, marked_voice: str) -> list[tu
     spans: list[tuple[str, str]] = []
     for match in _SENTENCE.finditer(text):
         chunk = match.group(0)
-        if not chunk.strip():
+        # Nothing a voice can say. `.strip()` alone let `"..."` and a lone emoji
+        # through, and each of those crashed the whole request -- see
+        # `speakable`. Dropping the chunk keeps the rest of the line audible;
+        # raising lost all of it.
+        if not speakable(chunk):
             continue
         voice = marked_voice if _VI_LETTER.search(chunk) else default_voice
         if spans and spans[-1][0] == voice:
             spans[-1] = (voice, spans[-1][1] + chunk)
         else:
             spans.append((voice, chunk))
-    return spans or [(default_voice, text)]
+    # The old fallback here was `spans or [(default_voice, text)]`, which sent
+    # unsayable input to the engine anyway -- exactly the case it looked like it
+    # was guarding. An empty list now means "there was nothing to say", and the
+    # caller answers that rather than crashing on it.
+    return spans
+
+
+def _silence_wav(sample_rate: int = 22050) -> bytes:
+    """A valid, empty WAV. Zero frames, correct header.
+
+    For input with nothing sayable in it. The player needs a well-formed
+    response to move on to the next chunk of a line; what it must never get is
+    the 500 that used to happen here, which dropped the rest of the line too.
+    """
+    buf = io.BytesIO()
+    with wave.open(buf, "wb") as wf:
+        wf.setnchannels(1)
+        wf.setsampwidth(2)
+        wf.setframerate(sample_rate)
+        wf.writeframes(b"")
+    return buf.getvalue()
 
 
 def _concat_wavs(chunks: list[bytes]) -> bytes:
@@ -514,8 +561,44 @@ async def speech(req: SpeechRequest) -> Response:
     spans = (
         _voice_spans(req.input, default_voice=plain, marked_voice=marked)
         if req.segment and len(_state["voices"]) > 1
-        else [(voice_id, req.input)]
+        else ([(voice_id, req.input)] if speakable(req.input) else [])
     )
+
+    # NOTHING TO SAY IS NOT AN ERROR.
+    #
+    # A sentence splitter that keeps punctuation with the sentence it ends will
+    # hand over `"..."` or a lone emoji eventually, and piper answers that with
+    # an exception that took the whole request -- and with it a line of hers --
+    # down. Twice in one filmed lesson. Answer with a valid, empty WAV instead:
+    # the browser's playback chain continues to the next chunk, and the header
+    # plus this log line make it visible, which a 500 with no record of the text
+    # was not.
+    #
+    # NOT the same case as vieneu returning no audio for real words, which is
+    # rightly an exception -- there, something WAS said and the room lost it.
+    if not spans:
+        log.info("tts %s %dch -> nothing to say %r", voice_id, len(req.input), req.input[:40])
+        return Response(
+            content=_silence_wav(),
+            media_type="audio/wav",
+            headers={
+                "X-Tts-Queue-Ms": "0",
+                "X-Synth-Ms": "0",
+                "X-Tts-Total-Ms": str(round((time.perf_counter() - request_started) * 1000)),
+                "X-Voice": voice_id,
+                "X-Tts-Engine": "piper",
+                "X-Tts-Skipped": "1",
+            },
+        )
+
+    # BEFORE the engine, not after it.
+    #
+    # This line used to be written only on success, so the two requests that
+    # crashed left no record of what they were asked to say. We know two of her
+    # sentences were lost that afternoon and cannot know which. A log that only
+    # reports what worked cannot describe a failure.
+    log.info("tts %s %dch requested (%d span%s)", voice_id, len(req.input), len(spans),
+             "" if len(spans) == 1 else "s")
 
     queued = time.perf_counter()
     async with _tts_lock:
