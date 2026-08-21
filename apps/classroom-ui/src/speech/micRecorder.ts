@@ -124,10 +124,24 @@ export function createMicRecorder(onDeviceFailure?: (failure: MicFailure) => voi
   let permission: PermissionStatus | null = null
   let deviceWatchInstalled = false
   let failureReported: MicFailure | null = null
+  /** Set when the device behind `stream` disappeared. Forces one fresh
+   *  `getUserMedia` instead of reusing a track that will never carry sound. */
+  let deviceLost = false
 
   const reportDeviceFailure = (failure: MicFailure) => {
     if (failureReported === failure) return
     failureReported = failure
+    // The microphone is gone -- but `stream` still holds a track the browser
+    // goes on reporting as `live`, so `ensureStream()` would hand the same dead
+    // device back for the rest of the lesson and the room would sit listening
+    // to silence. Mark it, so the next `prepare()` asks for whatever the
+    // machine has NOW.
+    //
+    // Observed 2026-08-21, mid-recording: a projector was unplugged, Windows
+    // moved the default input, and the room went permanently deaf while the
+    // dock still said "Tới lượt con nói". Nothing threw, nothing logged, and
+    // zero clips reached the decoder for the rest of the session.
+    deviceLost = true
     onDeviceFailure?.(failure)
   }
 
@@ -182,7 +196,26 @@ export function createMicRecorder(onDeviceFailure?: (failure: MicFailure) => voi
     }
   }
 
+  function discardStream(): void {
+    removeDeviceWatches()
+    stream?.getTracks().forEach((t) => t.stop())
+    stream = null
+    analyser = null
+    samples = null
+    ring = null
+    try {
+      tap?.disconnect()
+    } catch {
+      // already gone with the context
+    }
+    tap = null
+    void audioCtx?.close().catch(() => {})
+    audioCtx = null
+    deviceLost = false
+  }
+
   async function ensureStream(): Promise<MediaStream> {
+    if (deviceLost) discardStream()
     if (stream && stream.getAudioTracks().some((t) => t.readyState === 'live')) return stream
 
     if (typeof MediaRecorder === 'undefined' || !navigator.mediaDevices?.getUserMedia) {

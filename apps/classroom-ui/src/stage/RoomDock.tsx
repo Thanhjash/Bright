@@ -23,7 +23,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { CORE_HTTP, IS_MOCK } from '../lib/env'
 import { HEARD_PREFIX, ROOM_LABELS } from '../room/labels'
-import { createMicRecorder } from '../speech/micRecorder'
+import { MIC_LABELS } from '../room/labels'
+import { createMicRecorder, type MicFailure } from '../speech/micRecorder'
 import { createVoiceGate } from '../speech/voiceGate'
 import { SttError, transcribe } from '../speech/stt'
 import { useClassroom } from '../store/classroom'
@@ -78,7 +79,14 @@ export function RoomDock() {
   // microphone. Without this the room went on saying "Tới lượt con nói" while
   // the gate was dead and nothing was listening at all.
   const [deaf, setDeaf] = useState(false)
-  const mic = useRef(createMicRecorder())
+  // A microphone that vanishes mid-lesson (a projector unplugged, a USB mic
+  // re-seated) is reported by the recorder and, until now, by nobody else:
+  // `onDeviceFailure` had no listener anywhere in the app. The room went on
+  // saying "Tới lượt con nói" to a child it could not hear. The handler is
+  // installed later, next to the gate that has to be restarted; this ref is
+  // the seam, because the recorder is built before that gate exists.
+  const deviceFailureRef = useRef<((failure: MicFailure) => void) | null>(null)
+  const mic = useRef(createMicRecorder((failure) => deviceFailureRef.current?.(failure)))
   const phaseRef = useRef<DockPhase>('asleep')
   /** The latest status, readable from async code without re-creating the
    *  submit callback every poll. Carries the child's name for the decoder. */
@@ -257,7 +265,20 @@ export function RoomDock() {
       onError: (message) => setHint(message),
     })
     gate.start()
-    return () => gate.stop()
+    // Say it, then fix it. The gate's own `onStateChange` clears `deaf` again
+    // the moment it reaches `listening`, so a microphone that comes back needs
+    // no further help -- and one that does not leaves the fault on screen for
+    // the adult in the room instead of a light that lies.
+    deviceFailureRef.current = (failure) => {
+      setDeaf(true)
+      setHint(failure === 'permission_lost' ? MIC_LABELS.blocked : MIC_LABELS.missing)
+      gate.stop()
+      gate.start()
+    }
+    return () => {
+      deviceFailureRef.current = null
+      gate.stop()
+    }
   }, [submitClip])
 
   const ready = Boolean(status.hermesUp && status.stageAudioOwner)

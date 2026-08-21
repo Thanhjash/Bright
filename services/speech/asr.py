@@ -96,6 +96,9 @@ class AsrProvider(Protocol):
 # `no_speech_threshold` still runs, and it judges per segment with the
 # log-probability rescue, rather than deleting the audio before the model sees
 # it. Set ASR_VAD_FILTER=1 to put it back.
+#: Below this peak amplitude a clip is silence, and silence is never worth a
+#: decode. Tunable because a different microphone has a different noise floor.
+SILENCE_PEAK = float(os.environ.get("ASR_SILENCE_PEAK", "0.10"))
 VAD_FILTER = os.environ.get("ASR_VAD_FILTER", "0").strip().lower() in {"1", "true", "yes"}
 
 
@@ -133,6 +136,47 @@ class FasterWhisperProvider:
             rms = float((pcm.astype("float64") ** 2).mean() ** 0.5) if len(pcm) else 0.0
         except Exception:  # noqa: BLE001 -- a diagnostic must never break a lesson
             peak = rms = -1.0
+
+        # SILENCE NEVER REACHES THE MODEL.
+        #
+        # Whisper has no reason to stop early on silence: with nothing to
+        # transcribe it rambles to the end of its 30s window, so the QUIETER the
+        # clip the LONGER it takes. Measured live on 2026-08-21, mid-recording:
+        #
+        #     peak 0.756  real speech   ->  3.9s
+        #     peak 0.920  real speech   ->  3.3s
+        #     peak 0.072  room noise    -> 17.4s
+        #     peak 0.019  near-silence  -> 18.1s
+        #     peak 0.019  near-silence  -> 19.7s
+        #
+        # Eighteen seconds of the room frozen on a clip with nobody in it. The
+        # gate opening on noise is a separate (and cheaper) problem; this is the
+        # backstop that keeps its mistake from costing a lesson.
+        #
+        # The threshold has four times' margin: the quietest REAL utterance
+        # measured on this microphone peaked at 0.435, the loudest silence at
+        # 0.072. It is deliberately a peak and not an RMS -- one word spoken
+        # into a quiet room has a low RMS and a high peak, and that word is
+        # exactly what a beginner's answer looks like.
+        if 0.0 <= peak < SILENCE_PEAK:
+            log.info(
+                "silence not decoded (peak %.4f rms %.5f, %.2fs) -- nothing sent to the model",
+                peak, rms, len(pcm) / 16000.0,
+            )
+            return AsrResult(
+                text="",
+                language=language,
+                language_probability=None,
+                confidence=0.0,
+                no_speech_probability=1.0,
+                avg_logprob=None,
+                audio_s=round(len(pcm) / 16000.0, 2),
+                peak=round(peak, 4),
+                rms=round(rms, 5),
+                decode_ms=round((decoded - started) * 1000),
+                infer_ms=0,
+            )
+
         # Caller-forced language: honour it unchanged, no detection pass.
         # Otherwise detect once and CLAMP to the allowed set — Whisper's raw
         # top-1 language ID is unreliable on short classroom utterances (a 1.7s
