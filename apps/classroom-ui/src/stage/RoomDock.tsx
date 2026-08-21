@@ -142,8 +142,32 @@ export function RoomDock() {
   // the one they want heard.
   const inFlight = useRef(false)
   const pending = useRef<{ audio: Blob; durationMs: number } | null>(null)
+  /**
+   * Held for the whole TEACHER TURN, not just the transcription.
+   *
+   * `inFlight` above covers ~2s of Whisper, and newest-wins is right there --
+   * a child who repeats themselves means the second try is the one they want.
+   * But `submitClip` also awaits `POST /teacher/turn`, which is a hosted model
+   * turn of 7-19 SECONDS. Holding one lock across both meant anything said
+   * while she was thinking sat in `pending` and then fired the moment she
+   * finished -- so her answer to one sentence collided with a sentence from
+   * twenty seconds earlier, out of context and in the wrong order. The owner's
+   * words: "cái trước chồng lên cái sau".
+   *
+   * The strip already says "Cô đang nghĩ" during that window. This makes the
+   * room mean it: nothing new is taken until she has answered.
+   */
+  const turnInFlight = useRef(false)
 
   const submitClip = useCallback(async (clip: { audio: Blob; durationMs: number }) => {
+    if (turnInFlight.current) {
+      // She is still answering the last thing. Taking this now would answer it
+      // twenty seconds late, after the reply it was spoken over -- and the
+      // child cannot tell which of her answers belongs to which of their
+      // sentences. Say so instead, and let them say it again when she is back.
+      setHint(ROOM_LABELS.thinking.sub)
+      return
+    }
     if (inFlight.current) {
       pending.current = clip          // drop whatever was queued before it
       return
@@ -167,6 +191,7 @@ export function RoomDock() {
       if (heardText && heard.noSpeechProbability < 0.9) {
         setHeard(heardText)
         setHint(null)
+        turnInFlight.current = true
         const res = await fetch(`${CORE_HTTP}/teacher/turn`, {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
@@ -187,6 +212,7 @@ export function RoomDock() {
       else setHint(err instanceof SttError ? err.message : 'The teacher needs a moment.')
       setDock('listen')
     } finally {
+      turnInFlight.current = false
       inFlight.current = false
       const next = pending.current
       pending.current = null
