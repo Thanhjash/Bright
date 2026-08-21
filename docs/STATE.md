@@ -619,6 +619,39 @@ pasted into the TTS route where `audio` is not in scope; `NameError` into a bare
   before a change serves stale modules and every measurement reads "no change".
   Cost an hour three separate times. `retake.sh` restarts the UI now.
 
+## 2i. The first take, and what half an hour of running showed — 2026-08-21
+
+A real child, enrolled at the door, taught Period 1 end to end on camera for
+thirty minutes. It held: no crash, no stuck turn, no misidentified child, 40
+observations written to the record. The full reckoning, with the measurements,
+is [design/what-the-first-take-taught-us.md](design/what-the-first-take-taught-us.md).
+The headline:
+
+**She asked the same question forty times because nobody told her today's
+objectives.** `teacher_os.py:1512` sends the model every objective in the unit.
+The period-scoped `Objectives in play` is stated in `map.md`, parsed by
+`library.py:177`, and consumed by exactly one caller — the lobby route at
+`app.py:595`. It never reaches the turn context. `answer-a-greeting` was never
+attempted, in 51 student turns. This is plumbing, not prompting, and it is the
+highest-value fix outstanding.
+
+**Silence is the slowest thing to transcribe.** Whisper does not stop early on an
+empty clip; it rambles to the end of its 30s window, so the quieter the audio the
+longer the room freezes. Real speech decoded at 3-4s; near-silence took 17-20s.
+Eleven of 61 clips were silence and eight of those would have been posted as a
+child's turn. Guarded on peak amplitude in `ec87dbd` — closes 7 of the 8 stalls.
+The eighth, a real 8.5s utterance that took 18.2s while an identical-length clip
+took 4.8s, is undiagnosed and written down rather than rounded away.
+
+**Filming costs three-fold.** Idle: 7.25x faster than real time. During the take,
+with OBS and the webcam live: 1.34x. It does not show as a trend — the 5-minute
+medians stay flat — because a constant load raises the floor rather than tilting
+it. Only an idle baseline reveals it. That is now the rule for any timing claim
+made from a log alone.
+
+Five more silent failures were catalogued from this audit; they are appended to
+[design/the-silent-failure.md](design/the-silent-failure.md).
+
 ## 3. Layer status — honest
 
 | Layer | Status | Truth |

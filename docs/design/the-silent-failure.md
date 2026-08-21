@@ -98,3 +98,50 @@ available, and it is greppable: find the guard, then look for its twin.
 - **`RoomDock`'s `noSpeechProbability < 0.9` check can never be false**, because
   `stt.ts` already throws at `>= 0.6` two layers earlier. The incident comment
   above it describes enforcement that has silently moved.
+
+## Found in the first take's audit, 2026-08-21
+
+Five more of the same shape, from the 30-minute filmed lesson. The full
+reckoning is in `what-the-first-take-taught-us.md`; these are the instances.
+
+- **The day's objectives are parsed and then dropped before she sees them.**
+  `library.py:177` extracts `Objectives in play` from the unit map; `list_periods`
+  is imported in exactly one place — `app.py:595`, the route that draws the lobby
+  cards. `teacher_os.py:1512` sends the model *all six* unit objectives with no
+  mark of which two belong to today. She repeated one objective forty times and
+  never attempted the other, and nothing anywhere reported a problem. The
+  curriculum said it, the parser read it, the front page showed it, the teacher
+  never got it.
+- **A missing `learnerId` is answered with someone else's record.**
+  `app.py:600` falls back to `settings.default_learner_id` — a scaffold value
+  with no rows — so `/library/periods` returns a confident `covered: []` for a
+  child with seventeen `correct` observations. 30 of 32 calls during the take
+  omitted the parameter. An endpoint that silently substitutes a different
+  subject is worse than one that errors.
+- **A poll budget re-armed by a re-render.** `useIdentify.ts` promises to stop
+  after `MAX_TRIES = 10`; `StudentCamera.tsx:79` passes a fresh inline arrow as
+  `onIdentified`, which is in the effect's dependency array, so every re-render
+  resets `done.current` and `tries.current`. It ran 55 times in 31 minutes,
+  burning the CPU the decoder was short of. `LobbyRoute.tsx:150` — twenty lines
+  away, same pattern — wraps it in `useCallback` and stops correctly. The
+  textbook sibling-rescue tell.
+- **The TTS failure log is written only on success.** `app.py:557` logs the
+  character count *after* `_synthesize` returns, so the two chunks that crashed
+  with `wave.Error: # channels not specified` left no record of what she was
+  trying to say. We know two of her sentences were lost. We cannot know which.
+- **`LobbyCamera`'s `catch {}` does not count the miss.** `misses.current` is
+  incremented only in the `recognised: false` branch, never in the network-error
+  branch — so if vision is down, the door never reaches `STRANGER_TRIES` and the
+  "I'm new" enrolment offer never appears. A child stands in front of a camera
+  that is looking at nothing, with no way in.
+
+And one more, adjacent: **`RoomDock`'s status-poll `catch` rescues exactly one
+phase.** `if (phaseRef.current === 'asleep') setDock('fault')` — every other
+phase keeps its stale label. If `/teacher/status` dies while the dock says
+"listening", the projector goes on saying "listening" for the rest of the class.
+
+Fixed since: **a lost microphone reported to nobody.** `micRecorder` detected
+`device_lost` and called `onDeviceFailure`, which had no listener anywhere in the
+app; `ensureStream()` then handed the same dead device back forever. A projector
+unplugged mid-session made the room permanently deaf while the dock still said
+"Tới lượt con nói". `ec87dbd`.
