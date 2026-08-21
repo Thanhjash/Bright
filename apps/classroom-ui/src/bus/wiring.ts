@@ -154,6 +154,24 @@ export function connectBusToStore(bus: Bus): Unsubscribe {
 
     bus.on('speech.say', (payload) => {
       store().applySpeech(payload)
+      // One projector Stage: play the teacher even if the audio lease has not
+      // been granted to this client YET.
+      //
+      // The same rescue already guarded `speech.turn.started` below, and its
+      // absence here cost the room its opening line. Measured 2026-08-21: she
+      // opened the class correctly -- read the unit map, read open-a-period,
+      // put the picture up, called `say`, census ok=True -- and the speech log
+      // shows NOT ONE synthesis request in the five minutes that followed. The
+      // greeting reached `applySpeech`, so the subtitle and the board appeared;
+      // `ownsAudio()` was still false because the lease grant had not landed,
+      // so the line was dropped on the floor without a word anywhere. The room
+      // looked like it had started a lesson and then refused to speak, and the
+      // owner only heard her after HE spoke first and the lease caught up.
+      //
+      // A Stage that is not the audio owner is either a race like this one or a
+      // second Stage, and there is only ever one projector.
+      if (bus.role === 'stage' && !audioOwner)
+        enableAudio(Date.now() + 60_000)
       // Full text, tokens intact: the speech pipeline's ACT parser needs them
       // to fire emotions in step with the audio, and strips them before TTS.
       if (ownsAudio()) speak(payload.text, payload.turnId)
