@@ -193,6 +193,60 @@ _IN_PLAY = re.compile(r"^Objectives in play:\s*(.+?)\s*$", re.M)
 _CARD_ART = re.compile(r"^Card picture:\s*`(asset://[^`]+)`", re.M)
 
 
+# `| b | Để cô nghĩ chút nhé. |` under `**The holding lines.**` -- the right-hand
+# cell is the sentence, the left is only a label so an author can talk about one.
+_HOLDING_HEAD = re.compile(r"^\*\*The holding lines\.\*\*", re.M)
+_TABLE_ROW = re.compile(r"^\|[^|]+\|\s*(?P<said>[^|]+?)\s*\|\s*$", re.M)
+
+
+def holding_lines(unit_id: str, *, root: Path | None = None) -> list[str]:
+    """The sentences the ROOM says while she is thinking. Parsed, never judged.
+
+    The only text in this system that becomes speech without the model in the
+    loop -- which is the point, because it exists to cover the wait FOR the
+    model. That makes the rule it lives under worth stating: **Core may quote
+    the curriculum; Core may never compose.** These are read verbatim from the
+    unit map, exactly as `list_periods` reads period titles and card art, and
+    exactly as an arrival line is read. Nothing here writes a sentence.
+
+    Returns [] for a unit with no such table, and the room then says nothing --
+    which is what it did before these existed. Never raises: a missing holding
+    line must not cost a turn.
+    """
+    name = (unit_id or "").strip()
+    if not name or ".." in name or "/" in name:
+        return []
+    base = ((root or LIBRARY_ROOT) / "units" / name).resolve()
+    library = (root or LIBRARY_ROOT).resolve()
+    try:
+        base.relative_to(library)
+    except ValueError:
+        return []
+    map_md = base / "map.md"
+    if not map_md.is_file():
+        return []
+    text = map_md.read_text(encoding="utf-8")
+
+    head = _HOLDING_HEAD.search(text)
+    if not head:
+        return []
+    # From the paragraph that introduces them to the next section heading. The
+    # section sits among other tables (locked language, arrival, rescue) and
+    # taking the wrong one would put a syllabus item in a child's ear as though
+    # the room had answered them.
+    end = text.find("\n## ", head.end())
+    body = text[head.end(): end if end != -1 else len(text)]
+
+    lines: list[str] = []
+    for row in _TABLE_ROW.finditer(body):
+        said = row.group("said").strip()
+        # The header row, and the `|---|---|` rule under it.
+        if not said or set(said) <= {"-", " ", ":"} or said.lower() == "say exactly":
+            continue
+        lines.append(said)
+    return lines
+
+
 def list_periods(unit_id: str, *, root: Path | None = None) -> list[dict[str, Any]]:
     """The periods an author wrote in a unit map, in order. Parsed, never judged.
 

@@ -73,6 +73,16 @@ export interface ClassroomState {
   /** fallback subtitle, from the current `speech.say` */
   speechSubtitle: string
   currentTurnId: string | null
+  /**
+   * WHICH CHILD SENTENCE THE CURRENT SPEECH TURN IS ANSWERING.
+   *
+   * Core stamps every `speech.turn.started` with the utterance the room posted
+   * for that turn. Without it the strip could show what a child said and what
+   * she said next, and nothing joined the two -- which with a seven-to-nineteen
+   * second gap, and a child who may speak again inside it, is the difference
+   * between an answer and a non sequitur.
+   */
+  answeringUtteranceId: string | null
   avatar: AvatarState
   transcript: TranscriptEntry[]
   lastEventAt: number
@@ -94,6 +104,10 @@ export interface ClassroomState {
   applyMode: (payload: ModeChangedPayload) => void
   applySpeech: (payload: SpeechSayPayload) => void
   startSpeech: (turnId: string) => void
+  /** Record which child utterance the speech turn now starting is answering.
+   *  Called from the bus, not from the player, because on the projector the
+   *  store is driven by playback callbacks that never see the payload. */
+  noteAnswering: (utteranceId: string | null) => void
   updateSpeechText: (turnId: string, text: string) => void
   finishSpeechText: (turnId: string, text: string) => void
   cancelSpeech: (turnId: string) => void
@@ -148,6 +162,7 @@ export const useClassroom = create<ClassroomState>()((set) => ({
   overlaySubtitle: '',
   speechSubtitle: '',
   currentTurnId: null,
+  answeringUtteranceId: null,
   avatar: IDLE_AVATAR,
   transcript: [],
   lastEventAt: 0,
@@ -171,6 +186,7 @@ export const useClassroom = create<ClassroomState>()((set) => ({
       overlaySubtitle: '',
       speechSubtitle: '',
       currentTurnId: null,
+      answeringUtteranceId: null,
       avatar: IDLE_AVATAR,
       awaitingSnapshot: true,
       transcript: appendTranscript(s.transcript, 'system', `state discarded — ${reason}`),
@@ -245,6 +261,15 @@ export const useClassroom = create<ClassroomState>()((set) => ({
     speechSubtitle: '',
     speechLifecycle: { speechTurnId: turnId, status: 'queued' },
   }),
+
+  // Only ever overwritten by a turn that NAMES an utterance. A speech turn with
+  // no answer-to -- a clip, a held floor -- must not erase the pairing the strip
+  // is still showing, or her held-floor murmur would look like the answer.
+  noteAnswering: (utteranceId) => set((s) =>
+    utteranceId && utteranceId !== s.answeringUtteranceId
+      ? { answeringUtteranceId: utteranceId }
+      : s,
+  ),
 
   updateSpeechText: (turnId, text) =>
     set((s) => s.currentTurnId === turnId ? { speechSubtitle: scrubActTokens(text).text } : s),

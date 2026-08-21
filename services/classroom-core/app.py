@@ -356,6 +356,55 @@ def handle_client_hello(core: Core, sub: Subscriber, payload: dict[str, Any]) ->
     )
 
 
+def _hold_the_floor(core: Core) -> None:
+    """Say one authored sentence NOW, while she works out what to answer.
+
+    A hosted turn takes seven to nineteen seconds and the room was mute for
+    every one of them. To a child, silence after they speak does not read as
+    thinking -- it reads as not being heard, which is why the owner watching the
+    first take could not tell whether the microphone was working.
+
+    THE RULE THIS LIVES UNDER: **Core may quote the curriculum; Core may never
+    compose.** The sentence is read verbatim from the unit map -- the same file,
+    the same kind of table, and the same authority as the arrival line she says
+    herself. Core chooses only WHICH of the author's sentences, and only in
+    rotation, so nothing here is a decision about the lesson. If the unit has no
+    holding table the room says nothing, exactly as before.
+
+    It is deliberately NOT the model, not even a fast one: a second voice that
+    can judge an answer is a second voice that can contradict the first one
+    seconds later, in front of a class. This one cannot -- it holds the floor
+    and says nothing about the child's answer.
+
+    Side effect worth knowing: the player sets `avatar.speaking` while this
+    plays, and the voice gate closes on exactly that flag. So the microphone is
+    shut while she thinks, which it was not before -- one line, two fixes.
+
+    Never raises. A missing holding line must not cost a turn.
+    """
+    try:
+        os_ = getattr(core, "teacher_os", None)
+        if os_ is None:
+            # No class open. Whatever happens next is an opening, and an opening
+            # is hers to make.
+            return
+        from library import holding_lines
+
+        lines = holding_lines(getattr(os_, "unit_id", "") or "")
+        if not lines:
+            return
+        # Rotate rather than pick at random: a child should not hear the same
+        # sound twice running, and randomness in a classroom is a thing you
+        # cannot reproduce when it goes wrong.
+        index = int(getattr(core, "_holding_index", 0))
+        core._holding_index = index + 1
+        publish = getattr(core, "publish_speech", None)
+        if callable(publish):
+            publish(lines[index % len(lines)], source="holding")
+    except Exception:  # noqa: BLE001 -- filling a silence must never empty a room
+        log.warning("could not hold the floor", exc_info=True)
+
+
 def build_core(settings: Settings | None = None) -> Core:
     settings = settings or Settings.from_env()
     from data_policy import DataPolicy
@@ -696,8 +745,23 @@ def create_app(settings: Settings | None = None, core: Core | None = None) -> Fa
         # job (docs/decisions/2026-08-20-the-room-knows-who.md is the same
         # shape: perception states, the profession interprets).
         spoken = str((body or {}).get("language") or "").strip().lower()[:8] or None
+        core_ = get_core()
+        # WHICH SENTENCE THIS TURN IS ANSWERING.
+        #
+        # `publish_speech` already stamps `conversationTurnId` on every speech
+        # turn, from `conversations.last_utterance_id` -- but the only thing
+        # that ever set it was the Control-lease websocket path, which the room
+        # does not use. So on the room's own microphone the id was a fresh
+        # throwaway per utterance and nothing on screen could pair a child's
+        # sentence with the reply to it. With a seven-to-nineteen second gap,
+        # and a child who may speak again inside it, that pairing is the
+        # difference between an answer and a non sequitur.
+        utterance = str((body or {}).get("utteranceId") or "").strip()[:80]
+        if utterance:
+            core_.conversations.note_utterance(utterance)
+        _hold_the_floor(core_)
         try:
-            return await handle_teacher_turn(get_core(), text, language=spoken)
+            return await handle_teacher_turn(core_, text, language=spoken)
         except RuntimeError as exc:
             raise HTTPException(status_code=503, detail=str(exc)) from exc
 

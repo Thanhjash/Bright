@@ -260,3 +260,44 @@ def test_list_periods_is_quiet_about_units_that_do_not_exist() -> None:
     assert list_periods("no-such-unit") == []
     assert list_periods("../../../etc") == []
     assert list_periods("") == []
+
+
+def test_the_holding_lines_are_read_not_written() -> None:
+    """The only text that becomes speech without the model in the loop.
+
+    Which is the point -- they cover the wait FOR the model. So the rule they
+    live under matters: Core may quote the curriculum, Core may never compose.
+    These come out of the unit map verbatim, like an arrival line.
+    """
+    from library import holding_lines
+
+    lines = holding_lines("gs3-u1-hello")
+    assert lines, "the authored unit declares holding lines"
+    # Verbatim, from the map, in the school's own language -- not composed.
+    text = (
+        Path(__file__).resolve().parents[3]
+        / "content" / "library" / "units" / "gs3-u1-hello" / "map.md"
+    ).read_text(encoding="utf-8")
+    for line in lines:
+        assert line in text, line
+
+    # No header row, no table rule, no syllabus item from the neighbouring
+    # tables -- putting a locked target-language phrase in a child's ear as
+    # though the room had answered them is the failure this guards.
+    assert "Say exactly" not in lines
+    assert not any(set(line) <= {"-", " ", ":"} for line in lines)
+    assert "Hello." not in lines and "Hi." not in lines
+
+    # Short. One breath, or it is no longer covering a silence, it is adding to
+    # one.
+    for line in lines:
+        assert len(line) <= 40, line
+
+
+def test_a_unit_with_no_holding_table_simply_says_nothing() -> None:
+    """Absence is a legal answer, and must not raise on a turn."""
+    from library import holding_lines
+
+    assert holding_lines("no-such-unit") == []
+    assert holding_lines("../secret") == []
+    assert holding_lines("") == []

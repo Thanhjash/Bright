@@ -39,7 +39,12 @@ _ROW = re.compile(r"^\|[^|]+\|\s*(?P<said>[^|]+?)\s*\|\s*$")
 _SPOKEN_SECTIONS = ("## locked language", "## arriving, and rescuing")
 
 # Right-hand cells that are a table header, not something anyone says.
-_HEADINGS = {"language", "function", "the one sentence you open with", "say exactly", "when"}
+_HEADINGS = {
+    "language", "function", "the one sentence you open with", "say exactly", "when",
+    # The holding table's own header. Without it the word "Holding"
+    # gets synthesised and cached as though it were a teacher line.
+    "holding",
+}
 
 
 def locked_language(map_md: Path) -> list[str]:

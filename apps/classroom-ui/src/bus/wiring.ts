@@ -165,6 +165,11 @@ export function connectBusToStore(bus: Bus): Unsubscribe {
 
     bus.on('speech.turn.started', (payload) => {
       textByTurn.set(payload.speechTurnId, '')
+      // Which child sentence this answers. Recorded here rather than inside
+      // `startSpeech`, because on the projector the store is driven by the
+      // player's playback callbacks, which never see this payload -- so the one
+      // screen that matters would have been the one screen that missed it.
+      store().noteAnswering(payload.conversationTurnId ?? null)
       // One projector Stage: play the teacher even if the 15s lease timer
       // dropped client-side while Hermes was still thinking.
       if (bus.role === 'stage' && !audioOwner)

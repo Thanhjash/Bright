@@ -145,6 +145,29 @@ improvise a paragraph.
 Three sentences of the school language in a period is a lot. If you have used
 more than that, the class has stopped hearing the target language — go back.
 
+**The holding lines.** These are the only sentences in this file **you** do not
+say. The room says one by itself the moment a child finishes speaking, while you
+are still deciding what to answer — because thinking takes the room the better
+part of ten seconds, and ten seconds of nothing tells a child they were not
+heard. That is the whole job: *heard you, still thinking*. It is not the answer,
+it does not judge, and it never promises what comes next.
+
+Write them short. One breath, warm, and forgettable — a child should be able to
+hear the same one twice in a period without noticing.
+
+| Holding | Say exactly |
+|---|---|
+| a | Ừm… |
+| b | Để cô nghĩ chút nhé. |
+| c | Cô nghe rồi. |
+| d | À… |
+| e | Cô nghĩ chút xíu nha. |
+
+Do not put praise here, and do not put a question here. Praise belongs to a
+judgement you have not made yet, and a question the room asks in your name is a
+question you did not ask. If this table is empty the room simply says nothing,
+which is what it did before these existed.
+
 ## The three periods
 
 Each period is pre-task → task cycle → post-task. The task cycle is where the

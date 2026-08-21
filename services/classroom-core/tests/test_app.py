@@ -451,3 +451,78 @@ def test_coverage_is_scoped_to_the_unit_it_was_earned_in(
     body = client.get("/library/periods", params={"learnerId": "thien-2"}).json()
     covered = [o for period in body["periods"] for o in period["covered"]]
     assert covered == [], body["periods"]
+
+
+def test_the_room_holds_the_floor_while_she_thinks(settings: Settings) -> None:
+    """Seven to nineteen seconds of silence reads as "you were not heard".
+
+    Not as thinking. The owner watching the first take could not tell whether
+    the microphone was working, and that is the whole reason this exists.
+
+    The sentence is the author's, read from the unit map. Core picks WHICH, in
+    rotation, and nothing else -- rotation rather than random because a
+    classroom failure you cannot reproduce is a failure you cannot fix.
+    """
+    from app import _hold_the_floor
+    from library import holding_lines
+
+    said: list[tuple[str, str]] = []
+    core = SimpleNamespace(
+        teacher_os=SimpleNamespace(unit_id="gs3-u1-hello"),
+        publish_speech=lambda text, **kw: said.append((text, kw.get("source", ""))),
+    )
+
+    authored = holding_lines("gs3-u1-hello")
+    for _ in range(len(authored) + 1):
+        _hold_the_floor(core)
+
+    assert len(said) == len(authored) + 1
+    for text, source in said:
+        assert text in authored, text
+        # A distinct source, so nothing downstream mistakes a held floor for
+        # the teacher having answered.
+        assert source == "holding"
+    # Rotation: it comes back round rather than repeating, and consecutive
+    # calls never say the same thing twice running.
+    spoken = [t for t, _ in said]
+    assert spoken[: len(authored)] == authored
+    assert all(a != b for a, b in zip(spoken, spoken[1:]))
+
+
+def test_nobody_holds_a_floor_in_an_empty_room(settings: Settings) -> None:
+    """With no class open the next thing that happens is an OPENING, and an
+    opening is hers to make. A room that murmurs before she has greeted anyone
+    is a room talking to itself."""
+    from app import _hold_the_floor
+
+    said: list[str] = []
+    core = SimpleNamespace(
+        teacher_os=None,
+        publish_speech=lambda text, **kw: said.append(text),
+    )
+    _hold_the_floor(core)
+    assert said == []
+
+
+def test_holding_the_floor_never_costs_a_turn(settings: Settings) -> None:
+    """Filling a silence must never empty a room: every failure is swallowed
+    and logged, because a turn that dies because a pleasantry failed is worse
+    than the silence it was covering."""
+    from app import _hold_the_floor
+
+    def explode(*_args, **_kwargs):
+        raise RuntimeError("speech is down")
+
+    core = SimpleNamespace(
+        teacher_os=SimpleNamespace(unit_id="gs3-u1-hello"),
+        publish_speech=explode,
+    )
+    _hold_the_floor(core)  # must not raise
+
+    # An unknown unit is the ordinary case for a deployment with no holding
+    # table, not an error.
+    quiet = SimpleNamespace(
+        teacher_os=SimpleNamespace(unit_id="no-such-unit"),
+        publish_speech=lambda *a, **k: (_ for _ in ()).throw(AssertionError("spoke")),
+    )
+    _hold_the_floor(quiet)

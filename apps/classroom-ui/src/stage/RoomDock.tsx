@@ -36,9 +36,16 @@ import { SubtitleBar } from './OverlayLayer/SubtitleBar'
  * driving a real microphone through Core. It is inert (and unread) whenever
  * `VITE_MOCK` is not `1`, so it never reaches a kiosk build.
  */
-function mockHeardOverride(): string | null {
+interface Heard {
+  /** The id posted with this utterance, echoed back on her answer's turn. */
+  id: string
+  text: string
+}
+
+function mockHeardOverride(): Heard | null {
   if (!IS_MOCK || typeof location === 'undefined') return null
-  return new URLSearchParams(location.search).get('heard')
+  const text = new URLSearchParams(location.search).get('heard')
+  return text ? { id: 'mock-utterance', text } : null
 }
 
 type Status = {
@@ -74,10 +81,14 @@ async function readJson(res: Response): Promise<Record<string, unknown>> {
 
 export function RoomDock() {
   const speaking = useClassroom((s) => s.avatar.speaking)
+  const answeringUtteranceId = useClassroom((s) => s.answeringUtteranceId)
   const connected = useClassroom((s) => s.connection.state === 'open' || s.connection.state === 'mock')
   const [status, setStatus] = useState<Status>({})
   const [phase, setPhase] = useState<DockPhase>('asleep')
-  const [heard, setHeard] = useState<string | null>(mockHeardOverride)
+  // The child's last sentence, AND which sentence it is -- so her answer can be
+  // shown as an answer TO it rather than as the next thing that happened. See
+  // `answeringUtteranceId` in the store.
+  const [heard, setHeard] = useState<Heard | null>(mockHeardOverride)
   const [hint, setHint] = useState<string | null>(null)
   // The dock's phase comes from /teacher/status, which knows nothing about the
   // microphone. Without this the room went on saying "Tới lượt con nói" while
@@ -221,7 +232,12 @@ export function RoomDock() {
       // had moved two layers away. The real threshold lives in `stt.ts`; one
       // spelling of a rule, not two.
       if (heardText) {
-        setHeard(heardText)
+        // One id per accepted sentence, minted here because this is where a
+        // sentence becomes a turn. Core stamps it onto every speech turn it
+        // produces in reply, which is what lets the strip say WHICH sentence
+        // she is answering.
+        const utteranceId = `room-${crypto.randomUUID()}`
+        setHeard({ id: utteranceId, text: heardText })
         setHint(null)
         turnInFlight.current = true
         const res = await fetch(`${CORE_HTTP}/teacher/turn`, {
@@ -231,7 +247,11 @@ export function RoomDock() {
           // used to throw it away. A Grade-3 beginner switching to their home
           // language is the clearest "I am lost" signal in the room, and it
           // costs nothing to pass on.
-          body: JSON.stringify({ text: heardText, language: heard.language ?? null }),
+          body: JSON.stringify({
+            text: heardText,
+            language: heard.language ?? null,
+            utteranceId,
+          }),
         })
         const body = await readJson(res)
         if (!res.ok) throw new Error(JSON.stringify(body).slice(0, 180))
@@ -319,6 +339,11 @@ export function RoomDock() {
         ? 'bg-amber'
         : 'bg-coral'
 
+  // Has she answered THIS sentence, or is she still on it? Core echoes the
+  // utterance id back on the speech turn it produces in reply; until that
+  // matches, the chip is a question still open.
+  const answered = Boolean(heard && answeringUtteranceId === heard.id)
+
   const copy = deaf ? ROOM_LABELS.deaf : labelFor(phase, ready)
 
   const waiting = phase === 'asleep' || phase === 'fault'
@@ -337,12 +362,21 @@ export function RoomDock() {
       data-stage="chrome"
       className="pointer-events-none absolute inset-x-0 bottom-0 top-[var(--board-bottom)] z-[28] flex flex-col items-center justify-end gap-[0.8vh] pb-[1.6vh] pl-[var(--camera-col)] pr-[calc(var(--avatar-col)+2vw)]"
     >
+      {/* The child's sentence, and whether she has answered THAT one yet.
+          Waiting: an amber ring, matching the strip below, so the wait reads as
+          "she is on it" rather than as nothing having happened. Answered: the
+          ring goes quiet and the words stop being the live thing on screen.
+          It is never cleared by her reply -- only by the next sentence -- so a
+          child can still see what she is answering while she answers it. */}
       {heard ? (
         <p
           data-stage="heard"
-          className="pointer-events-none max-w-full truncate rounded-full bg-ink-950/70 px-[1.2vw] py-[0.5vh] font-display text-[clamp(0.75rem,1.05vw,1rem)] text-cream/80 ring-1 ring-cream/15"
+          data-answered={answered ? 'true' : 'false'}
+          className={`pointer-events-none max-w-full truncate rounded-full bg-ink-950/70 px-[1.2vw] py-[0.5vh] font-display text-[clamp(0.75rem,1.05vw,1rem)] transition-all duration-500 ${
+            answered ? 'text-cream/55 ring-1 ring-cream/15' : 'text-cream ring-2 ring-amber/55'
+          }`}
         >
-          <span className="text-muted">{HEARD_PREFIX}</span> {heard}
+          <span className="text-muted">{HEARD_PREFIX}</span> {heard.text}
         </p>
       ) : null}
 
