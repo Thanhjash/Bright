@@ -93,10 +93,42 @@ class FasterWhisperProvider:
         # on 2026-08-18). Clamping picks whichever allowed language actually
         # scored highest instead of trusting the global argmax.
         forced_language = language if language else self._clamp_language(pcm, languages)
+        # ONE decode pass, deliberately.
+        #
+        # faster-whisper's default `temperature` is a fallback LADDER --
+        # [0.0, 0.2, 0.4, 0.6, 0.8, 1.0] -- and when a pass fails
+        # `compression_ratio_threshold=2.4` it re-decodes THE WHOLE WINDOW at
+        # the next rung. Repeated text compresses well, so a hallucination loop
+        # fails that check every time and burns all six. Measured on this box
+        # 2026-08-21, from the live log, using audio remaining after the
+        # server's own VAD as the unit:
+        #
+        #     2.348s of speech ->  1.94s      one pass
+        #     3.372s of speech -> 11.44s      1.94 x 6
+        #     3.799s of speech ->  7.02s      1.94 x 3.6
+        #    16.064s of CLEAN textbook audio ->  2.28s   one pass
+        #
+        # Sixteen seconds of clean speech decoded faster than three seconds of
+        # room noise. The ladder is the whole difference, and it buys nothing
+        # here: re-decoding fifteen seconds of an air conditioner at T=1.0 does
+        # not produce a right answer, it produces a differently wrong one at
+        # six times the price, while a child stands waiting.
+        #
+        # A scalar temperature alone is not enough -- the ratio is still
+        # computed and a fallback logged that cannot happen. Both thresholds go
+        # to None so the single pass is explicit.
+        #
+        # `no_speech_threshold` STAYS: `stt.ts` and `RoomDock` both read the
+        # no-speech probability this produces, and it is what keeps her from
+        # answering a chair.
         segments, info = self.model.transcribe(
             pcm,
             language=forced_language,
             beam_size=1,
+            temperature=0.0,
+            compression_ratio_threshold=None,
+            log_prob_threshold=None,
+            no_speech_threshold=0.6,
             vad_filter=True,
             condition_on_previous_text=False,
         )
