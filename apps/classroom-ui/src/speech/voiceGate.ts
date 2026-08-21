@@ -166,6 +166,13 @@ export interface VoiceGateOptions {
    *  started speaking. The shape is exactly what `mic.stop()` returns, so it
    *  can be handed to `transcribe()` in `stt.ts` unchanged. */
   onClip: (clip: Clip) => void
+  /**
+   * A capture was real but shorter than `MIN_CLIP_MS`, so it was dropped.
+   *
+   * Not an error -- the drop protects the child from a hallucinated word -- but
+   * the child is owed an answer. They said something and nothing happened.
+   */
+  onTooShort?: (durationMs: number) => void
   /** Every state transition. Optional — useful for a status light, nothing
    *  in the gate depends on it being observed. */
   onStateChange?: (state: VoiceGateState) => void
@@ -280,6 +287,14 @@ export function createVoiceGate(mic: MicRecorder, options: VoiceGateOptions): Vo
     captureState = 'idle'
     if (clip && clip.durationMs >= MIN_CLIP_MS) {
       options.onClip(clip)
+    } else if (clip) {
+      // A child said "Yes." and the room did nothing, told nobody, and left
+      // them looking at a listening light. Whisper does invent words on
+      // sub-600ms audio -- `BANANO`, `Happy!` are real observed outputs -- so
+      // the drop is right; the silence around it is not. Every other gate in
+      // this pipeline says something; this one had no observability of any
+      // kind, and one-word answers are most of what a beginner says.
+      options.onTooShort?.(clip.durationMs)
     }
     setState(running ? 'listening' : 'idle')
   }

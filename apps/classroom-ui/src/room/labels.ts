@@ -30,6 +30,10 @@ export const ROOM_LABELS = {
    *  all — and the child must be able to tell those apart, because one is
    *  "say it again" and the other is "fetch an adult". */
   unclear: { cta: 'Cô chưa nghe rõ', sub: 'Con nói lại giúp cô nhé' },
+  /** They spoke, but too briefly for the decoder to be trusted with it. A
+   *  beginner's answers are mostly one word, so this is common, and it must
+   *  not read as a fault -- it is an invitation. */
+  tooShort: { cta: 'Cô chưa kịp nghe', sub: 'Con nói dài hơn một chút nhé' },
   fault: { cta: 'Cô đang kiểm tra lớp', sub: 'She will start again herself' },
   waking: { cta: 'Cô đang tới bảng', sub: '' },
   comingReady: { cta: 'Cô sắp bắt đầu', sub: 'She opens the class herself' },

@@ -231,6 +231,9 @@ export function RoomDock() {
     const recorder = mic.current
     const gate = createVoiceGate(recorder, {
       onClip: (clip) => { void submitClip(clip) },
+      // Too short to transcribe safely. Say so, rather than leave a child who
+      // answered in one word watching a light that says it is listening.
+      onTooShort: () => { setHint(ROOM_LABELS.tooShort.sub) },
       onStateChange: (state) => {
         setDeaf(state === 'error')
         // `hearing` -- the amber pill with the moving bars and "Cô đang nghe

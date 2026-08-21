@@ -714,8 +714,34 @@ def create_app(settings: Settings | None = None, core: Core | None = None) -> Fa
             raise HTTPException(400, "image_base64 is not valid base64")
 
         core_ = get_core()
-        seen = perception.identify(frame)
-        core_.identified_learner = seen
+        # Off the event loop. `perception.identify` is a BLOCKING urllib call
+        # with an 8s timeout, and this process runs one uvicorn worker -- so a
+        # slow vision service froze the WebSocket, the heartbeat, `/teacher/turn`
+        # and everything else for up to eight seconds at a time, while TWO
+        # camera pollers (the door at 2.5s, the room at 6s) hammered this very
+        # endpoint. Every symptom of that looks like a different bug.
+        seen = await asyncio.to_thread(perception.identify, frame)
+
+        # A MISS MUST NOT ERASE A HIT.
+        #
+        # This is one process-global slot, written by both cameras, and it used
+        # to be assigned unconditionally -- including `None`. So the door could
+        # recognise a child correctly, and six seconds later the room's own
+        # camera could return "nobody confident" on one bad frame and wipe it,
+        # right as `_open_on_presence` was reading it. The session then opened
+        # for the deployment's default learner: wrong name, wrong progress,
+        # wrong child's evidence, and not one line logged anywhere.
+        #
+        # A recent, confident answer outranks a fresh miss. `Identified.fresh()`
+        # already bounds how long "recent" means (VISION_IDENTITY_TTL_S), so a
+        # child who has gone home still expires on their own.
+        if seen is not None:
+            core_.identified_learner = seen
+        else:
+            held = getattr(core_, "identified_learner", None)
+            if held is None or not held.fresh():
+                core_.identified_learner = None
+
         if seen is None:
             # "We do not know" is a real answer and the room carries on with
             # the declared learner. It is never an error.
