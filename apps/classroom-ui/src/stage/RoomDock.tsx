@@ -198,7 +198,26 @@ export function RoomDock() {
     const recorder = mic.current
     const gate = createVoiceGate(recorder, {
       onClip: (clip) => { void submitClip(clip) },
-      onStateChange: (state) => setDeaf(state === 'error'),
+      onStateChange: (state) => {
+        setDeaf(state === 'error')
+        // `hearing` -- the amber pill with the moving bars and "Cô đang nghe
+        // con" -- was fully built and NOTHING EVER SET IT. The dock's phase
+        // came only from `/teacher/status`, which knows nothing about a
+        // microphone, so while the room was recording it still said "your turn
+        // to speak". A child could not tell whether she was listening, which is
+        // the one thing this strip exists to say.
+        //
+        // The gate is the only thing that knows, so it is the thing that says
+        // so. The status poll already refuses to overwrite `hearing`.
+        if (state === 'capturing')
+          setDock('hearing')
+        else if (phaseRef.current === 'hearing')
+          // `gated` means she started speaking and the capture was abandoned.
+          // Without this branch the dock kept saying "Cô đang nghe con" while
+          // SHE was talking -- the status poll refuses to overwrite `hearing`,
+          // so it stuck there until the gate reached `listening` again.
+          setDock(state === 'gated' ? 'speaking' : 'listen')
+      },
       onError: (message) => setHint(message),
     })
     gate.start()

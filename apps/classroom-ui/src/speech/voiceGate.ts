@@ -94,6 +94,32 @@ const CLOSE_MULTIPLIER = 1.5
  *  arrive, a fan starts) never re-calibrates and the gate jams open. */
 const FLOOR_ADAPT_RATE = 0.02
 
+/** How long a capture may run without EVER dropping below the close
+ *  threshold before the gate concludes its own floor is wrong.
+ *
+ *  Real speech has gaps -- between words, between clauses, to breathe. A
+ *  capture where the level never once falls quiet is not a person talking
+ *  without pause; it is a floor measured in a quieter room than the one we are
+ *  now in. Observed 2026-08-21 with an air conditioner behind the child: the
+ *  floor was calibrated during one quiet second at start-up, the fan then sat
+ *  permanently above `floor * CLOSE_MULTIPLIER`, the silence timer never
+ *  started, and every capture ran to MAX_CLIP_MS. Fifteen seconds of recording
+ *  plus fourteen of transcription is half a minute before she hears anything --
+ *  and fifteen seconds of fan is exactly what makes Whisper loop ("I like the
+ *  power of the power of the power").
+ *
+ *  Long enough that a genuinely unbroken sentence is not cut short; short
+ *  enough that a wrong floor costs seconds, not half a minute. */
+const FLOOR_STALE_MS = 4000
+
+/** Peak-to-trough ratio below which a capture is machinery, not a person.
+ *
+ *  A fan, a projector, a fridge hold a near-constant level; a child's voice
+ *  swings between syllables and the gaps around them. 2.5x is comfortably
+ *  under the range of ordinary speech and comfortably over the wobble of a
+ *  motor, so it separates them without needing to know which room this is. */
+const FLAT_NOISE_RATIO = 2.5
+
 /** The floor never adapts below this. `mic.level()` reads ~0 for digital
  *  silence — a muted or unplugged mic — and `OPEN_MULTIPLIER * 0` is still
  *  0, which would trip the gate on any nonzero noise at all. */
@@ -187,6 +213,11 @@ export function createVoiceGate(mic: MicRecorder, options: VoiceGateOptions): Vo
 
   let guardUntil = 0
   let captureState: CaptureState = 'idle'
+  /** Quietest level seen during the current capture, and when it began. Only
+   *  used to notice that the floor has gone stale. */
+  let captureMinLevel = Number.POSITIVE_INFINITY
+  let captureMaxLevel = 0
+  let captureOpenedAt = 0
   let lastAboveCloseAt = 0
 
   let errorReported = false
@@ -218,6 +249,9 @@ export function createVoiceGate(mic: MicRecorder, options: VoiceGateOptions): Vo
   function beginCapture(now: number): void {
     captureState = 'starting'
     lastAboveCloseAt = now
+    captureMinLevel = Number.POSITIVE_INFINITY
+    captureMaxLevel = 0
+    captureOpenedAt = now
     mic.start(() => {
       // mic's own `MAX_UTTERANCE_MS`-style cap fired; `maxDurationMs` below
       // keeps that well inside MAX_CLIP_MS, so this is the normal "very
@@ -291,7 +325,24 @@ export function createVoiceGate(mic: MicRecorder, options: VoiceGateOptions): Vo
 
     if (gated) {
       if (captureState !== 'idle') void abandonCapture()
-      resetCalibration()
+      // Do NOT throw the floor measurement away.
+      //
+      // This used to call `resetCalibration()` on every gated tick, which set
+      // `calibrated = false` -- so the moment she stopped talking the room owed
+      // POST_SPEECH_GUARD_MS (400) *plus a whole CALIBRATION_MS* (1000) before
+      // the gate could open at all. A child who answers promptly, which is what
+      // children do, was speaking into a microphone that was not listening yet,
+      // and 300ms of pre-roll cannot cover 1.4 seconds. That is the literal
+      // sense of "nó không bắt được âm thanh liền".
+      //
+      // The second bought nothing: `resetCalibration()` never cleared
+      // `floorLevel`, so the old floor was sitting there unused the whole time,
+      // and `FLOOR_ADAPT_RATE` keeps it tracking the room on every listening
+      // tick anyway. Only calibrate when there has never been a floor.
+      //
+      // The 400ms guard stays -- her reverb is real, and it is the only thing
+      // standing between her and transcribing herself.
+      if (!calibrated) resetCalibration()
       setState('gated')
       return
     }
@@ -330,8 +381,29 @@ export function createVoiceGate(mic: MicRecorder, options: VoiceGateOptions): Vo
 
     // captureState === 'capturing'
     setState('capturing')
+    captureMinLevel = Math.min(captureMinLevel, level)
+    captureMaxLevel = Math.max(captureMaxLevel, level)
     if (level > floorLevel * CLOSE_MULTIPLIER) {
       lastAboveCloseAt = now
+      if (now - captureOpenedAt >= FLOOR_STALE_MS) {
+        // Nothing in this whole capture has been quiet enough to count as
+        // silence. That is not what a person talking sounds like, so the floor
+        // is measured against a room that no longer exists. Move it up to just
+        // under the quietest thing actually heard -- so that moment WILL read
+        // as silence next time -- and hand over what we have rather than
+        // recording the fan for another eleven seconds.
+        floorLevel = Math.max(MIN_FLOOR, (captureMinLevel / CLOSE_MULTIPLIER) * 1.1)
+        // Was this a child over a fan, or just the fan?
+        //
+        // Raising the floor is right either way, but SENDING is not: a capture
+        // of pure machinery costs another Whisper call and can come back with
+        // invented words that get posted as a child's turn -- she then answers
+        // something nobody said. Speech is modulated (syllables, gaps, stress);
+        // machinery is flat. Dynamic range tells them apart with two numbers we
+        // are already tracking.
+        if (captureMaxLevel < captureMinLevel * FLAT_NOISE_RATIO) void abandonCapture()
+        else void finalizeCapture()
+      }
     } else if (now - lastAboveCloseAt >= SILENCE_MS) {
       void finalizeCapture()
     }
