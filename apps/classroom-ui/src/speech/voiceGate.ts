@@ -120,35 +120,6 @@ const FLOOR_STALE_MS = 4000
  *  motor, so it separates them without needing to know which room this is. */
 const FLAT_NOISE_RATIO = 2.5
 
-/** Trailing quiet that ends a PHRASE — cut a fragment, keep recording — as
- *  opposed to SILENCE_MS, which ends the TURN.
- *
- *  320ms is eight consecutive quiet ticks at POLL_MS=40. Inter-word gaps and
- *  stop-consonant closures run 50-150ms, so this does not fire inside a word;
- *  clause junctures and breaths run 300ms and up, which is exactly where a
- *  person expects the words so far to appear. Below ~250 you cut inside the
- *  /p/ of "stop" and hand Whisper a truncated word; above ~450 it almost never
- *  fires inside a Grade-3 answer and the whole level is dead weight. */
-const PHRASE_SILENCE_MS = 320
-
-/** A child who does not pause at all still has to see words. Without this,
- *  a run-on answer shows its first word only when the capture ends. 3500ms is
- *  about one primary-school sentence. */
-const MAX_FRAGMENT_MS = 3500
-
-/** No fragment is cut shorter than this by choice. Same reason MIN_CLIP_MS
- *  exists — Whisper invents `BANANO` on sub-600ms audio — and 700 rather than
- *  600 because a fragment, unlike a capture, carries no pre-roll of its own. */
-const MIN_FRAGMENT_MS = 700
-
-/** How far behind the transcriber may fall before the fragment stream gives
- *  up for this utterance. Four fragments is roughly fourteen seconds of
- *  un-transcribed audio: the box is losing, and the honest move is to stop
- *  cutting and let the final clip cover the rest. Never to DROP a fragment —
- *  a sentence with a hole in it is plausible and wrong, which is the worst
- *  failure available here. */
-const MAX_QUEUED_FRAGMENTS = 4
-
 /** The floor never adapts below this. `mic.level()` reads ~0 for digital
  *  silence — a muted or unplugged mic — and `OPEN_MULTIPLIER * 0` is still
  *  0, which would trip the gate on any nonzero noise at all. */
@@ -195,24 +166,6 @@ export interface VoiceGateOptions {
    *  started speaking. The shape is exactly what `mic.stop()` returns, so it
    *  can be handed to `transcribe()` in `stt.ts` unchanged. */
   onClip: (clip: Clip) => void
-  /**
-   * A phrase, cut while the child is still speaking.
-   *
-   * Fires several times per utterance, in order, each covering a disjoint span
-   * of the same recording. The caller transcribes them and shows the words as
-   * they settle; the one flagged `last` means the turn is over.
-   *
-   * When this is provided the gate cuts phrases and `onClip` still fires at the
-   * end with the whole utterance, so a caller can use either or both. When it
-   * is absent nothing changes at all — the gate behaves exactly as before.
-   */
-  onFragment?: (fragment: VoiceFragment) => void
-  /**
-   * How many fragments are still waiting to be transcribed. The gate asks
-   * before every cut and stops cutting for the rest of the utterance once the
-   * queue is deep, rather than adding to a pile-up nobody is draining.
-   */
-  pendingFragments?: () => number
   /** Every state transition. Optional — useful for a status light, nothing
    *  in the gate depends on it being observed. */
   onStateChange?: (state: VoiceGateState) => void
@@ -242,21 +195,6 @@ export interface VoiceGate {
 
 type CaptureState = 'idle' | 'starting' | 'capturing' | 'finalizing'
 
-/** One phrase, cut while the child is still speaking. */
-export interface VoiceFragment {
-  audio: Blob
-  durationMs: number
-  /** Which utterance this belongs to. A fragment from a previous utterance
-   *  that arrives late must never join the current sentence. */
-  utteranceId: number
-  /** Position within the utterance. The fragments of one utterance tile its
-   *  audio in order with no gap and no overlap. */
-  index: number
-  /** True when this is the last fragment of its utterance — the turn is over
-   *  and whatever has accumulated should be sent. */
-  last: boolean
-}
-
 /**
  * Build a voice gate over an existing `MicRecorder`. Does not call
  * `createMicRecorder()` itself — pass the same instance the caller already
@@ -280,22 +218,6 @@ export function createVoiceGate(mic: MicRecorder, options: VoiceGateOptions): Vo
   let captureMinLevel = Number.POSITIVE_INFINITY
   let captureMaxLevel = 0
   let captureOpenedAt = 0
-
-  // ── the fragment stream ────────────────────────────────────────────────
-  // Phrases are cut out of a capture that keeps running, so the child sees
-  // words while still talking. Cutting is by SAMPLE INDEX (see
-  // `mic.sliceSince`) so consecutive fragments tile the audio exactly.
-  let utteranceId = 0
-  let fragmentIndex = 0
-  let nextFromSample = 0
-  let lastCutAt = 0
-  /** There is speech since the last cut that no fragment covers yet. When
-   *  false at sentence end, no tail fragment is needed — which is the common
-   *  case, and saves an entire Whisper call on every ordinary sentence. */
-  let phraseArmed = false
-  /** Turned off for the rest of an utterance when the transcriber falls
-   *  behind. The capture continues; only the mid-sentence cutting stops. */
-  let fragmentsEnabled = true
   let lastAboveCloseAt = 0
 
   let errorReported = false
@@ -330,12 +252,6 @@ export function createVoiceGate(mic: MicRecorder, options: VoiceGateOptions): Vo
     captureMinLevel = Number.POSITIVE_INFINITY
     captureMaxLevel = 0
     captureOpenedAt = now
-    utteranceId += 1
-    fragmentIndex = 0
-    nextFromSample = 0
-    lastCutAt = now
-    phraseArmed = false
-    fragmentsEnabled = typeof options.onFragment === 'function'
     mic.start(() => {
       // mic's own `MAX_UTTERANCE_MS`-style cap fired; `maxDurationMs` below
       // keeps that well inside MAX_CLIP_MS, so this is the normal "very
@@ -352,49 +268,8 @@ export function createVoiceGate(mic: MicRecorder, options: VoiceGateOptions): Vo
     })
   }
 
-  /**
-   * Hand over everything recorded since the last cut, without stopping.
-   *
-   * `last` is the tail at sentence end. It MUST be taken before `mic.stop()` is
-   * awaited: `stop()` releases the capture buffer, and a slice taken afterwards
-   * returns null — which would silently lose the final words of every sentence.
-   */
-  function cutFragment(now: number, last: boolean): void {
-    const emit = options.onFragment
-    if (!emit) return
-    const slice = mic.sliceSince(nextFromSample)
-    if (!slice) return
-    // A tail shorter than a syllable is Whisper's invention machine. Drop it
-    // rather than show a word nobody said; the words before it still stand.
-    if (slice.durationMs < MIN_FRAGMENT_MS && !last) return
-    nextFromSample = slice.toSample
-    lastCutAt = now
-    phraseArmed = false
-    emit({
-      audio: slice.audio,
-      durationMs: slice.durationMs,
-      utteranceId,
-      index: fragmentIndex++,
-      last,
-    })
-  }
-
   async function finalizeCapture(): Promise<void> {
     if (captureState !== 'starting' && captureState !== 'capturing') return
-    // BEFORE stop(). See cutFragment's note: stop() frees the buffer.
-    // `phraseArmed` false means the last phrase cut already covered everything
-    // said, and the quiet since then contains no words — so most sentences end
-    // without a tail fragment and without an extra Whisper call.
-    if (fragmentsEnabled && phraseArmed) cutFragment(performance.now(), true)
-    else if (fragmentsEnabled && fragmentIndex > 0) options.onFragment?.({
-      // Nothing left to transcribe, but the caller still has to be told the
-      // sentence is finished so it can post the turn.
-      audio: new Blob([], { type: 'audio/wav' }),
-      durationMs: 0,
-      utteranceId,
-      index: fragmentIndex++,
-      last: true,
-    })
     captureState = 'finalizing'
     let clip: Clip | null = null
     try {
@@ -508,10 +383,8 @@ export function createVoiceGate(mic: MicRecorder, options: VoiceGateOptions): Vo
     setState('capturing')
     captureMinLevel = Math.min(captureMinLevel, level)
     captureMaxLevel = Math.max(captureMaxLevel, level)
-    const quietFor = now - lastAboveCloseAt
     if (level > floorLevel * CLOSE_MULTIPLIER) {
       lastAboveCloseAt = now
-      phraseArmed = true
       if (now - captureOpenedAt >= FLOOR_STALE_MS) {
         // Nothing in this whole capture has been quiet enough to count as
         // silence. That is not what a person talking sounds like, so the floor
@@ -531,33 +404,8 @@ export function createVoiceGate(mic: MicRecorder, options: VoiceGateOptions): Vo
         if (captureMaxLevel < captureMinLevel * FLAT_NOISE_RATIO) void abandonCapture()
         else void finalizeCapture()
       }
-      return
-    }
-
-    if (quietFor >= SILENCE_MS) {
-      // SENTENCE END. Checked before the phrase rule on purpose: at 800ms of
-      // quiet we finalize, rather than cutting a phrase here and then
-      // immediately finalizing an empty tail behind it.
+    } else if (now - lastAboveCloseAt >= SILENCE_MS) {
       void finalizeCapture()
-      return
-    }
-
-    if (!fragmentsEnabled || !phraseArmed) return
-
-    // The transcriber is behind. Stop cutting for the rest of this utterance;
-    // the capture carries on and the final clip covers everything uncut, so the
-    // sentence still arrives whole — it just arrives all at once, which is
-    // exactly today's behaviour. Never drop a fragment to catch up.
-    if ((options.pendingFragments?.() ?? 0) >= MAX_QUEUED_FRAGMENTS) {
-      fragmentsEnabled = false
-      return
-    }
-
-    // PHRASE END: either they paused, or they have not paused for so long that
-    // waiting any longer would mean showing nothing at all.
-    const sinceCut = now - lastCutAt
-    if (sinceCut >= MIN_FRAGMENT_MS && (quietFor >= PHRASE_SILENCE_MS || sinceCut >= MAX_FRAGMENT_MS)) {
-      cutFragment(now, false)
     }
   }
 

@@ -24,7 +24,6 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { CORE_HTTP, IS_MOCK } from '../lib/env'
 import { HEARD_PREFIX, ROOM_LABELS } from '../room/labels'
 import { createMicRecorder } from '../speech/micRecorder'
-import type { VoiceFragment } from '../speech/voiceGate'
 import { createVoiceGate } from '../speech/voiceGate'
 import { SttError, transcribe } from '../speech/stt'
 import { useClassroom } from '../store/classroom'
@@ -71,9 +70,6 @@ export function RoomDock() {
   const [status, setStatus] = useState<Status>({})
   const [phase, setPhase] = useState<DockPhase>('asleep')
   const [heard, setHeard] = useState<string | null>(mockHeardOverride)
-  /** True while phrases are still arriving for the sentence being spoken. The
-   *  chip is styled differently so a child can see the words are not final. */
-  const [growing, setGrowing] = useState(false)
   const [hint, setHint] = useState<string | null>(null)
   // The dock's phase comes from /teacher/status, which knows nothing about the
   // microphone. Without this the room went on saying "Tới lượt con nói" while
@@ -140,49 +136,13 @@ export function RoomDock() {
   const inFlight = useRef(false)
   const pending = useRef<{ audio: Blob; durationMs: number } | null>(null)
 
-  // ── the live line ──────────────────────────────────────────────────────
-  //
-  // Phrases of one sentence arrive in order and are transcribed one at a time
-  // behind the same single-flight lock. Newest-wins is right for whole
-  // utterances and WRONG for phrases: dropping one leaves a hole in the middle
-  // of a sentence, which reads as something the child never said. So this
-  // queue drops nothing; when it gets deep the GATE stops cutting instead, and
-  // the final clip covers whatever was not cut.
-  const fragQueue = useRef<VoiceFragment[]>([])
-  const fragBusy = useRef(false)
-  /** Texts of the settled phrases of the current sentence, in order. */
-  const said = useRef<string[]>([])
-  /** Which sentence those belong to; a late phrase from a previous one is
-   *  discarded rather than glued onto the sentence being spoken now. */
-  const saidFor = useRef(-1)
-  /** What the first phrase turned out to be, pinned onto the rest so one
-   *  sentence cannot flap between languages halfway through. */
-  const saidLanguage = useRef<string | null>(null)
-  /** A phrase that failed to transcribe. A sentence with a hole in it must
-   *  never reach the teacher -- answering "My favourite is" as if it were the
-   *  whole question is worse than answering nothing -- so a holed sentence
-   *  falls back to the one whole-utterance call the gate also provides. */
-  const holed = useRef(false)
-
   const submitClip = useCallback(async (clip: { audio: Blob; durationMs: number }) => {
     if (inFlight.current) {
       pending.current = clip          // drop whatever was queued before it
       return
     }
-    if (skipNextClip.current) {
-      // The phrase stream owns this sentence. Hold the whole-utterance clip
-      // rather than transcribing it: if a phrase fails to come back, the
-      // sentence would have a hole in it, and one whole-clip call is the only
-      // honest way to recover. If every phrase lands, this is dropped unheard.
-      skipNextClip.current = false
-      wholeClip.current = clip
-      void drainRef.current?.()
-      return
-    }
     inFlight.current = true
-    // Not while the child is still talking -- the phrase path owns the pill
-    // until the sentence ends.
-    if (phaseRef.current !== 'hearing') setDock('thinking')
+    setDock('thinking')
     try {
       const heard = await transcribe(clip.audio)
       const heardText = heard.text.trim()
@@ -227,113 +187,6 @@ export function RoomDock() {
     }
   }, [setDock])
 
-  /** Post one finished sentence. Shared by the phrase path and the fallback. */
-  const postTurn = useCallback(async (text: string, language: string | null) => {
-    const res = await fetch(`${CORE_HTTP}/teacher/turn`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ text, language }),
-    })
-    const body = await readJson(res)
-    if (!res.ok) throw new Error(JSON.stringify(body).slice(0, 180))
-  }, [])
-
-  const drainFragments = useCallback(async () => {
-    if (fragBusy.current) return
-    const frag = fragQueue.current.shift()
-    if (!frag) return
-    fragBusy.current = true
-    try {
-      // A new sentence: forget the last one's words rather than continue it.
-      if (frag.utteranceId !== saidFor.current) {
-        saidFor.current = frag.utteranceId
-        said.current = []
-        saidLanguage.current = null
-        holed.current = false
-      }
-
-      if (frag.audio.size > 0) {
-        try {
-          const part = await transcribe(frag.audio, {
-            language: saidLanguage.current,
-            // A phrase that turns out to be a breath is ordinary and must not
-            // break the chain of phrases around it.
-            allowEmpty: true,
-          })
-          if (part.text) said.current.push(part.text)
-          if (!saidLanguage.current && part.language) saidLanguage.current = part.language
-        } catch {
-          // Transport, not silence. Mark the sentence holed; the whole-clip
-          // fallback below will carry it instead.
-          holed.current = true
-        }
-      }
-
-      const line = said.current.join(' ').trim()
-      if (line) {
-        setHeard(line)
-        setHint(null)
-      }
-      setGrowing(!frag.last)
-
-      if (!frag.last) return
-
-      // The sentence is over.
-      //
-      // What the CHILD saw was the phrases: fast, and good enough to know she
-      // is being heard. What the TEACHER gets is the whole utterance decoded
-      // in one pass, because a phrase carries less context and is measurably
-      // worse for it -- the same sentence came back "I am 9 years old today"
-      // whole and "I am not ironier as a soldier today" in pieces. She must
-      // answer what was said, not an approximation of it.
-      //
-      // The extra call costs ~2s and lands inside the window where the pill
-      // already says "Cô đang nghĩ" and a hosted model turn is about to spend
-      // 7-19s anyway. Nobody sees it.
-      const whole = wholeClip.current
-      wholeClip.current = null
-      setDock('thinking')
-
-      let settled = ''
-      let settledLanguage = saidLanguage.current
-      if (whole) {
-        try {
-          const final = await transcribe(whole.audio, { allowEmpty: true })
-          settled = final.text.trim()
-          if (final.language) settledLanguage = final.language
-        } catch {
-          // Fall through to the phrases; an approximate sentence beats none.
-        }
-      }
-      // The phrases are the fallback now, not the source of truth.
-      const toSend = settled || (holed.current ? '' : line)
-      if (!toSend) {
-        setDock('listen')
-        return
-      }
-      setHeard(toSend)
-      try {
-        await postTurn(toSend, settledLanguage)
-      } catch {
-        setHint('The teacher needs a moment.')
-      }
-      setDock('listen')
-    } finally {
-      fragBusy.current = false
-      if (fragQueue.current.length) void drainRef.current?.()
-    }
-  }, [postTurn, setDock])
-
-  const drainRef = useRef<typeof drainFragments | null>(null)
-  drainRef.current = drainFragments
-
-  /** Set the moment the gate says a sentence has ended, so the whole-clip
-   *  lane stands down before it can start a second transcription of audio the
-   *  phrase lane is already handling. */
-  const skipNextClip = useRef(false)
-  /** The whole-utterance clip, held in case the phrase lane holes out. */
-  const wholeClip = useRef<{ audio: Blob; durationMs: number } | null>(null)
-
   // `submitClip` recurses through a ref so the callback identity stays stable.
   const submitClipRef = useRef<typeof submitClip | null>(null)
   submitClipRef.current = submitClip
@@ -345,17 +198,6 @@ export function RoomDock() {
     const recorder = mic.current
     const gate = createVoiceGate(recorder, {
       onClip: (clip) => { void submitClip(clip) },
-      onFragment: (fragment) => {
-        // Claim the sentence NOW, synchronously. `finalizeCapture` emits the
-        // last fragment and then awaits `mic.stop()`, so `onClip` follows
-        // within milliseconds -- long before this fragment has been
-        // transcribed. Without claiming it here the whole-clip lane starts a
-        // second transcription of the same audio and posts its own wording.
-        if (fragment.last) skipNextClip.current = true
-        fragQueue.current.push(fragment)
-        void drainRef.current?.()
-      },
-      pendingFragments: () => fragQueue.current.length + (fragBusy.current ? 1 : 0),
       onStateChange: (state) => {
         setDeaf(state === 'error')
         // `hearing` -- the amber pill with the moving bars and "Cô đang nghe
@@ -367,10 +209,8 @@ export function RoomDock() {
         //
         // The gate is the only thing that knows, so it is the thing that says
         // so. The status poll already refuses to overwrite `hearing`.
-        if (state === 'capturing') {
+        if (state === 'capturing')
           setDock('hearing')
-          setGrowing(true)
-        }
         else if (phaseRef.current === 'hearing')
           // `gated` means she started speaking and the capture was abandoned.
           // Without this branch the dock kept saying "Cô đang nghe con" while
@@ -411,31 +251,12 @@ export function RoomDock() {
       data-stage="chrome"
       className="pointer-events-none absolute inset-x-0 bottom-0 top-[var(--board-bottom)] z-[28] flex flex-col items-center justify-end gap-[0.8vh] pb-[1.6vh] pl-[var(--camera-col)] pr-[calc(var(--avatar-col)+2vw)]"
     >
-      {/*
-        The live line. Phrases land here as they settle, so the child sees
-        words while still speaking -- but in the small chip, deliberately, and
-        never on the chalk. A provisional word on the chalkboard is a word a
-        Grade-3 child reads aloud and copies into a book.
-
-        `line-clamp-2` and not `truncate`: truncation hides the END of the
-        line, and the end is the newest words -- the whole point.
-
-        The amber ring is the same amber as the `hearing` pill below, so the
-        two read as one thing: she is listening, and this is what she has so
-        far. It goes back to the quiet ring the moment the sentence is sent,
-        without any word moving -- a fragment is decoded from its own audio
-        alone, so nothing already on screen is ever rewritten.
-      */}
       {heard ? (
         <p
           data-stage="heard"
-          data-growing={growing ? 'true' : 'false'}
-          className={`pointer-events-none line-clamp-2 max-w-full rounded-3xl bg-ink-950/70 px-[1.2vw] py-[0.5vh] font-display text-[clamp(0.75rem,1.05vw,1rem)] text-cream/80 transition-[box-shadow] duration-200 ${
-            growing ? 'ring-2 ring-amber/45' : 'ring-1 ring-cream/15'
-          }`}
+          className="pointer-events-none max-w-full truncate rounded-full bg-ink-950/70 px-[1.2vw] py-[0.5vh] font-display text-[clamp(0.75rem,1.05vw,1rem)] text-cream/80 ring-1 ring-cream/15"
         >
           <span className="text-muted">{HEARD_PREFIX}</span> {heard}
-          {growing ? <span className="animate-pulse text-amber">▍</span> : null}
         </p>
       ) : null}
 
