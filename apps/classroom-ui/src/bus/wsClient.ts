@@ -55,6 +55,12 @@ const PASSES_SNAPSHOT_GATE = new Set<string>([
   'speech.text.delta',
   'speech.turn.ended',
   'speech.cancel',
+  // Every event that CARRIES speech was already here, and the one event that
+  // makes speech AUDIBLE was not. Held behind the gate, the Stage keeps its
+  // subtitle and its board and stays mute -- the same silent failure as a
+  // dropped `speech.say`, arriving by a second door. The lease is whole-value
+  // and orthogonal to scene state, which is this list's own stated rule.
+  'stage.lease.granted',
 ])
 
 export interface WsBusOptions {

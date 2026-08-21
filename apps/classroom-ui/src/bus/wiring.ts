@@ -44,33 +44,20 @@ export function connectBusToStore(bus: Bus): Unsubscribe {
     audioOwner = false
   }
 
-  type PendingSpeech = {
-    speechTurnId: string
-    conversationTurnId?: string
-    behavior?: 'queue' | 'interrupt' | 'replace'
-    audioAsset?: string
-    ended?: string
-    reason?: string
-  }
-  let pending: PendingSpeech | null = null
   const heardPlayback = new Set<string>()
 
-  const flushPending = () => {
-    if (!ownsAudio() || !pending) return
-    const held = pending
-    pending = null
-    startSpeech({
-      speechTurnId: held.speechTurnId,
-      conversationTurnId: held.conversationTurnId,
-      behavior: held.behavior,
-      audioAsset: held.audioAsset,
-    })
-    const text = textByTurn.get(held.speechTurnId) ?? ''
-    if (text) void pushSpeech(held.speechTurnId, text)
-    if (held.ended === 'completed') void endSpeech(held.speechTurnId)
-    else if (held.ended === 'error') failSpeech(held.speechTurnId, held.reason ?? held.ended)
-    else if (held.ended) cancelSpeech(held.speechTurnId, held.reason ?? held.ended)
-  }
+  // NOTE. There used to be a `PendingSpeech` hold-and-replay queue here, with a
+  // `flushPending()` called from `enableAudio`. It could never hold anything:
+  // `pending` was initialised to null and nothing ever assigned to it. So the
+  // file read as though the "speech arrived before the lease" race was handled,
+  // and it was not -- which is exactly how the teacher's opening greeting came
+  // to be dropped on 2026-08-21 with no error anywhere.
+  //
+  // Deleted rather than completed. The race is now closed at the three points
+  // where it actually occurs -- `speech.say`, `speech.turn.started` and
+  // `speech.text.delta` each take the lease if this Stage does not hold it,
+  // because there is only ever one projector. A dead safety net is worse than
+  // no safety net: it stops the next person looking.
 
   const enableAudio = (expiresAt: number) => {
     if (!audioOwner) {
@@ -106,7 +93,6 @@ export function connectBusToStore(bus: Bus): Unsubscribe {
       () => disableAudio('stage-audio-lease-expired', true),
       Math.max(0, expiresAt - Date.now()),
     )
-    flushPending()
   }
 
   const offs: Unsubscribe[] = [
@@ -202,6 +188,13 @@ export function connectBusToStore(bus: Bus): Unsubscribe {
       textByTurn.set(speechTurnId, text)
       if (store().currentTurnId === speechTurnId)
         store().updateSpeechText(speechTurnId, text)
+      // The third door onto the same silent failure. `speech.say` and
+      // `speech.turn.started` both take the lease when this Stage does not hold
+      // it; the delta path did not, so a streamed line typed itself across the
+      // subtitle while nothing was ever synthesised -- harder to spot than a
+      // dropped greeting, because the text is animating.
+      if (bus.role === 'stage' && !audioOwner)
+        enableAudio(Date.now() + 60_000)
       if (bus.role === 'stage')
         void pushSpeech(speechTurnId, delta)
     }),

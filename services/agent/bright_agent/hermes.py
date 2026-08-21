@@ -960,12 +960,48 @@ class HermesAgent:
                                 if name == "say" and results.get(call_id, (False, None, None))[0]
                             ]
                             if not said:
-                                yield self._done(
-                                    "error",
-                                    "teacher agent did not say",
-                                    usage,
-                                    started,
+                                # Say WHY, not just that. This one string was
+                                # the whole diagnosis for every failure of the
+                                # turn, and on 2026-08-21 it stood in front of
+                                # `402 Insufficient credits`: the provider was
+                                # refusing every call, `hermesUp` still read
+                                # green, `/teacher/status` said "teacher agent
+                                # did not say", and an hour went into guessing
+                                # at a flaky model that was simply switched off.
+                                #
+                                # Two things are knowable here and were being
+                                # thrown away: whether she called any tool at
+                                # all, and what Core told her when it refused
+                                # one. A turn with zero tool calls is a turn the
+                                # model never really took -- look outside the
+                                # room. A turn full of refusals is a turn she
+                                # took and got told no -- look inside it.
+                                refusals = [
+                                    reason
+                                    for ok, _envelope, reason in results.values()
+                                    if not ok and reason
+                                ]
+                                if not calls:
+                                    detail = (
+                                        "teacher agent did nothing at all -- no tool call "
+                                        "was made. The model or its provider is not "
+                                        "answering; check the agent log."
+                                    )
+                                elif refusals:
+                                    detail = (
+                                        "teacher agent did not say; the room refused: "
+                                        + "; ".join(str(r) for r in refusals[:3])
+                                    )
+                                else:
+                                    detail = (
+                                        "teacher agent did not say (it called "
+                                        f"{', '.join(sorted({n for n, _ in calls.values()})) or 'nothing'})"
+                                    )
+                                log.warning(
+                                    "Hermes teacher turn produced no say: calls=%d refusals=%d",
+                                    len(calls), len(refusals),
                                 )
+                                yield self._done("error", detail, usage, started)
                                 return
                             yield TextDelta(text=str(said[-1]))
                             yield self._done("complete", None, usage, started)

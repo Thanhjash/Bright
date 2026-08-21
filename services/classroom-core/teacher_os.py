@@ -1941,6 +1941,25 @@ def teacher_status_payload(core: Any) -> dict[str, Any]:
     }
 
 
+def _asleep_because(core: Any, why: str) -> None:
+    """Say why the room is not opening -- once per distinct reason, not per tick.
+
+    Five mutually exclusive facts used to collapse into one `asleep/tick` answer
+    every ten seconds, so the only question anyone ever asks of a dark room --
+    "why did she not open?" -- had five possible answers and no evidence
+    anywhere. The escalated branch further down already does this right: "an
+    adult reading the service log should be able to see that the room is waiting
+    for them, not stuck." Same shape, so the same treatment.
+
+    The pulse runs all day; logging every tick would bury the line that matters,
+    logging never is what we had.
+    """
+    if getattr(core, "_asleep_reason", None) == why:
+        return
+    core._asleep_reason = why
+    log.info("room stayed asleep: %s", why)
+
+
 async def _open_on_presence(core: Any, *, reason: str) -> dict[str, Any] | None:
     """Open the class because the room is there, not because a hand pressed a button.
 
@@ -1956,16 +1975,25 @@ async def _open_on_presence(core: Any, *, reason: str) -> dict[str, Any] | None:
     """
     closed_at = getattr(core, "last_close_at", None)
     if closed_at is not None and (time.time() - closed_at) < REOPEN_AFTER_CLOSE_S:
+        _asleep_because(core, "she closed a period less than "
+                              f"{int(REOPEN_AFTER_CLOSE_S)}s ago")
         return None          # she just closed this period; do not reopen it
 
     leases = getattr(core, "capability_leases", None)
     if leases is not None:
         leases.expire()
     if not (leases and getattr(leases, "stage_owner", None)):
+        _asleep_because(core, "no Stage holds the audio lease -- the projector "
+                              "is dark, or its browser never reported a speaker "
+                              "it can use")
         return None          # nobody is in the room, or the projector is dark
     if not speech_up():
+        _asleep_because(core, "the speech service is not answering; she would "
+                              "be mute, so she waits rather than greet silently")
         return None          # she would be mute; wait rather than greet silently
     if not hermes_up():
+        _asleep_because(core, "the agent is not answering; there is no teacher "
+                              "to open the class")
         return None          # no teacher to open the class; the pulse retries
 
 

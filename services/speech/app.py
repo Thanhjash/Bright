@@ -517,14 +517,6 @@ async def speech(req: SpeechRequest) -> Response:
         else [(voice_id, req.input)]
     )
 
-    # Keep the last clip on disk when asked. The only way to answer "is the
-    # microphone sending speech or sending rubbish" is to look at the bytes.
-    if os.environ.get("ASR_DUMP"):
-        try:
-            Path(os.environ["ASR_DUMP"]).write_bytes(audio)
-        except Exception:  # noqa: BLE001 -- a diagnostic must never break a lesson
-            pass
-
     queued = time.perf_counter()
     async with _tts_lock:
         queue_ms = round((time.perf_counter() - queued) * 1000)
@@ -611,6 +603,20 @@ async def transcriptions(
     # default ASR_LANGUAGES; classroom-core passes the real declared set once
     # it knows it. Ignored entirely when `language` is forced.
     allowed_languages = parse_languages(languages or ASR_LANGUAGES)
+    # Keep the last clip on disk when asked. The only way to answer "was the
+    # microphone sending speech or sending rubbish" is to look at the bytes.
+    #
+    # This lived in /audio/speech for an hour, where `audio` is not in scope, so
+    # every request raised NameError into a bare `except: pass` and the file
+    # never appeared -- a diagnostic that failed in exactly the way the bug it
+    # was built to find fails. Hence the log line: a diagnostic that cannot say
+    # it is broken is not a diagnostic.
+    if os.environ.get("ASR_DUMP"):
+        try:
+            Path(os.environ["ASR_DUMP"]).write_bytes(audio)
+        except Exception as exc:  # noqa: BLE001 -- never break a lesson for a dump
+            log.warning("ASR_DUMP could not be written (%s)", exc)
+
     queued = time.perf_counter()
     async with _asr_lock:
         queue_ms = round((time.perf_counter() - queued) * 1000)

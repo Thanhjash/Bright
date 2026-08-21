@@ -726,9 +726,22 @@ def build_mcp_router(core_getter: Callable[[], Any], token: str) -> APIRouter:
             try:
                 result = await core_getter().turn_registry.invoke(str(name), arguments)
             except TurnRejected as exc:
+                # `os_.execute` NEVER RAN, so this refusal reaches no census, no
+                # `turn_refusals` and no period count -- the log prints
+                # `tools=0 refusals=-`, byte-identical to a model that simply
+                # chose to call nothing. That is how a whole lesson of "unknown
+                # or expired turn_id" once passed for an idle teacher.
+                log.warning("tool %s refused before execute: %s", name, exc)
                 result = {"ok": False, "reason": str(exc)}
             except Exception as exc:  # fail closed at the protocol boundary
-                result = {"ok": False, "reason": f"tool failed: {type(exc).__name__}"}
+                # The exception TYPE alone is not a diagnosis. A broken SQLite
+                # write inside record_evidence arrived as "tool failed:
+                # OperationalError" and nothing anywhere held the message.
+                log.warning("tool %s failed: %s", name, exc, exc_info=True)
+                result = {
+                    "ok": False,
+                    "reason": f"tool failed: {type(exc).__name__}: {exc}"[:200],
+                }
             ok = not isinstance(result, dict) or result.get("ok") is not False
             return _rpc_result(
                 request_id,
