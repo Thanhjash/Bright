@@ -155,6 +155,8 @@ late, take the time from anywhere else.
 
 Open with Period 1's arrival line above, then straight into the target language.
 
+Card picture: `asset://gs3/panels/char-minh.jpg`
+
 Pre-task: they meet the characters and hear the greeting. Model it, then the
 class says it together.
 Task: children greet each other in pairs using their own names, then change
@@ -168,6 +170,8 @@ Objectives in play: `greet-and-name`, `answer-a-greeting`.
 
 Open with Period 2's arrival line above, then straight into the target language.
 
+Card picture: `asset://gs3/panels/char-mai.jpg`
+
 Pre-task: recall the greeting first. Then model the question and the answer, and
 model leaving.
 Task: the four-turn exchange — meet a friend on the way to school, greet, ask,
@@ -180,6 +184,8 @@ Objectives in play: `ask-wellbeing`, `answer-wellbeing`, `take-leave`.
 ### Period 3 — Put it together
 
 Open with Period 3's arrival line above, then straight into the target language.
+
+Card picture: `asset://gs3/panels/char-group.jpg`
 
 Pre-task: recall the whole exchange. Then the two first sounds, playfully — hand
 near the mouth for *h*, lips together then open for *b*. This is sound

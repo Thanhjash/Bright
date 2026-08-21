@@ -137,3 +137,10 @@
     transition-duration: 0.01ms !important;
   }
 }
+
+/* The front door's route, drawn once on load. Transform-only, so it costs the
+   compositor and nothing else. */
+@keyframes drawpath {
+  from { transform: scaleY(0); }
+  to   { transform: scaleY(1); }
+}

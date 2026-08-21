@@ -604,12 +604,33 @@ def create_app(settings: Settings | None = None, core: Core | None = None) -> Fa
                 held = core_.db.count_periods_held(student_id=learner, lesson_id=unit)
             except Exception:  # noqa: BLE001 -- a dark front door must not be a 500
                 held = 0
+        # Which objectives this child has actually been SEEN to do.
+        #
+        # The same `observations` rows the teacher reads as SKILL_CARD, counted
+        # the same way: an objective is covered when the room witnessed it go
+        # right at least once. `near` and `uncertain` are honest answers and
+        # deliberately do NOT count -- a progress bar that fills on "not quite"
+        # is a progress bar that lies to a child about what they can do.
+        done: set[str] = set()
+        if unit:
+            try:
+                for row in core_.db.list_observations(student_id=learner) or []:
+                    if str(row.get("result") or "") == "correct":
+                        done.add(str(row.get("skill") or ""))
+            except Exception:  # noqa: BLE001 -- a dark front door beats a 500
+                done = set()
+
+        periods = list_periods(unit) if unit else []
+        for period in periods:
+            objectives = period.get("objectives") or []
+            period["covered"] = sorted(o for o in objectives if o in done)
+
         return {
             "units": units,
             "unitId": unit,
             "learnerId": learner,
             "held": held,
-            "periods": list_periods(unit) if unit else [],
+            "periods": periods,
         }
 
     @app.post("/teacher/session")

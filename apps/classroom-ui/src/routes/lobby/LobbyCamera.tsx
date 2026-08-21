@@ -207,7 +207,7 @@ export function LobbyCamera({ onKnown }: { onKnown: (who: Who) => void }) {
     <section
       data-lobby="camera"
       data-phase={phase}
-      className="flex items-center gap-[1.4vw] rounded-3xl bg-ink-800 p-[1.6vh_1.4vw]"
+      className="flex items-center gap-[1.2vw] rounded-3xl bg-ink-900/70 p-[1.4vh_1.2vw] ring-1 ring-cream/10"
     >
       <div className="relative aspect-square w-[clamp(4.5rem,6.5vw,7.5rem)] shrink-0 overflow-hidden rounded-2xl bg-ink-950">
         <video
@@ -220,7 +220,7 @@ export function LobbyCamera({ onKnown }: { onKnown: (who: Who) => void }) {
         />
       </div>
 
-      <div className="flex min-w-0 flex-1 flex-col gap-3">
+      <div className="flex min-w-0 flex-1 flex-col gap-[1vh]">
         {phase === 'no-camera' && <p className="text-[clamp(1rem,1.5vw,1.7rem)] text-muted">{L.noCamera}</p>}
         {(phase === 'starting' || phase === 'looking') && (
           <p className="text-[clamp(1rem,1.5vw,1.7rem)] text-muted">{L.looking}</p>
@@ -238,7 +238,7 @@ export function LobbyCamera({ onKnown }: { onKnown: (who: Who) => void }) {
               type="button"
               data-lobby="im-new"
               onClick={() => setPhase('enrolling')}
-              className="w-fit rounded-2xl bg-amber px-[1.8vw] py-[1.4vh] font-display text-[clamp(1.05rem,1.5vw,1.7rem)] font-extrabold text-ink-900"
+              className="w-fit whitespace-nowrap rounded-2xl bg-amber px-[1.4vw] py-[1.1vh] font-display text-[clamp(0.95rem,1.3vw,1.45rem)] font-extrabold text-ink-900"
             >
               {L.imNew}
             </button>

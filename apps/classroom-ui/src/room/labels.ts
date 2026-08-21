@@ -100,6 +100,8 @@ export const LOBBY_LABELS = {
   entering: 'Đang vào lớp…',
   /** The count under the header. */
   heldCount: (n: number) => (n === 0 ? 'Con chưa học buổi nào' : `Con đã học ${n} buổi`),
+  /** How much of a period the room has actually witnessed. */
+  objectives: (done: number, total: number) => `${done}/${total} mục tiêu`,
   /** What this period will teach, from the unit map's own words. */
   inPlay: 'Hôm nay học:',
 

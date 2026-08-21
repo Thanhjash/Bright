@@ -175,6 +175,11 @@ def unit_catalog(unit_id: str, *, root: Path | None = None) -> dict[str, list[st
 _PERIOD_HEAD = re.compile(r"^###\s*Period\s+(\d+)\s*[—\-–]\s*(.+?)\s*$", re.M)
 # `Objectives in play: \`greet-and-name\`, \`answer-a-greeting\`.`
 _IN_PLAY = re.compile(r"^Objectives in play:\s*(.+?)\s*$", re.M)
+# `Card picture: \`asset://gs3/panels/char-minh.jpg\`` — the picture the front
+# door shows for this period. Chosen by the unit's author, never by the app:
+# which face belongs to "How are you? Goodbye" is curriculum, and a UI that
+# picked one would be software deciding what a lesson looks like.
+_CARD_ART = re.compile(r"^Card picture:\s*`(asset://[^`]+)`", re.M)
 
 
 def list_periods(unit_id: str, *, root: Path | None = None) -> list[dict[str, Any]]:
@@ -210,6 +215,7 @@ def list_periods(unit_id: str, *, root: Path | None = None) -> list[dict[str, An
         body = text[head.end(): heads[i + 1].start() if i + 1 < len(heads) else len(text)]
         in_play = _IN_PLAY.search(body)
         objectives = _OBJECTIVE_REF.findall(in_play.group(1)) if in_play else []
+        art = _CARD_ART.search(body)
         periods.append({
             "n": int(head.group(1)),
             "title": head.group(2).strip(),
@@ -219,5 +225,6 @@ def list_periods(unit_id: str, *, root: Path | None = None) -> list[dict[str, An
             # period as the single narrowest thing in the unit, which is the
             # opposite of what it is.
             "inPlay": in_play.group(1).rstrip(".").strip() if in_play else "",
+            "art": art.group(1) if art else "",
         })
     return periods

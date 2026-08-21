@@ -20,6 +20,11 @@ export interface Period {
   objectives: string[]
   /** The author's own words for what is in play, ids and prose alike. */
   inPlay: string
+  /** Which of those objectives the room has actually witnessed go right. */
+  covered: string[]
+  /** `asset://…` picture for this period's card, chosen by the unit's author.
+   *  Which face belongs to "How are you? Goodbye" is curriculum, not layout. */
+  art: string
 }
 
 export interface Installed {
@@ -62,6 +67,8 @@ function asPeriod(raw: unknown): Period | null {
     title: typeof r.title === 'string' ? r.title : '',
     objectives: Array.isArray(r.objectives) ? r.objectives.filter(o => typeof o === 'string') : [],
     inPlay: typeof r.inPlay === 'string' ? r.inPlay : '',
+    covered: Array.isArray(r.covered) ? r.covered.filter(o => typeof o === 'string') : [],
+    art: typeof r.art === 'string' ? r.art : '',
   }
 }
 
