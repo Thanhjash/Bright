@@ -350,3 +350,70 @@ attempt.
   turn.
 - `.wslconfig` now sets `swap=0` and `memory=24GB`, permanently. Swap on a full
   C: was killing the VM; see `wsl-crashes-on-swap`.
+
+
+---
+
+## What was done about it — 2026-08-22
+
+Everything above is now fixed, in five commits. What is worth carrying forward is
+not the list but the two things the fixing taught.
+
+**The plumbing was the pedagogy.** §1 read like a model behaving badly and was a
+missing wire. The curriculum stated the day's objectives, the parser extracted
+them, the front page displayed them, and no line of code carried them to the one
+reader who needed them. Before blaming a model for a teaching decision, check
+that it was told the thing it would have needed to decide differently.
+
+**A new rule, and the reason it had to be written down.** The holding lines are
+the first text in this system that becomes speech without the model in the loop
+— necessarily, since they exist to cover the wait *for* it. That is a door into
+"Python decides the lesson", so it is bounded explicitly:
+
+> **Core may quote the curriculum. Core may never compose.**
+
+The sentence is read verbatim from the unit map, by the same kind of parser that
+already reads period titles and card art, with the same authority as an arrival
+line. Core chooses only *which* of the author's sentences, and only in rotation.
+The map itself says what may not go in that table — no praise, no questions —
+because a question the room asks in her name is a question she did not ask.
+
+This is also why the owner's two-tier idea was implemented as *no second model*.
+Splitting by speed puts two voices in the room that can contradict each other:
+the fast one accepts a wrong answer and the slow one corrects it four seconds
+later, in front of a class. Splitting by **authority** cannot — the holding line
+says nothing about what the child said. If a fast model earns a place later, it
+should *select among authored lines*, never generate pedagogy.
+
+### Fixed
+
+| § | What | Commit |
+|---|---|---|
+| 1 | The period's objectives reach her; the catalogue lists only declared ids | `3b6db5a` |
+| 2, 5 | No answering for a learner nobody asked about; four silent guards | `c013e7f` |
+| 3, 4 | Holding lines; the chip paired with the answer to it | `32f4a11` |
+| 6 | Unsayable text no longer 500s; the log records the attempt, not the success | `0af2941` |
+| — | A lost microphone reports; silence never reaches the decoder | `ec87dbd` |
+
+`services/speech`'s suite ran for the first time in the process — its venv had no
+pytest, and borrowing core's fails because that one has no `python-multipart`.
+Thirty tests, including the route-level regression for the two requests that
+crashed on camera.
+
+### Deliberately not done
+
+**The live-text lane** (*"nói tới đâu, speech-to-text tới đó"*). Attempted and
+reverted before filming: chunked decoding cost accuracy — *"I am 9 years old
+today"* came back as *"I am not ironier as a soldier today"*. With §3 pairing the
+answer to its question and §4 filling the silence, the *perceived* latency
+problem is largely addressed without it. Re-land it with time to measure. The
+peak/RMS instrumentation exists for exactly that.
+
+**The gate's constants.** Eleven of 61 clips were an empty room, so the gate
+opened eleven times on nobody. The peak guard stops those reaching the model but
+treats the symptom; the thresholds have never been measured against a real
+classroom's noise floor, only this one's.
+
+**The eighth stall.** One real 8.5-second utterance took 18.2 seconds while an
+identical-length clip took 4.8. Not silence, not duration, not the wall clock.
+One in fifty. Undiagnosed, and written down rather than rounded away.

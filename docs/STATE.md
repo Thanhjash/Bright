@@ -652,6 +652,43 @@ made from a log alone.
 Five more silent failures were catalogued from this audit; they are appended to
 [design/the-silent-failure.md](design/the-silent-failure.md).
 
+## 2j. What the take's faults turned out to be — 2026-08-22
+
+All five defects and both design gaps from §2i are fixed;
+[design/what-the-first-take-taught-us.md](design/what-the-first-take-taught-us.md)
+carries the reckoning and the three things deliberately left. Two lessons
+outlast the list.
+
+**The plumbing was the pedagogy.** Forty turns on one objective read as a model
+teaching badly and was a missing wire: the curriculum stated the day's
+objectives, `library.py` parsed them, the lobby route displayed them, and nothing
+carried them to the only reader who needed them. `OBJECTIVES=` also shipped a
+skill name and an audio track as things to teach, because the catalogue unioned
+a loose "any backticked hyphenated token" scan over the unit folder. Before
+blaming a model for a teaching decision, check it was told the thing it would
+have needed to decide differently.
+
+**A new rule, written down because it opens a door.** Holding lines are the
+first text here that becomes speech without the model in the loop — necessarily,
+since they cover the wait *for* it:
+
+> **Core may quote the curriculum. Core may never compose.**
+
+Read verbatim from the unit map, by the same kind of parser that reads period
+titles and card art. Core chooses only *which*, and only in rotation. This is
+also why the owner's two-tier idea shipped with **no second model**: splitting by
+speed puts two voices in the room that can contradict each other in front of a
+class; splitting by authority cannot.
+
+It closed a separate open task for free — the player sets `avatar.speaking`
+while a holding line plays and the gate closes on exactly that flag, so the
+microphone is shut while she thinks, which it never was before.
+
+`services/speech`'s test suite ran for the first time in the process: its venv
+had no pytest, and borrowing core's fails because that one has no
+`python-multipart`. Thirty tests now, including the route-level regression for
+the two requests that crashed on camera.
+
 ## 3. Layer status — honest
 
 | Layer | Status | Truth |
