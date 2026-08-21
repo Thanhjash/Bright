@@ -127,7 +127,21 @@ class FasterWhisperProvider:
             beam_size=1,
             temperature=0.0,
             compression_ratio_threshold=None,
-            log_prob_threshold=None,
+            # log_prob_threshold STAYS at the library default, and this is not
+            # a detail. In `generate_segments` it is the RESCUE inside the
+            # silence check (transcribe.py:1215-1226):
+            #
+            #     should_skip = no_speech_prob > no_speech_threshold
+            #     if log_prob_threshold is not None and avg_logprob > log_prob_threshold:
+            #         should_skip = False
+            #
+            # Setting it to None removes the rescue, so every segment scoring
+            # above 0.6 no-speech is discarded no matter how confident its
+            # tokens were. Measured here on 2026-08-21: a 23s textbook track
+            # (no-speech 0.651) went from a full transcript to the empty string.
+            # It only ever *triggers* a fallback when there is another rung to
+            # fall back to, and with a single temperature there is not.
+            log_prob_threshold=-1.0,
             no_speech_threshold=0.6,
             vad_filter=True,
             condition_on_previous_text=False,
