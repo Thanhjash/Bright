@@ -69,7 +69,22 @@ python3 "$ROOT/tools/warm-tts.py" >/dev/null 2>&1 \
 # It runs with a restricted tool set (PREPARE_TOOLS) and cannot say a word, so
 # it is safe to fire at a room with nobody in it.
 echo "retake: asking her to draft the period (about a minute, nobody is waiting)…"
-if curl -sf -X POST --max-time 240 "http://127.0.0.1:${CORE_PORT:-8004}/teacher/prepare" >/dev/null; then
+# Retry, because the turn is flaky in a way that costs the whole rehearsal.
+# Observed 2026-08-21: one prepare run used 11 tools and wrote a 346-character
+# plan; the very next used ZERO tools and wrote nothing at all -- the model
+# simply did nothing that time. HTTP still answered 200, so a single attempt
+# cannot tell "she drafted it" from "she went quiet"; only the returned `ok`
+# can, and without a retry one bad roll means the opening turn on camera is the
+# slow one.
+drafted=no
+for attempt in 1 2 3; do
+  reply="$(curl -sf -X POST --max-time 240 "http://127.0.0.1:${CORE_PORT:-8004}/teacher/prepare" || true)"
+  case "$reply" in
+    *'"ok": true'*|*'"ok":true'*) drafted=yes; break ;;
+  esac
+  [[ $attempt -lt 3 ]] && echo "retake: she drafted nothing on attempt $attempt; asking again"
+done
+if [[ "$drafted" == yes ]]; then
   echo "retake: the period is drafted -- the opening turn will be a greeting, not homework"
 else
   echo "retake: WARNING the period is NOT drafted -- the first turn will take about a minute"

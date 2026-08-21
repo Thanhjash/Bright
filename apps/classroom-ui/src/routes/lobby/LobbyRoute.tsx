@@ -173,10 +173,21 @@ export function LobbyRoute() {
     if (asked.current || !servicesUp || !room || room.sessionOpen || room.prepared)
       return
     asked.current = true
-    void fetch(`${CORE_HTTP}/teacher/prepare`, { method: 'POST' }).catch(() => {
-      // Unprepared is slow, never broken. The pill keeps saying so.
-      asked.current = false
-    })
+    void fetch(`${CORE_HTTP}/teacher/prepare`, { method: 'POST' })
+      .then(r => r.json())
+      .then((body: { ok?: unknown }) => {
+        // The request succeeding is not the same as her drafting anything.
+        // Observed 2026-08-21: one prepare turn used eleven tools and wrote a
+        // plan, the next used ZERO and wrote nothing -- and HTTP answered 200
+        // both times. Latching on the request meant one bad roll left the room
+        // permanently unprepared and the pill honestly stuck on "đang soạn
+        // bài" forever, with nobody asking again.
+        if (body?.ok !== true) asked.current = false
+      })
+      .catch(() => {
+        // Unprepared is slow, never broken. The pill keeps saying so.
+        asked.current = false
+      })
   }, [servicesUp, room])
 
   function enter() {
